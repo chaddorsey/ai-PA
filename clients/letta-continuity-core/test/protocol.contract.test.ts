@@ -16,8 +16,9 @@ import {
   ProtocolError,
   RpcResponseFor,
   type ServerFrame,
+  VALIDATED_SERVER_VERSIONS,
   approvalRequestId,
-  assertServerVersion,
+  assertServerIdentity,
   buildApprovalSend,
   buildConversationCreate,
   buildConversationList,
@@ -252,12 +253,60 @@ describe("contract: outbound builders shape the pinned frames", () => {
     expect((buildConversationList("c1", "a") as Record<string, unknown>).type).toBe(
       "conversation_list",
     );
-    expect((buildConversationCreate("c2", "a", "T") as Record<string, unknown>).title).toBe("T");
     expect(
       (buildConversationMessagesList("c3", RT) as Record<string, unknown>).conversation_id,
     ).toBe(RT.conversation_id);
     expect(RpcResponseFor[Outbound.conversationList]).toBe(Inbound.conversationListResponse);
     expect(RpcResponseFor[Outbound.conversationCreate]).toBe(Inbound.conversationCreateResponse);
+  });
+
+  /**
+   * OUTBOUND envelope gate. These predicates are transcribed from the server's own command
+   * guards in letta.js (isConversationListCommand / isConversationCreateCommand /
+   * isConversationMessagesListCommand) and verified live on 0.30.19 + 0.30.20.
+   *
+   * They matter because the server drops a guard-failing frame SILENTLY — no error, no
+   * response, just an RPC timeout. Asserting only "the builder set some field" (as the
+   * original test did) let `conversation_create` ship with the wrong envelope entirely.
+   */
+  describe("outbound envelopes satisfy the server's command guards", () => {
+    const isRecord = (v: unknown): v is Record<string, unknown> =>
+      typeof v === "object" && v !== null && !Array.isArray(v);
+
+    it("conversation_list: request_id + optional `query` OBJECT (agent filter lives in query)", () => {
+      const f = buildConversationList("c1", "agent-x") as Record<string, unknown>;
+      expect(f.type).toBe("conversation_list");
+      expect(typeof f.request_id).toBe("string");
+      expect(f.query === undefined || isRecord(f.query)).toBe(true);
+      // A top-level agent_id is IGNORED by the server → the filter must be inside query.
+      expect(isRecord(f.query) && f.query.agent_id).toBe("agent-x");
+      expect(f.agent_id).toBeUndefined();
+    });
+
+    it("conversation_create: request_id + a `body` OBJECT carrying agent_id", () => {
+      const f = buildConversationCreate("c2", "agent-x", "T") as Record<string, unknown>;
+      expect(f.type).toBe("conversation_create");
+      expect(typeof f.request_id).toBe("string");
+      // The guard REQUIRES body to be an object; without it the RPC is silently dropped.
+      expect(isRecord(f.body)).toBe(true);
+      expect(isRecord(f.body) && f.body.agent_id).toBe("agent-x");
+      expect(isRecord(f.body) && f.body.title).toBe("T");
+      expect(f.agent_id).toBeUndefined();
+    });
+
+    it("conversation_create: title is optional and omitted cleanly", () => {
+      const f = buildConversationCreate("c2", "agent-x") as Record<string, unknown>;
+      expect(isRecord(f.body) && "title" in f.body).toBe(false);
+      expect(isRecord(f.body) && f.body.agent_id).toBe("agent-x");
+    });
+
+    it("conversation_messages_list: top-level conversation_id + optional `query` OBJECT", () => {
+      const f = buildConversationMessagesList("c3", RT) as Record<string, unknown>;
+      expect(f.type).toBe("conversation_messages_list");
+      expect(typeof f.request_id).toBe("string");
+      expect(typeof f.conversation_id).toBe("string");
+      expect(f.query === undefined || isRecord(f.query)).toBe(true);
+    });
   });
 
   it("approval_send fails CLOSED with decision deny", () => {
@@ -268,32 +317,92 @@ describe("contract: outbound builders shape the pinned frames", () => {
   });
 });
 
-describe("contract: server-version assertion at the hello", () => {
-  it("absent version → unverifiable (warn, no throw) — relies on contract test", () => {
+describe("contract: server-identity assertion via app_server_info", () => {
+  /** Captured verbatim from the live 0.30.19 sole-owner App Server on :4577. */
+  const INFO_0_30_19 = {
+    type: "app_server_info_response",
+    request_id: "probe-1",
+    success: true,
+    backend: "local",
+    letta_code_version: "0.30.19",
+    protocol_version: 1,
+    capabilities: {
+      agent_management: true,
+      conversation_management: true,
+      memory_management: true,
+      runtime_start: true,
+      runtime_external_tools_update: true,
+      split_channels: false,
+    },
+  };
+
+  it("pinned version + protocol + capabilities → verified", () => {
+    const res = assertServerIdentity(INFO_0_30_19);
+    expect(res.verified).toBe(true);
+    expect(res.actual).toBe("0.30.19");
+    expect(res.protocolVersion).toBe(1);
+    expect(res.missingCapabilities).toEqual([]);
+  });
+
+  it("the live fixture validates as an inbound frame", () => {
+    expect(() => validateInboundFrame(INFO_0_30_19)).not.toThrow();
+  });
+
+  it("every contract-verified version passes (0.30.19 and 0.30.20 are both live-validated)", () => {
+    for (const v of VALIDATED_SERVER_VERSIONS) {
+      const res = assertServerIdentity({ ...INFO_0_30_19, letta_code_version: v });
+      expect(res.verified).toBe(true);
+      expect(res.actual).toBe(v);
+    }
+  });
+
+  it("an UNvalidated version + warn policy → warns, no throw", () => {
     const warns: string[] = [];
-    const res = assertServerVersion(FIXTURES.runtime_start_response, {
-      onWarn: (m) => warns.push(m),
-    });
-    expect(res).toEqual({ verified: false, actual: null, pinned: "0.30.19" });
-    expect(warns[0]).toMatch(/unverifiable/);
-  });
-
-  it("matching version → verified", () => {
-    const hello = { ...FIXTURES.runtime_start_response, server_version: "0.30.19" };
-    expect(assertServerVersion(hello).verified).toBe(true);
-  });
-
-  it("mismatched version + refuse policy → throws", () => {
-    const hello = { ...FIXTURES.runtime_start_response, server_version: "0.31.0" };
-    expect(() => assertServerVersion(hello, { policy: "refuse" })).toThrow(ProtocolError);
-  });
-
-  it("mismatched version + warn policy → warns, no throw", () => {
-    const hello = { ...FIXTURES.runtime_start_response, version: "0.31.0" };
-    const warns: string[] = [];
-    const res = assertServerVersion(hello, { policy: "warn", onWarn: (m) => warns.push(m) });
+    const res = assertServerIdentity(
+      { ...INFO_0_30_19, letta_code_version: "0.31.0" },
+      { policy: "warn", onWarn: (m) => warns.push(m) },
+    );
     expect(res.verified).toBe(false);
     expect(res.actual).toBe("0.31.0");
-    expect(warns[0]).toMatch(/drift/);
+    expect(warns[0]).toMatch(/letta_code_version 0\.31\.0 not in validated set/);
+  });
+
+  it("an UNvalidated version + refuse policy → throws", () => {
+    expect(() =>
+      assertServerIdentity({ ...INFO_0_30_19, letta_code_version: "0.31.0" }, { policy: "refuse" }),
+    ).toThrow(ProtocolError);
+  });
+
+  it("bumped protocol_version is caught even when the binary version still matches", () => {
+    const warns: string[] = [];
+    const res = assertServerIdentity(
+      { ...INFO_0_30_19, protocol_version: 2 },
+      { onWarn: (m) => warns.push(m) },
+    );
+    expect(res.verified).toBe(false);
+    expect(res.protocolVersion).toBe(2);
+    expect(warns[0]).toMatch(/protocol_version 2 != pinned 1/);
+  });
+
+  it("a required capability advertised false ALWAYS throws, even under warn policy", () => {
+    const info = {
+      ...INFO_0_30_19,
+      capabilities: { ...INFO_0_30_19.capabilities, conversation_management: false },
+    };
+    expect(() => assertServerIdentity(info, { policy: "warn" })).toThrow(ProtocolError);
+    expect(() => assertServerIdentity(info, { policy: "warn" })).toThrow(/conversation_management/);
+  });
+
+  it("a capability we do not require being false is not a failure (split_channels)", () => {
+    expect(assertServerIdentity(INFO_0_30_19).verified).toBe(true);
+  });
+
+  it("absent version field → unverifiable (warn, no throw) — older server, contract test gates", () => {
+    const warns: string[] = [];
+    const { letta_code_version, ...noVersion } = INFO_0_30_19;
+    const res = assertServerIdentity(noVersion, { onWarn: (m) => warns.push(m) });
+    expect(res.verified).toBe(false);
+    expect(res.actual).toBeNull();
+    expect(warns[0]).toMatch(/unverifiable/);
   });
 });

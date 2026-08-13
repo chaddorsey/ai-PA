@@ -2,7 +2,7 @@
  * In-process mock of the sole-owner Letta App Server `/ws` surface.
  *
  * Emits the EXACT empirical frame shapes captured from `letta 0.30.19` (see Unit 4 captures):
- *   runtime_start_response · update_loop_status · stream_delta · turn_finished ·
+ *   app_server_info_response · runtime_start_response · update_loop_status · stream_delta · turn_finished ·
  *   update_subagent_state · update_queue · conversation_list_response ·
  *   conversation_create_response · conversation_messages_list_response · approval_request_message.
  *
@@ -12,6 +12,7 @@
 
 import type { AddressInfo } from "node:net";
 import { type RawData, type WebSocket, WebSocketServer } from "ws";
+import { PINNED_PROTOCOL_VERSION, PINNED_SERVER_VERSION } from "../../src/protocol.js";
 
 interface ConnState {
   socket: WebSocket;
@@ -26,8 +27,14 @@ export interface TurnMessage {
 }
 
 export interface MockServerOptions {
-  /** If set, added to runtime_start_response as `server_version` (to exercise version assertion). */
+  /** `letta_code_version` reported by app_server_info (default: the pinned version). */
   serverVersion?: string;
+  /** `protocol_version` reported by app_server_info (default: the pinned protocol version). */
+  protocolVersion?: number;
+  /** Capability overrides merged over the real 0.30.19 capability map. */
+  capabilities?: Record<string, boolean>;
+  /** If true, the server does not answer `app_server_info` at all (an older build). */
+  omitAppServerInfo?: boolean;
   /** Snapshot returned by conversation_messages_list. */
   messagesSnapshot?: Array<{ id?: string; [k: string]: unknown }>;
   /** conversation_messages_list_response.success (default true). */
@@ -39,6 +46,10 @@ export interface MockServerOptions {
   approvalMode?: boolean;
   /** If false, the server never auto-responds to `input` (tests drive turns manually). */
   autoTurnOnInput?: boolean;
+}
+
+function isObj(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 let uid = 0;
@@ -53,6 +64,8 @@ export class MockAppServer {
   private runCounter = 0;
   /** Frames received from clients, for assertions (e.g. approval_send). */
   readonly received: Array<Record<string, unknown>> = [];
+  /** Count of frames dropped by a command guard (malformed envelope). */
+  rejected = 0;
   options: MockServerOptions;
   /** Simple per-runtime serialization flag for the concurrency test. */
   private busy = new Map<string, boolean>();
@@ -107,12 +120,53 @@ export class MockAppServer {
     const msg = JSON.parse(data.toString()) as Record<string, unknown>;
     this.received.push(msg);
     const type = msg.type as string;
-    if (type === "runtime_start") this.handleRuntimeStart(conn, msg);
+    if (type === "app_server_info") this.handleAppServerInfo(conn, msg);
+    else if (type === "runtime_start") this.handleRuntimeStart(conn, msg);
     else if (type === "input") this.handleInput(conn, msg);
-    else if (type === "conversation_list") this.handleConversationList(conn, msg);
-    else if (type === "conversation_create") this.handleConversationCreate(conn, msg);
-    else if (type === "conversation_messages_list") this.handleMessagesList(conn, msg);
-    else if (type === "approval_send") this.handleApprovalSend(conn, msg);
+    else if (type === "conversation_list") {
+      if (this.guard(isObj(msg.query) || msg.query === undefined)) {
+        this.handleConversationList(conn, msg);
+      }
+    } else if (type === "conversation_create") {
+      if (this.guard(isObj(msg.body))) this.handleConversationCreate(conn, msg);
+    } else if (type === "conversation_messages_list") {
+      if (this.guard(typeof msg.conversation_id === "string")) this.handleMessagesList(conn, msg);
+    } else if (type === "approval_send") this.handleApprovalSend(conn, msg);
+  }
+
+  /**
+   * Reproduce the real server's command guards. A frame that fails a guard is DROPPED
+   * SILENTLY — no error response, the client's RPC just times out. Mirroring this is the
+   * whole point: a mock that answers any shape will rubber-stamp a malformed builder, which
+   * is exactly how `conversation_create` shipped with the wrong envelope in Unit 4.
+   */
+  private guard(ok: boolean): boolean {
+    if (!ok) this.rejected += 1;
+    return ok;
+  }
+
+  /** Mirrors the live 0.30.19 `app_server_info_response` (captured verbatim from :4577). */
+  private handleAppServerInfo(conn: ConnState, msg: Record<string, unknown>): void {
+    if (this.options.omitAppServerInfo) return; // an older server: never answers
+    conn.socket.send(
+      JSON.stringify({
+        type: "app_server_info_response",
+        request_id: msg.request_id,
+        success: true,
+        backend: "local",
+        letta_code_version: this.options.serverVersion ?? PINNED_SERVER_VERSION,
+        protocol_version: this.options.protocolVersion ?? PINNED_PROTOCOL_VERSION,
+        capabilities: {
+          agent_management: true,
+          conversation_management: true,
+          memory_management: true,
+          runtime_start: true,
+          runtime_external_tools_update: true,
+          split_channels: false,
+          ...this.options.capabilities,
+        },
+      }),
+    );
   }
 
   private handleRuntimeStart(conn: ConnState, msg: Record<string, unknown>): void {
@@ -129,7 +183,7 @@ export class MockAppServer {
       conversation: conn.runtime.conversation_id,
       created: { agent: false, conversation: false },
     };
-    if (this.options.serverVersion) hello.server_version = this.options.serverVersion;
+    // NOTE: no version field here — the real hello carries none. Version lives in app_server_info.
     conn.socket.send(JSON.stringify(hello));
     // initial loop status like the real server
     this.sendBroadcast(conn, "update_loop_status", {
@@ -242,6 +296,7 @@ export class MockAppServer {
   }
 
   private handleConversationList(conn: ConnState, msg: Record<string, unknown>): void {
+    const query = isObj(msg.query) ? msg.query : {};
     conn.socket.send(
       JSON.stringify({
         type: "conversation_list_response",
@@ -250,7 +305,7 @@ export class MockAppServer {
         conversations: this.options.conversations ?? [
           {
             id: "local-conv-1",
-            agent_id: msg.agent_id,
+            agent_id: query.agent_id,
             archived: false,
             archived_at: null,
             created_at: "2026-08-12T00:00:00.000Z",
@@ -262,12 +317,13 @@ export class MockAppServer {
   }
 
   private handleConversationCreate(conn: ConnState, msg: Record<string, unknown>): void {
+    const body = isObj(msg.body) ? msg.body : {};
     conn.socket.send(
       JSON.stringify({
         type: "conversation_create_response",
         request_id: msg.request_id,
         success: true,
-        conversation: { id: `local-conv-new-${this.bump()}`, agent_id: msg.agent_id },
+        conversation: { id: `local-conv-new-${this.bump()}`, agent_id: body.agent_id },
       }),
     );
   }

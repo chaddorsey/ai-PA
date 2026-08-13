@@ -13,11 +13,42 @@
  * upgrade gate; keep them strict.
  */
 
-/** The pinned server version this protocol was captured against. */
-export const PINNED_SERVER_VERSION = "0.30.19";
+/**
+ * Server versions this protocol has been contract-test-verified against, oldest first.
+ *
+ * It is a SET, not a single string, because the running server and the on-disk binary drift
+ * apart routinely: a package bump leaves the live process on the old code until it restarts,
+ * so both versions are legitimately in play at once. Only add a version here after
+ * `test/live.contract.test.ts` passes against it on a CLONE backend.
+ *
+ *  - 0.30.19 — original Unit 4 capture (live :4577)
+ *  - 0.30.20 — verified 2026-08-13 on a clone: protocol_version still 1, capabilities
+ *    identical, all frames round-trip, real streamed turn completes without error.
+ */
+export const VALIDATED_SERVER_VERSIONS = ["0.30.19", "0.30.20"] as const;
+
+/** The newest validated version — what a restart of the App Server brings up today. */
+export const PINNED_SERVER_VERSION =
+  VALIDATED_SERVER_VERSIONS[VALIDATED_SERVER_VERSIONS.length - 1];
+
+/**
+ * The pinned App Server protocol version (`app_server_info_response.protocol_version`).
+ * This is the server's OWN declared contract version — a bump here is a first-class
+ * drift signal that does not depend on us recognising a binary version string.
+ */
+export const PINNED_PROTOCOL_VERSION = 1;
+
+/**
+ * Server capabilities this client-core structurally requires. `runtime_start` is the hello;
+ * `conversation_management` backs the `conversation_*` RPCs, including the
+ * `conversation_messages_list` snapshot that reconnect catch-up dedup depends on.
+ * A server advertising either as false cannot serve this client at all.
+ */
+export const REQUIRED_CAPABILITIES = ["runtime_start", "conversation_management"] as const;
 
 /** Outbound (client → server) message-type strings. */
 export const Outbound = {
+  appServerInfo: "app_server_info",
   runtimeStart: "runtime_start",
   input: "input",
   conversationList: "conversation_list",
@@ -31,6 +62,7 @@ export const Outbound = {
 
 /** Inbound (server → client) message-type strings. */
 export const Inbound = {
+  appServerInfoResponse: "app_server_info_response",
   runtimeStartResponse: "runtime_start_response",
   streamDelta: "stream_delta",
   updateLoopStatus: "update_loop_status",
@@ -49,6 +81,8 @@ export const Inbound = {
 
 /** Map of an outbound RPC type → the inbound `*_response` type that answers it. */
 export const RpcResponseFor: Record<string, string> = {
+  [Outbound.appServerInfo]: Inbound.appServerInfoResponse,
+  [Outbound.runtimeStart]: Inbound.runtimeStartResponse,
   [Outbound.conversationList]: Inbound.conversationListResponse,
   [Outbound.conversationCreate]: Inbound.conversationCreateResponse,
   [Outbound.conversationRetrieve]: Inbound.conversationRetrieveResponse,
@@ -142,8 +176,28 @@ export interface RuntimeStartResponseFrame extends ServerFrame {
   request_id: string;
   success: boolean;
   runtime: Runtime;
-  /** Present in 0.30.19; NO server-version field exists on this frame (verified) — see assertServerVersion. */
+  /** The hello carries NO server-version field — the version gate is `app_server_info`, not this frame. */
   agent?: { id: string; name?: string; [k: string]: unknown };
+}
+
+/** Server-declared capability flags from `app_server_info_response.capabilities`. */
+export interface AppServerCapabilities {
+  [capability: string]: boolean | undefined;
+}
+
+/**
+ * Answer to the `app_server_info` RPC — the App Server's self-description, and the ONLY
+ * place it states its own version. Verified live on 0.30.19: it answers before
+ * `runtime_start`, so the version gate can run before any runtime is started.
+ */
+export interface AppServerInfoResponseFrame extends ServerFrame {
+  type: "app_server_info_response";
+  request_id: string;
+  success: boolean;
+  backend?: string;
+  letta_code_version?: string;
+  protocol_version?: number;
+  capabilities?: AppServerCapabilities;
 }
 
 export interface ConversationSummary {
@@ -183,6 +237,10 @@ export interface MessagesListResponseFrame extends ServerFrame {
 // Outbound frame builders (the only place outbound frames are shaped)
 // ─────────────────────────────────────────────────────────────────────────────
 
+export function buildAppServerInfo(requestId: string): ServerFrame {
+  return { type: Outbound.appServerInfo, request_id: requestId };
+}
+
 export function buildRuntimeStart(requestId: string, runtime: Runtime): ServerFrame {
   return { type: Outbound.runtimeStart, request_id: requestId, ...runtime };
 }
@@ -195,8 +253,19 @@ export function buildInput(runtime: Runtime, content: string): ServerFrame {
   };
 }
 
+/**
+ * The `conversation_*` RPC envelopes are NOT uniform, and the server drops a malformed one
+ * SILENTLY (its command guards return false and no error frame is sent — the request just
+ * times out). Shapes below are read from the server's own guards and verified live:
+ *   conversation_list          → optional `query` object   (a top-level agent_id is IGNORED)
+ *   conversation_create        → REQUIRES a `body` object
+ *   conversation_messages_list → top-level `conversation_id` + optional `query`
+ */
+
 export function buildConversationList(requestId: string, agentId: string): ServerFrame {
-  return { type: Outbound.conversationList, request_id: requestId, agent_id: agentId };
+  // The agent filter belongs in `query` — the server passes `parsed.query` straight to
+  // listConversations(), so a top-level agent_id silently returns EVERY agent's conversations.
+  return { type: Outbound.conversationList, request_id: requestId, query: { agent_id: agentId } };
 }
 
 export function buildConversationCreate(
@@ -204,20 +273,18 @@ export function buildConversationCreate(
   agentId: string,
   title?: string,
 ): ServerFrame {
-  const frame: ServerFrame = {
-    type: Outbound.conversationCreate,
-    request_id: requestId,
-    agent_id: agentId,
-  };
-  if (title !== undefined) frame.title = title;
-  return frame;
+  // `body` is mandatory: the server's guard requires an object at `body` and hands it to
+  // createConversation(body), which reads body.agent_id. Without it the RPC is dropped silently.
+  const body: Record<string, unknown> = { agent_id: agentId };
+  if (title !== undefined) body.title = title;
+  return { type: Outbound.conversationCreate, request_id: requestId, body };
 }
 
 export function buildConversationMessagesList(requestId: string, runtime: Runtime): ServerFrame {
+  // conversation_id stays top-level here (the guard requires it there); agent_id is not read.
   return {
     type: Outbound.conversationMessagesList,
     request_id: requestId,
-    agent_id: runtime.agent_id,
     conversation_id: runtime.conversation_id,
   };
 }
@@ -323,6 +390,7 @@ export function validateInboundFrame(frame: ServerFrame): void {
         throw new ProtocolError("approval_request_message: missing `runtime`");
       return;
     }
+    case Inbound.appServerInfoResponse:
     case Inbound.runtimeStartResponse:
     case Inbound.conversationListResponse:
     case Inbound.conversationCreateResponse:
@@ -408,53 +476,117 @@ export function approvalRequestId(f: ApprovalRequestFrame): string | undefined {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Server-version assertion at the WS hello
+// Server-identity assertion (the upgrade gate, from `app_server_info`)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type VersionPolicy = "warn" | "refuse";
 
-export interface VersionCheck {
+export interface ServerIdentityCheck {
+  /** True only when BOTH the binary version and the protocol version match their pins. */
   verified: boolean;
+  /** Reported `letta_code_version`, or null if the server did not state one. */
   actual: string | null;
-  pinned: string;
+  /** The validated version set this check accepted against. */
+  pinned: readonly string[];
+  /** Reported `protocol_version`, or null if absent. */
+  protocolVersion: number | null;
+  pinnedProtocolVersion: number;
+  /** Required capabilities the server explicitly advertised as unavailable. */
+  missingCapabilities: string[];
 }
 
 /**
- * Assert the connected server is the pinned version, from the `runtime_start_response` hello.
+ * Assert the connected App Server is the pinned build, from its `app_server_info_response`.
  *
- * Reality (verified on 0.30.19): the App Server exposes NO version field on the hello,
- * on `/v1/models`, or on any `/version` route. So `actual` is `null` today and the hello
- * check cannot verify the version by itself — the COMMITTED CONTRACT TEST is the real
- * upgrade gate. This function is future-proofing: if a later build adds `server_version`/
- * `version` to the hello, a mismatch is caught here per `policy` (refuse → throw, warn → onWarn).
- * When the version is unverifiable (absent field) it never throws; it warns once so the
- * operator knows the contract test is the sole guard.
+ * This is the real client-side upgrade gate (protocol-coupling mitigation #3). The
+ * `runtime_start` hello carries no version, but `app_server_info` does — it reports
+ * `letta_code_version`, its own `protocol_version`, and a capability map. A launcher-side
+ * check is defeated by a between-launch package bump (the running server keeps the old code
+ * in memory while the on-disk binary moves), so the check has to live on the connection.
+ *
+ * Severity is deliberately tiered:
+ *  - a **missing required capability** always throws — the client structurally cannot work;
+ *  - a **protocol_version** or **letta_code_version** mismatch follows `policy`
+ *    (`refuse` → throw, `warn` → `onWarn`), because a version bump only *may* mean drift;
+ *  - an **absent** version/capability field never throws — older servers predate the RPC,
+ *    and the committed contract test still gates those.
  */
-export function assertServerVersion(
-  hello: ServerFrame,
-  opts: { pinnedVersion?: string; policy?: VersionPolicy; onWarn?: (msg: string) => void } = {},
-): VersionCheck {
-  const pinned = opts.pinnedVersion ?? PINNED_SERVER_VERSION;
+export function assertServerIdentity(
+  info: ServerFrame,
+  opts: {
+    /** A single version or the accepted set. Defaults to every contract-verified version. */
+    pinnedVersion?: string | readonly string[];
+    pinnedProtocolVersion?: number;
+    requiredCapabilities?: readonly string[];
+    policy?: VersionPolicy;
+    onWarn?: (msg: string) => void;
+  } = {},
+): ServerIdentityCheck {
+  const pinnedOpt = opts.pinnedVersion ?? VALIDATED_SERVER_VERSIONS;
+  const pinned = typeof pinnedOpt === "string" ? [pinnedOpt] : pinnedOpt;
+  const pinnedProtocol = opts.pinnedProtocolVersion ?? PINNED_PROTOCOL_VERSION;
+  const required = opts.requiredCapabilities ?? REQUIRED_CAPABILITIES;
   const policy = opts.policy ?? "warn";
   const onWarn = opts.onWarn ?? (() => {});
-  const candidate =
-    (typeof hello.server_version === "string" && hello.server_version) ||
-    (typeof hello.version === "string" && hello.version) ||
-    null;
 
-  if (candidate === null) {
-    onWarn(
-      `server version unverifiable at WS hello (no version field on letta ${pinned} protocol); relying on the committed contract test as the upgrade gate`,
+  const actual = typeof info.letta_code_version === "string" ? info.letta_code_version : null;
+  const protocolVersion = typeof info.protocol_version === "number" ? info.protocol_version : null;
+  const capabilities = isObject(info.capabilities) ? info.capabilities : null;
+
+  // Capability gate first: an explicit `false` is a hard, unambiguous incompatibility.
+  const missingCapabilities = capabilities
+    ? required.filter((cap) => capabilities[cap] === false)
+    : [];
+  if (missingCapabilities.length > 0) {
+    throw new ProtocolError(
+      `App Server lacks required capabilities: ${missingCapabilities.join(", ")} (letta ${actual ?? "unknown"})`,
     );
-    return { verified: false, actual: null, pinned };
   }
-  if (candidate !== pinned) {
-    const msg = `App Server version ${candidate} != pinned ${pinned} — protocol drift possible`;
+
+  const drift: string[] = [];
+  if (protocolVersion !== null && protocolVersion !== pinnedProtocol) {
+    drift.push(`protocol_version ${protocolVersion} != pinned ${pinnedProtocol}`);
+  }
+  if (actual !== null && !pinned.includes(actual)) {
+    drift.push(`letta_code_version ${actual} not in validated set [${pinned.join(", ")}]`);
+  }
+
+  if (drift.length > 0) {
+    const msg = `App Server drift: ${drift.join("; ")} — re-run the contract test before trusting this connection`;
     if (policy === "refuse") throw new ProtocolError(msg);
     onWarn(msg);
-    return { verified: false, actual: candidate, pinned };
+    return {
+      verified: false,
+      actual,
+      pinned,
+      protocolVersion,
+      pinnedProtocolVersion: pinnedProtocol,
+      missingCapabilities,
+    };
   }
-  return { verified: true, actual: candidate, pinned };
+
+  if (actual === null) {
+    onWarn(
+      `server version unverifiable (no \`letta_code_version\` in app_server_info); relying on the committed contract test as the upgrade gate`,
+    );
+    return {
+      verified: false,
+      actual,
+      pinned,
+      protocolVersion,
+      pinnedProtocolVersion: pinnedProtocol,
+      missingCapabilities,
+    };
+  }
+
+  return {
+    verified: true,
+    actual,
+    pinned,
+    protocolVersion,
+    pinnedProtocolVersion: pinnedProtocol,
+    missingCapabilities,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

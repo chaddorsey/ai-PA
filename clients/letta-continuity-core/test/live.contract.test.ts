@@ -1,10 +1,13 @@
 /**
- * OPT-IN live contract check against the real sole-owner App Server (`ws://127.0.0.1:4577/ws`).
+ * OPT-IN live contract check against a real App Server. THIS IS THE UPGRADE GATE.
  *
- * Skipped by default so the suite is deterministic and offline. Run explicitly on a server
- * upgrade to re-validate the wire protocol end-to-end:
+ * Skipped by default so the suite is deterministic and offline. Run it explicitly whenever
+ * the `letta` binary moves, pointing it at a CANDIDATE server started on a CLONE backend
+ * (never a second writer on the live one — R1):
  *
- *   LETTA_LIVE_WS=1 npx vitest run test/live.contract.test.ts
+ *   LETTA_LIVE_WS=1 npx vitest run test/live.contract.test.ts                 # live :4577
+ *   LETTA_LIVE_WS=1 LETTA_LIVE_WS_URL=ws://127.0.0.1:4599/ws \
+ *     LETTA_LIVE_WS_EXPECT_VERSION=0.30.20 npx vitest run test/live.contract.test.ts
  *
  * Uses ONLY the low-stakes docs agent + `default` conversation + a benign no-tool prompt,
  * loopback — never MC or another agent. Every op is bounded; it cannot hang the suite.
@@ -12,25 +15,70 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  type AppServerInfoResponseFrame,
+  type ConversationCreateResponseFrame,
   type ConversationListResponseFrame,
   Outbound,
+  PINNED_PROTOCOL_VERSION,
+  PINNED_SERVER_VERSION,
+  REQUIRED_CAPABILITIES,
   type ServerFrame,
+  buildAppServerInfo,
+  buildConversationCreate,
   buildConversationList,
   buildInput,
+  buildRuntimeStart,
   isStreamDelta,
   isTurnFinished,
 } from "../src/protocol.js";
 import { WsConnection } from "../src/ws.js";
 
 const LIVE = process.env.LETTA_LIVE_WS === "1";
+const URL = process.env.LETTA_LIVE_WS_URL ?? "ws://127.0.0.1:4577/ws";
+/** The version this run EXPECTS to find — defaults to the pin, override when vetting an upgrade. */
+const EXPECT_VERSION = process.env.LETTA_LIVE_WS_EXPECT_VERSION ?? PINNED_SERVER_VERSION;
 const DOCS_AGENT = "agent-local-3898b33a-2249-4f1c-9478-26a9aad26d4a";
 const RUNTIME = { agent_id: DOCS_AGENT, conversation_id: "default" };
 
-describe.skipIf(!LIVE)("live contract (opt-in, :4577 docs agent)", () => {
-  it("hello + conversation_list RPC + a benign streamed turn round-trip the pinned frames", async () => {
+describe.skipIf(!LIVE)(`live contract (opt-in, ${URL}, docs agent)`, () => {
+  it("app_server_info reports the expected version, protocol, and required capabilities", async () => {
     const ws = new WsConnection({
-      url: "ws://127.0.0.1:4577/ws",
+      url: URL,
       runtime: RUNTIME,
+      // Assert the reported identity below rather than failing the connect, so a drifted
+      // server produces a readable diff instead of an opaque connect error.
+      pinnedVersion: EXPECT_VERSION,
+      versionPolicy: "warn",
+      openTimeoutMs: 8000,
+    });
+    try {
+      await ws.connect();
+      // The gate ran during connect and recorded what it saw.
+      expect(ws.identity?.actual).toBe(EXPECT_VERSION);
+      expect(ws.identity?.protocolVersion).toBe(PINNED_PROTOCOL_VERSION);
+      expect(ws.identity?.missingCapabilities).toEqual([]);
+
+      // Re-issue the RPC to assert the full capability map, not just the required subset.
+      const info = await ws.request<AppServerInfoResponseFrame>(
+        buildAppServerInfo,
+        Outbound.appServerInfo,
+        8000,
+      );
+      expect(info.success).toBe(true);
+      for (const cap of REQUIRED_CAPABILITIES) {
+        expect(info.capabilities?.[cap]).toBe(true);
+      }
+    } finally {
+      ws.close();
+    }
+  }, 30000);
+
+  it("conversation_list + conversation_create + a benign streamed turn round-trip the pinned frames", async () => {
+    const ws = new WsConnection({
+      url: URL,
+      runtime: RUNTIME,
+      pinnedVersion: EXPECT_VERSION,
+      versionPolicy: "warn",
       openTimeoutMs: 8000,
       helloTimeoutMs: 10000,
       rpcTimeoutMs: 10000,
@@ -47,6 +95,26 @@ describe.skipIf(!LIVE)("live contract (opt-in, :4577 docs agent)", () => {
       );
       expect(Array.isArray(list.conversations)).toBe(true);
 
+      // Mint a scratch conversation rather than assuming `default` exists — a clone-backend
+      // candidate server has none, and Unit 8's cutover depends on this exact RPC working.
+      // A guard-failing envelope is dropped silently, so this also proves the envelope.
+      const created = await ws.request<ConversationCreateResponseFrame>(
+        (rid) => buildConversationCreate(rid, DOCS_AGENT, "contract-gate"),
+        Outbound.conversationCreate,
+      );
+      expect(created.success).toBe(true);
+      const convId = created.conversation?.id;
+      expect(typeof convId).toBe("string");
+      if (typeof convId !== "string") throw new Error("no conversation id");
+
+      // Re-home this connection's runtime onto the scratch conversation before injecting.
+      const rt = { agent_id: DOCS_AGENT, conversation_id: convId };
+      const hello2 = await ws.request<ServerFrame>(
+        (rid) => buildRuntimeStart(rid, rt),
+        Outbound.runtimeStart,
+      );
+      expect(hello2.success).toBe(true);
+
       const done = new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error("no turn_finished within 60s")), 60000);
         ws.onFrame((f) => {
@@ -56,11 +124,15 @@ describe.skipIf(!LIVE)("live contract (opt-in, :4577 docs agent)", () => {
           }
         });
       });
-      ws.send(buildInput(RUNTIME, "Reply with exactly: OK. No tools."));
+      ws.send(buildInput(rt, "Reply with exactly: OK. No tools."));
       await done;
 
       expect(frames.some((f) => isStreamDelta(f))).toBe(true);
-      expect(frames.some((f) => isTurnFinished(f))).toBe(true);
+      const finished = frames.filter((f) => isTurnFinished(f));
+      expect(finished.length).toBeGreaterThan(0);
+      // A turn that errored out still emits turn_finished — assert it actually succeeded,
+      // otherwise a broken candidate server passes the gate on shape alone.
+      expect(finished.at(-1)?.stop_reason).not.toBe("error");
     } finally {
       ws.close();
     }

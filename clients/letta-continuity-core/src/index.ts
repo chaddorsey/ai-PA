@@ -47,13 +47,14 @@ export interface ContinuityCoreConfig {
   /** Path to the durable `{agent, conversation}` pointer file (pointer.ts). */
   pointerPath: string;
   url?: string;
-  pinnedVersion?: string;
+  pinnedVersion?: string | readonly string[];
   versionPolicy?: VersionPolicy;
   maxReconnectAttempts?: number;
   reconnectDelayMs?: number;
   openTimeoutMs?: number;
   helloTimeoutMs?: number;
   rpcTimeoutMs?: number;
+  serverInfoTimeoutMs?: number;
   onWarn?: (msg: string) => void;
 }
 
@@ -158,9 +159,12 @@ export class ContinuityCore {
     return this.ws;
   }
 
-  private async openConnection(): Promise<void> {
+  /**
+   * Build a wired WsConnection. Single construction point so the initial connect and the
+   * reconnect path can never drift in their options (notably the version-gate settings).
+   */
+  private newConnection(): WsConnection {
     if (!this.runtime) throw new Error("runtime not resolved");
-    this.connectionState.connecting();
     const ws = new WsConnection({
       url: this.config.url ?? WS_URL,
       runtime: this.runtime,
@@ -169,11 +173,18 @@ export class ContinuityCore {
       openTimeoutMs: this.config.openTimeoutMs,
       helloTimeoutMs: this.config.helloTimeoutMs,
       rpcTimeoutMs: this.config.rpcTimeoutMs,
+      serverInfoTimeoutMs: this.config.serverInfoTimeoutMs,
       onWarn: this.config.onWarn,
     });
     ws.onFrame((f) => this.routeFrame(f));
     ws.onError((e) => this.emitError(e));
     ws.onClose(() => this.handleClose());
+    return ws;
+  }
+
+  private async openConnection(): Promise<void> {
+    this.connectionState.connecting();
+    const ws = this.newConnection();
     this.ws = ws;
     await ws.connect();
     this.connectionState.connected();
@@ -220,19 +231,7 @@ export class ContinuityCore {
   private async reconnect(): Promise<void> {
     if (this.stopped || !this.runtime) return;
     try {
-      const ws = new WsConnection({
-        url: this.config.url ?? WS_URL,
-        runtime: this.runtime,
-        pinnedVersion: this.config.pinnedVersion,
-        versionPolicy: this.config.versionPolicy,
-        openTimeoutMs: this.config.openTimeoutMs,
-        helloTimeoutMs: this.config.helloTimeoutMs,
-        rpcTimeoutMs: this.config.rpcTimeoutMs,
-        onWarn: this.config.onWarn,
-      });
-      ws.onFrame((f) => this.routeFrame(f));
-      ws.onError((e) => this.emitError(e));
-      ws.onClose(() => this.handleClose());
+      const ws = this.newConnection();
       // New connection ⇒ event_seq restarts; forget the per-connection ordering watermark.
       this.assembler.reset();
       this.ws = ws;

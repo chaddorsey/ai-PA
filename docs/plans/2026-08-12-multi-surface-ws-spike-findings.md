@@ -120,7 +120,18 @@ Message types present in the client (each with a paired `_response`):
 600-word prompt on docs (`deepseek-v4-flash`): **835 deltas, max inter-delta gap 0.45s, clean `turn_finished` at 10.7s — no stall.** Two long-turn samples now clean. The #99 stall is not reproduced on the local model; historical occurrences were `chatgpt_oauth`/`Kimi`. **Verdict:** stall risk downgraded (not reproduced on the local fleet's models) but not eliminated (intermittent) → the forward-progress watchdog stays load-bearing; the `letta-bg-fix-sidecar` re-home is likely unnecessary but kept as an option pending longer production observation.
 
 ### Still-deferred (low priority, confirm at build time)
-- [ ] Exact stock-TUI attach flag/env for the App Server (Unit 5)
+- [x] Exact stock-TUI attach flag/env for the App Server (Unit 5) — **RESOLVED 2026-08-13: THERE IS NONE.**
+      The stock TUI cannot attach to an App Server. Evidence from `letta.js` 0.30.20 + live probes:
+      (a) backend selection is binary — `serverKeyForBackendMode()` is
+      `mode === "local" ? getLocalBackendSettingsKey() : getApiServerKey(settings)`; `--backend`
+      accepts only `cloud`/`local`. (b) `LETTA_BASE_URL` feeds the `@letta-ai/letta-client` **REST**
+      SDK (default `https://api.letta.com`), and the App Server serves no native Letta REST
+      (§D) — so `LETTA_BASE_URL=…:4577` cannot work. (c) The only App-Server client in the binary
+      is `createAppServerClient()`, whose sole call site is `startLocalChannelGateway()`
+      (`letta channel-gateway --app-server-url … --channels …`) — a headless chat-channel relay
+      that requires a channel and has no TTY UI.
+      ⇒ §E3's "architecturally viable" applied to the SDK `remote`-backend concept, not the stock
+      TUI. **Unit 5 proceeds with the greenfield REPL** (the plan's documented fallback).
 - [ ] Live approval round-trip end-to-end (protocol confirmed present; exercise during rail/approval build)
 - [ ] Longer-horizon (days) constant-on stability + occasional-stall watch (production observation)
 

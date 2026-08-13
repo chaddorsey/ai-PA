@@ -1,8 +1,8 @@
 /**
  * ws.ts — the single ordered WS connection to the sole-owner App Server.
  *
- * Loopback, no auth (R20). Opens `ws://127.0.0.1:4577/ws`, performs the `runtime_start`
- * hello, asserts the server version (best-effort — see protocol.assertServerVersion), then
+ * Loopback, no auth (R20). Opens `ws://127.0.0.1:4577/ws`, runs the `app_server_info`
+ * version gate (see protocol.assertServerIdentity), performs the `runtime_start` hello, then
  * pumps parsed+validated broadcast frames to a listener and resolves `request_id`-keyed RPCs.
  *
  * EVERY network wait is bounded (open, hello, RPC). There are no unbounded waits and no
@@ -11,13 +11,17 @@
 
 import { type RawData, WebSocket } from "ws";
 import {
+  type AppServerInfoResponseFrame,
+  Outbound,
   ProtocolError,
   RpcResponseFor,
   type Runtime,
   type RuntimeStartResponseFrame,
   type ServerFrame,
+  type ServerIdentityCheck,
   type VersionPolicy,
-  assertServerVersion,
+  assertServerIdentity,
+  buildAppServerInfo,
   buildRuntimeStart,
   nextRequestId,
   parseFrame,
@@ -27,11 +31,17 @@ import {
 export interface WsConnectionOptions {
   url: string;
   runtime: Runtime;
-  pinnedVersion?: string;
+  pinnedVersion?: string | readonly string[];
   versionPolicy?: VersionPolicy;
   openTimeoutMs?: number;
   helloTimeoutMs?: number;
   rpcTimeoutMs?: number;
+  /**
+   * Bound on the pre-hello `app_server_info` version gate. Deliberately short and separate
+   * from `helloTimeoutMs`: a server too old to know the RPC never answers, and that must
+   * degrade to a warning quickly rather than stalling every connect by the hello budget.
+   */
+  serverInfoTimeoutMs?: number;
   onWarn?: (msg: string) => void;
 }
 
@@ -42,7 +52,12 @@ interface Pending {
   timer: ReturnType<typeof setTimeout>;
 }
 
-const DEFAULTS = { openTimeoutMs: 10_000, helloTimeoutMs: 15_000, rpcTimeoutMs: 15_000 };
+const DEFAULTS = {
+  openTimeoutMs: 10_000,
+  helloTimeoutMs: 15_000,
+  rpcTimeoutMs: 15_000,
+  serverInfoTimeoutMs: 5_000,
+};
 
 function rawToString(data: RawData): string {
   if (typeof data === "string") return data;
@@ -60,6 +75,7 @@ export class WsConnection {
   private readonly opts: Required<Omit<WsConnectionOptions, "pinnedVersion" | "versionPolicy">> &
     Pick<WsConnectionOptions, "pinnedVersion" | "versionPolicy">;
   private closedByUs = false;
+  private lastIdentity: ServerIdentityCheck | null = null;
 
   constructor(options: WsConnectionOptions) {
     this.opts = {
@@ -67,8 +83,14 @@ export class WsConnection {
       openTimeoutMs: DEFAULTS.openTimeoutMs,
       helloTimeoutMs: DEFAULTS.helloTimeoutMs,
       rpcTimeoutMs: DEFAULTS.rpcTimeoutMs,
+      serverInfoTimeoutMs: DEFAULTS.serverInfoTimeoutMs,
       ...options,
     };
+  }
+
+  /** Result of the last `app_server_info` version gate, or null if connect() has not run. */
+  get identity(): ServerIdentityCheck | null {
+    return this.lastIdentity;
   }
 
   onFrame(cb: (frame: ServerFrame) => void): () => void {
@@ -96,13 +118,38 @@ export class WsConnection {
     socket.on("error", (err: Error) => this.emitError(err));
     socket.on("close", (code: number, reason: Buffer) => this.handleClose(code, reason.toString()));
 
-    const hello = await this.doHello();
-    assertServerVersion(hello, {
+    // Version gate BEFORE the hello: fail fast on a drifted server rather than after
+    // starting a runtime on it. Verified live — `app_server_info` answers pre-runtime_start.
+    this.lastIdentity = await this.assertIdentity();
+
+    return this.doHello();
+  }
+
+  /**
+   * Run the `app_server_info` version gate. A drift under `refuse` policy (or a missing
+   * required capability under any policy) throws and aborts connect. A server that does not
+   * answer the RPC at all degrades to a warning — it predates the command, and the committed
+   * contract test remains the gate for those.
+   */
+  private async assertIdentity(): Promise<ServerIdentityCheck | null> {
+    let info: AppServerInfoResponseFrame;
+    try {
+      info = await this.request<AppServerInfoResponseFrame>(
+        buildAppServerInfo,
+        Outbound.appServerInfo,
+        this.opts.serverInfoTimeoutMs,
+      );
+    } catch (err) {
+      this.opts.onWarn(
+        `app_server_info unavailable (${err instanceof Error ? err.message : String(err)}); server version unverified — the contract test is the only upgrade gate`,
+      );
+      return null;
+    }
+    return assertServerIdentity(info, {
       pinnedVersion: this.opts.pinnedVersion,
       policy: this.opts.versionPolicy,
       onWarn: this.opts.onWarn,
     });
-    return hello;
   }
 
   private waitForOpen(socket: WebSocket): Promise<void> {

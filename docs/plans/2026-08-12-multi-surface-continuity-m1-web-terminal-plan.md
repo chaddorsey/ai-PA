@@ -319,6 +319,36 @@ Grouped into three phases. Phase A de-risks and builds the runtime foundation; P
 
 - [ ] **Unit 5: Terminal client (greenfield, text-first)**
 
+> **Gate resolved 2026-08-13 — stock-TUI-attach is NOT available; build the greenfield REPL.**
+> The stock letta-code TUI has no App-Server-client mode: `--backend` accepts only `cloud`/`local`
+> (`serverKeyForBackendMode()` is a two-way branch), `LETTA_BASE_URL` drives the **REST** client
+> (`api.letta.com`) which the App Server does not serve (Unit 1 §D), and the binary's only
+> App-Server client (`createAppServerClient`) is used solely by `letta channel-gateway`
+> — a headless channel relay with no TTY. Full evidence in the findings doc's open-items list.
+> ⇒ the "Approach" step 1 below is closed; proceed directly to the greenfield fallback.
+>
+> **Gate side-effects landed the same day (commit on this branch), before any REPL code:**
+> - **Unit 4 bug fixed — `conversation_create` never worked against a real server.** Its envelope
+>   put `agent_id`/`title` at the top level, but the server's guard requires a **`body` object**
+>   (`isConversationCreateCommand`); a guard-failing frame is dropped **silently** (no error, just
+>   an RPC timeout). Unit 4's mock answered any shape, so the offline suite rubber-stamped it and
+>   the live contract test never exercised create. This would have failed at **Unit 8 cutover**,
+>   which mints the dedicated conversation UUID via exactly this RPC. Also fixed:
+>   `conversation_list`'s agent filter must live in `query` (a top-level `agent_id` is ignored,
+>   silently returning every agent's conversations). The mock now **enforces the server's guards**
+>   and the contract test asserts **outbound** envelopes, so this class of bug fails offline.
+> - **The version gate is now real.** Unit 4's `assertServerVersion` was a no-op (it looked for a
+>   version on the hello and on REST, found none, and always returned `actual: null`). The
+>   `app_server_info` RPC does report `letta_code_version`, `protocol_version`, and a capability
+>   map, and answers *before* `runtime_start` — so `assertServerIdentity` now runs as a pre-hello
+>   gate on every connect/reconnect (missing required capability → always throws; version/protocol
+>   drift → per policy).
+> - **0.30.20 vetted, pin widened.** The on-disk binary had moved to **0.30.20** while the running
+>   server stayed on **0.30.19** in memory — so any restart would have silently changed versions.
+>   The contract gate was run against a real 0.30.20 server on a **clone** backend (single-writer
+>   preserved): `protocol_version` still 1, capabilities identical, all frames round-trip, real
+>   streamed turn completes. Both versions now sit in `VALIDATED_SERVER_VERSIONS`.
+
 **Goal:** A lightweight Node/TS terminal attach point onto the constant-on conversation, built on the client-core.
 
 **Requirements:** R5, R7, R17

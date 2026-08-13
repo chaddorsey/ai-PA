@@ -75,6 +75,53 @@ describe("ContinuityCore integration", () => {
     return { core, events };
   }
 
+  it("version gate: a drifted server under refuse policy aborts connect", async () => {
+    server = new MockAppServer({ serverVersion: "0.31.0" });
+    url = await server.start();
+    const { core } = await makeCore({ versionPolicy: "refuse", maxReconnectAttempts: 0 });
+    await expect(core.start()).rejects.toThrow(/0\.31\.0 not in validated set/);
+    // The gate ran BEFORE runtime_start — no runtime was started on the drifted server.
+    expect(server.received.some((m) => m.type === "app_server_info")).toBe(true);
+    expect(server.received.some((m) => m.type === "runtime_start")).toBe(false);
+  });
+
+  it("version gate: a drifted server under warn policy connects but warns", async () => {
+    server = new MockAppServer({ serverVersion: "0.31.0" });
+    url = await server.start();
+    const warns: string[] = [];
+    const { core, events } = await makeCore({
+      versionPolicy: "warn",
+      onWarn: (m) => warns.push(m),
+    });
+    await core.start();
+    core.send("hello");
+    await waitFor(() => events.some((e) => e.type === "turn_finished"));
+    expect(warns.some((w) => /letta_code_version 0\.31\.0 not in validated set/.test(w))).toBe(
+      true,
+    );
+  });
+
+  it("version gate: a server too old to answer app_server_info warns but still connects", async () => {
+    server = new MockAppServer({ omitAppServerInfo: true });
+    url = await server.start();
+    const warns: string[] = [];
+    const { core, events } = await makeCore({
+      serverInfoTimeoutMs: 150,
+      onWarn: (m) => warns.push(m),
+    });
+    await core.start();
+    core.send("hello");
+    await waitFor(() => events.some((e) => e.type === "turn_finished"));
+    expect(warns.some((w) => /app_server_info unavailable/.test(w))).toBe(true);
+  });
+
+  it("version gate: a server missing a required capability aborts connect under warn policy", async () => {
+    server = new MockAppServer({ capabilities: { conversation_management: false } });
+    url = await server.start();
+    const { core } = await makeCore({ versionPolicy: "warn", maxReconnectAttempts: 0 });
+    await expect(core.start()).rejects.toThrow(/conversation_management/);
+  });
+
   it("happy path: send a turn, render stream_delta → turn_finished", async () => {
     server = new MockAppServer();
     url = await server.start();
