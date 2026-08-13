@@ -59,7 +59,7 @@ export interface ContinuityCoreConfig {
 
 export class ContinuityCore {
   private readonly config: ContinuityCoreConfig;
-  private readonly connectionState = new ConnectionStateMachine();
+  private readonly connectionState: ConnectionStateMachine;
   private readonly assembler = new StreamAssembler();
   private pointer: ContinuityPointer | null = null;
   private runtime: Runtime | null = null;
@@ -73,6 +73,11 @@ export class ContinuityCore {
 
   constructor(config: ContinuityCoreConfig) {
     this.config = config;
+    this.connectionState = new ConnectionStateMachine(
+      config.maxReconnectAttempts !== undefined
+        ? { maxReconnectAttempts: config.maxReconnectAttempts }
+        : {},
+    );
   }
 
   onRender(cb: RenderListener): () => void {
@@ -196,10 +201,18 @@ export class ContinuityCore {
 
   private handleClose(): void {
     if (this.stopped || this.ws?.isClosedByUs) return;
+    this.scheduleReconnect();
+  }
+
+  /** Schedule one bounded reconnect. Idempotent: an already-pending timer is not doubled. */
+  private scheduleReconnect(): void {
+    if (this.stopped) return;
+    if (this.reconnectTimer) return; // a reconnect is already queued — never double-schedule
     const mayRetry = this.connectionState.dropped();
     if (!mayRetry) return; // exhausted → disconnected (bounded, no infinite loop)
     const delay = this.config.reconnectDelayMs ?? 1_000;
     this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       void this.reconnect();
     }, delay);
   }
@@ -230,8 +243,11 @@ export class ContinuityCore {
       this.connectionState.connected();
     } catch (e) {
       this.emitError(e as Error);
-      // Treat a failed reconnect as another drop; bounded by the attempt budget.
-      this.handleClose();
+      // Close the failed socket so it can't leak or fire a second handleClose (marks it
+      // closedByUs → its later 'close' event is ignored), then schedule the next bounded
+      // attempt directly (bypassing the closedByUs guard that handleClose would trip on).
+      this.ws?.close();
+      this.scheduleReconnect();
     }
   }
 

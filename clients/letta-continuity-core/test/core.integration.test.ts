@@ -208,4 +208,17 @@ describe("ContinuityCore integration", () => {
     await waitFor(() => core.state === "connected", 5000);
     expect(states).toContain("reconnecting");
   });
+
+  it("bounded reconnect: a server that stays down ends in disconnected after maxReconnectAttempts, no storm", async () => {
+    server = new MockAppServer();
+    url = await server.start();
+    const { core } = await makeCore({ maxReconnectAttempts: 3, reconnectDelayMs: 15 });
+    await core.start();
+    await waitFor(() => core.state === "connected");
+    // Take the server fully down (not just drop sockets) so every reconnect attempt FAILS.
+    await server.stop();
+    // Must converge to disconnected within a bounded number of attempts — never loop forever.
+    await waitFor(() => core.state === "disconnected", 6000);
+    expect(core.state).toBe("disconnected");
+  });
 });
