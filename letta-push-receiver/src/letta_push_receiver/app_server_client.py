@@ -50,6 +50,22 @@ class AppServerClient:
         self.base_url = base_url.rstrip("/")
         self.log = log_fn
 
+    def is_reachable(self, timeout: float = 2.0) -> bool:
+        """Cheap liveness probe of the sole-owner App Server.
+
+        Used by the receiver to return a synchronous 503 (retryable) when the
+        server is down, instead of a false 202 followed by a silent async
+        failure. Deliberately does NOT fall back to any local-subprocess path
+        — the receiver never opens lc-local-backend itself (single-writer; the
+        warm-pool fork fallback was removed in plan Unit 2).
+        """
+        try:
+            req = urllib.request.Request(f"{self.base_url}/v1/models", method="GET")
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return 200 <= resp.status < 300
+        except Exception:
+            return False
+
     def enrich(self, slug: str, prompt: str) -> DispatchResult:
         model = SLUG_TO_MODEL.get(slug, slug)
         body = json.dumps({"model": model, "input": prompt}).encode()

@@ -7,7 +7,6 @@ Routes:
 """
 from __future__ import annotations
 
-import json
 import signal
 import sys
 import time
@@ -15,10 +14,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 from flask import Flask, jsonify, request
 
-from .app_server import AppServer
 from .app_server_client import AppServerClient
 from .config import (
     APP_SERVER_ENABLED,
+    APP_SERVER_URL,
     DEFAULT_AGENTS,
     DEFAULT_SOURCE_ROUTING,
     listen_host,
@@ -38,25 +37,19 @@ def create_app() -> Flask:
     pool = WarmPool(DEFAULT_AGENTS, _log)
     app.config["WARM_POOL"] = pool
 
-    app_server = None
+    # The sole-owner App Server is an EXTERNAL, launchd-supervised process
+    # (plan Unit 2). The receiver is a pure CLIENT of it: it no longer boots
+    # or supervises a server, and it NEVER forks a local subprocess (the
+    # warm-pool dispatch fallback was removed to preserve the single-writer
+    # invariant on lc-local-backend). The client is always constructed — not
+    # gated on a boot succeeding — so a transient App Server outage can't wedge
+    # the receiver into a permanent warm-pool-fork mode (the old sticky-None bug).
     app_client = None
     enrich_pool = None
     if APP_SERVER_ENABLED:
-        try:
-            app_server = AppServer(_log)
-            app_server.ensure()
-            app_client = AppServerClient(app_server.base_url, _log)
-            enrich_pool = ThreadPoolExecutor(max_workers=4)  # fire-and-forget; fresh conv per call = no per-agent serialization
-        except Exception as e:
-            # Degrade, don't crash: a failed App Server boot must not take
-            # the receiver's port down with it. The /push handler's
-            # `app_client is not None` guard falls through to the warm-pool
-            # fallback below when these stay None.
-            _log(f"WARNING: App Server failed to start, degrading to warm-pool-only mode: {e}")
-            app_server = None
-            app_client = None
-            enrich_pool = None
-    app.config["APP_SERVER"] = app_server
+        app_client = AppServerClient(APP_SERVER_URL, _log)
+        enrich_pool = ThreadPoolExecutor(max_workers=4)  # fire-and-forget; fresh conv per call = no per-agent serialization
+    app.config["APP_CLIENT"] = app_client
     app.config["ENRICH_POOL"] = enrich_pool
 
     # ---- routes ----
@@ -107,33 +100,39 @@ def create_app() -> Flask:
             f"prompt_chars={len(pr.prompt)}"
         )
 
-        if APP_SERVER_ENABLED and app_client is not None:
-            def _run_enrich(slug=agent_slug, prompt=pr.prompt):
-                try:
-                    app_server.ensure()                  # restart-on-death
-                    r = app_client.enrich(slug, prompt)  # slug -> friendly model (SLUG_TO_MODEL)
-                    _log(f"ENRICH {slug} -> {r.status} ctx={r.context_tokens}")
-                except Exception as e:
-                    _log(f"ENRICH FAILED {slug}: {e}")
-            enrich_pool.submit(_run_enrich)
-            return jsonify({"status": "queued", "agent": agent_slug,
-                            "dispatch": "app-server"}), 202
-        # else: fall through to the existing pool.dispatch(agent_slug, pr.prompt) path (unchanged fallback)
+        # SINGLE DISPATCH PATH: the external sole-owner App Server. The
+        # receiver must never fork a local subprocess (that would open
+        # lc-local-backend as a second writer → the projection-divergence race
+        # this whole effort exists to eliminate). There is deliberately NO
+        # warm-pool fallback here.
+        if not (APP_SERVER_ENABLED and app_client is not None):
+            return jsonify({
+                "status": "unavailable",
+                "error_message": "App Server dispatch disabled (PA_APP_SERVER_ENABLED != 1)",
+            }), 503
 
-        try:
-            result = pool.dispatch(agent_slug, pr.prompt)
+        if not app_client.is_reachable():
+            # App Server down → synchronous, retryable 503 so the producer
+            # retries later — NOT a false 202, and NOT a warm-pool fork.
+            _log(f"PUSH 503 app-server-unreachable agent={agent_slug}")
             return jsonify({
-                "status": "accepted",
+                "status": "unavailable",
+                "error_message": "sole-owner App Server unreachable; retry",
                 "agent": agent_slug,
-                "source_ref": pr.source_ref,
-                **result,
-            }), 202
-        except Exception as e:
-            _log(f"DISPATCH FAILED for {agent_slug}: {e}")
-            return jsonify({
-                "status": "error",
-                "error_message": str(e),
-            }), 502
+            }), 503
+
+        def _run_enrich(slug=agent_slug, prompt=pr.prompt):
+            try:
+                r = app_client.enrich(slug, prompt)  # slug -> friendly model (SLUG_TO_MODEL)
+                _log(f"ENRICH {slug} -> {r.status} ctx={r.context_tokens}")
+            except Exception as e:
+                # Mid-flight App Server disconnect: logged as failed. Full
+                # retry/idempotency (durable queue) is a deferred fast-follow
+                # (plan Risks: in-flight enrichment loss on restart).
+                _log(f"ENRICH FAILED {slug}: {e}")
+        enrich_pool.submit(_run_enrich)
+        return jsonify({"status": "queued", "agent": agent_slug,
+                        "dispatch": "app-server"}), 202
 
     # ---- shutdown hook ----
 
@@ -159,9 +158,8 @@ def main():
         pool = app.config.get("WARM_POOL")
         if pool is not None:
             pool.shutdown()
-        app_server = app.config.get("APP_SERVER")
-        if app_server is not None:
-            app_server.shutdown()
+        # No App Server to shut down here — it is an external, launchd-supervised
+        # process (plan Unit 2); the receiver is only a client of it.
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, _shutdown)

@@ -19,8 +19,12 @@ def _is_ready_line(line: str) -> bool:
 
 
 class AppServer:
-    def __init__(self, log_fn):
+    def __init__(self, log_fn, backend_dir: str | None = None):
         self.log = log_fn
+        # Explicit backend-dir override (None = production). Passed straight to
+        # build_runtime_env(); the supervisor sources it from a dedicated env
+        # var so a leaked var can't repoint the warm pool. See warm_pool.build_runtime_env.
+        self.backend_dir = backend_dir
         self.proc: subprocess.Popen | None = None
         self._ready = threading.Event()
         self._lock = threading.Lock()
@@ -44,7 +48,7 @@ class AppServer:
             self._start_locked()
 
     def _start_locked(self) -> None:
-        env = build_runtime_env()
+        env = build_runtime_env(self.backend_dir)
         letta_bin = env.get("LETTA_BIN", "/opt/homebrew/bin/letta")
         # Task-1 spike: --backend local is REQUIRED, else --openai-api hits the
         # cloud APIBackend and fails with "Missing LETTA_API_KEY".

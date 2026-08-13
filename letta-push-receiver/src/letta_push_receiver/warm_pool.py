@@ -81,7 +81,10 @@ def _load_dotenv_file(env_path: Optional[str] = None) -> Dict[str, str]:
     return out
 
 
-def build_runtime_env() -> Dict[str, str]:
+PROD_BACKEND_DIR = os.path.expanduser("~/.letta/lc-local-backend")
+
+
+def build_runtime_env(backend_dir: Optional[str] = None) -> Dict[str, str]:
     """Build the base env dict shared by every runtime subprocess.
 
     This is the agent-independent portion of what used to live only in
@@ -90,6 +93,15 @@ def build_runtime_env() -> Dict[str, str]:
     passthrough to keep behavior reproducible. Callers (WarmPool,
     AppServer) may layer per-invocation bits (e.g. per-agent settings) on
     top of this dict.
+
+    ``backend_dir`` overrides ``LETTA_LOCAL_BACKEND_DIR`` and defaults to the
+    production backend (``PROD_BACKEND_DIR``). It is an EXPLICIT parameter on
+    purpose — it is NOT read from ``os.environ`` here — so only the sole-owner
+    App Server supervisor (which reads its own dedicated ``PA_APP_SERVER_BACKEND_DIR``
+    and passes it in for clone-validate cutover) can repoint the backend. The
+    warm pool always calls ``build_runtime_env()`` with no argument, so a leaked
+    env var can never point a warm subprocess at the wrong backend (single-writer
+    safety — see plan Unit 2).
     """
     env = {
         "PATH": (
@@ -98,9 +110,7 @@ def build_runtime_env() -> Dict[str, str]:
         ),
         "HOME": os.path.expanduser("~"),
         "TERM": "dumb",
-        "LETTA_LOCAL_BACKEND_DIR": os.path.expanduser(
-            "~/.letta/lc-local-backend"
-        ),
+        "LETTA_LOCAL_BACKEND_DIR": backend_dir or PROD_BACKEND_DIR,
         "GITEA_BASE_URL": "http://127.0.0.1:3030",
         "PA_AI_REPO_ROOT": "/Volumes/main-drive/ai-PA",
         "PA_WEB_POSTGRES_PORT": "5433",

@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Tracked REFERENCE copy — the live plist lives (untracked) at
+  ~/Library/LaunchAgents/com.ai-pa.letta-app-server.plist. Plists are not
+  git-tracked in this repo; keep this reference in sync by hand (mirrors the
+  letta-local-runner convention).
+
+  Sole-owner Letta App Server supervisor (plan Units 2-3). launchd KeepAlive
+  restarts THIS supervisor if it dies; the supervisor restarts the letta server
+  child on crash/stall. NOT loaded by the Unit 2-3 change — the production
+  cutover is plan Unit 8 (clone-and-validate), after the other writers of
+  lc-local-backend are quiesced.
+
+  StandardOut/ErrorPath MUST live under ~/Library/Logs (never /Volumes) or
+  launchd fails to spawn with EX_CONFIG/78. These logs are secret-bearing-
+  adjacent (the child's env carries tokens) — treat the dir as sensitive; the
+  supervisor itself never echoes the env.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ai-pa.letta-app-server</string>
+
+  <key>WorkingDirectory</key>
+  <string>/Volumes/main-drive/ai-PA</string>
+
+  <key>Program</key>
+  <string>/Volumes/main-drive/ai-PA/scripts/run-letta-app-server.sh</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/dorseyhomeserver/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>/Users/dorseyhomeserver</string>
+    <key>LANG</key>
+    <string>en_US.UTF-8</string>
+    <key>LC_ALL</key>
+    <string>en_US.UTF-8</string>
+    <key>PA_APP_SERVER_LISTEN</key>
+    <string>ws://127.0.0.1:4577</string>
+    <!-- PA_APP_SERVER_BACKEND_DIR deliberately omitted: defaults to the prod
+         backend. Only a clone-validation launcher sets it, in its own env. -->
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <!-- Paces relaunch, incl. the deliberate non-zero exit when the backend lock
+       is already held (single-writer refusal). Avoids a crash-loop. -->
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/dorseyhomeserver/Library/Logs/letta-app-server/stdout.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/dorseyhomeserver/Library/Logs/letta-app-server/stderr.log</string>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>

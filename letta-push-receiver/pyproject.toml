@@ -9,9 +9,15 @@ packages = [{include = "letta_push_receiver", from = "src"}]
 python = "^3.10"
 flask = "^3.0"
 pyyaml = "^6.0"
+# Supervisor's forward-progress stall probe drives a synthetic /ws turn.
+# (Degrades gracefully to the fast responsiveness check if absent.)
+websockets = "^13.0"
 
 [tool.poetry.scripts]
 letta-push-receiver = "letta_push_receiver.__main__:main"
+# Sole-owner App Server supervisor (plan Units 2-3); run by
+# com.ai-pa.letta-app-server via scripts/run-letta-app-server.sh.
+letta-app-server = "letta_push_receiver.supervisor:main"
 
 [build-system]
 requires = ["poetry-core"]
