@@ -27,10 +27,30 @@ kieran-typescript, adversarial)
 > acceptable only because the live server was captured emitting the dequeue first, and there is
 > now a test saying so rather than leaving the stronger reading in place.
 >
-> **Still open and deliberately not addressed here** (pre-existing, outside Unit 5's charter,
-> relevant to Unit 8): the agent-native gaps — no one-shot mode, exit codes always 0, diagnostics
-> on stdout, pointer helpers unexported, and `send()` unable to distinguish which browser sent a
-> turn in a one-core/N-browser bridge. That last one needs settling **before** M1 Unit 6 starts.
+> **STATUS 2026-08-14 — the agent-native gaps and the Unit 6 nonce blocker are FIXED too**
+> (`8d4fe081`, `de07d2a3`). Suites: **155 core + 4 skipped, 64 terminal, 4 live**.
+> `send(text, {origin})` returns a correlation handle and `runOrigin()` reports the submitting
+> origin, so a one-core/N-browser bridge can attribute each run — settled *before* Unit 6 rather
+> than during it. The terminal gained one-shot (`--message`, or any non-TTY stdin), meaningful
+> exit codes, an stdout/stderr split, `--json` NDJSON, and `conversations list|create
+> [--write-pointer]`, which closes Unit 8's seed loop.
+>
+> **New protocol fact, captured live — matters for M1 Unit 7.** A multi-step agentic reply spans
+> SEVERAL runs, and the run our send starts never emits `turn_finished`:
+>
+> ```
+> turn_start    local-run-320  owns=true     ← our send
+> loop_status   EXECUTING_CLIENT_SIDE_TOOL
+> turn_start    local-run-321  owns=false    ← a NEW run
+> loop_status   WAITING_ON_INPUT
+> turn_finished local-run-321  end_turn      ← only 321 ever finishes
+> ```
+>
+> Consequences: (a) any wait keyed on "our run finished" hangs on every tool-using reply — the
+> one-shot path now terminates on `WAITING_ON_INPUT` instead; (b) such a run is **never released
+> from ownership**, so the idle reaper added earlier is what stops attribution degrading
+> permanently, not a nicety; (c) continuation runs are genuinely unattributable, which is why the
+> terminal renders them `agent?` rather than claiming a peer sent them.
 
 The remediation fixed the defect the previous review named. It also left, and in three places
 introduced, a comparable set — including a **new "nobody answers" path in the very approval code
