@@ -326,3 +326,64 @@ there.
 
 The reconnect findings (B1, B2) similarly undercut Unit 10's stated deliverable, and C1 is a
 remotely-reachable stall on the security boundary Unit 9 introduced.
+
+---
+
+# Round 3 — review of the remediation (2026-08-14)
+
+Scope `9080608e..HEAD`, `clients/` only. Five agents (correctness, adversarial, testing, security,
+kieran-typescript). This round reviewed the fixes for everything above, which had been verified
+only by their author. Suites were green throughout: 155 core / 4 skipped, 64 terminal, 4 live.
+
+Goal for the corrective work: `docs/plans/2026-08-14-001-fix-continuity-test-binding-goal.md`.
+
+## The 13 mutations (the goal's metric 1)
+
+Each reverts ONE component of a landed fix. All leave the suite green unless noted. ✓ = re-verified
+personally rather than taken from an agent report.
+
+| # | Mutation | Result |
+|---|---|---|
+| 1 | ✓ Approval deny: record-before-send (the exact pre-fix hang) — `src/index.ts` routeFrame | 155 passed |
+| 2 | Claim→run binding FIFO → LIFO — `ownership.ts` `onRunObserved` | 155 passed |
+| 3 | Six of seven `fanOut` sites → bare loops | 155 passed |
+| 4 | Unknown queue disposition: park → drop the claim — `ownership.ts` `onQueueRemovals` | 155 passed |
+| 5 | `handleClose` identity guard → pre-fix `this.ws`-reading form | 155 passed |
+| 6 | `reconnect()`'s `previous.close()` → leak the outgoing socket | 155 passed |
+| 7 | `openConnection`'s failed-connect cleanup removed | 155 passed |
+| 8 | All four `writeErr` diagnostics → stdout — `session.ts` | 64 passed |
+| 9 | `ownsAnyMessage` ignores its `origin` argument | 155 passed |
+| 10 | Per-origin request-id nonce reverted — `index.ts` `send()` | 155 passed |
+| 11 | `sentApprovalResponses` reconnect clear removed | unchanged |
+| 12 | ✓ Sanitizer `SEQ_BODY` → the quadratic lazy wildcard | sanitize tests passed (111ms) |
+| 13 | Flapping budget where the snapshot SUCCEEDS then the socket dies | 81 handshakes vs a budget of 2 |
+
+Mutations 1–12 mean the property is unasserted. 13 means the property is absent: the committed
+test suppresses `conversation_messages_list`, so it binds to `fetchSnapshot`'s rethrow rather than
+to "the budget cannot be rearmed".
+
+## Verified defects
+
+**S1** — ✓ `stop()`→`start()` is a silent total blackout (watermark reset only in `reconnect()`;
+second session rendered **zero** events) · ✓ approval send/record ordering unasserted (see #1) ·
+✓ `"lost"` is a terminal claim state (a later dequeue is rejected as an anomaly; `pending` stays 1
+forever) · ✓ the idle reaper cannot fire on a live conversation (global `lastActivity` is bumped by
+*peer* frames; 12 peer turns at ⅓ of the budget → `{claims:0,runs:0}`) · flapping server still
+rearms the budget · one-shot hangs after a mid-turn reconnect (reply renders in full, exits 1) ·
+origin threading stops at the first run, so a bridge cannot route a tool-using reply — **the M1
+Unit 6 blocker is still open** · claim→run binding order unconstrained (in a bridge, a cross-user
+content leak) · `main.ts` has zero tests and holds three S1 defects.
+
+**S2** — `routeFrame` lacks the identity guard `handleClose` has, and `close()` detaches no
+listeners · `--json` stdout unparseable (the `you › ` echo) · `process.exit()` truncates piped
+stdout (122 of 20,000 lines, at exit 0) · inverse dequeue ordering binds a *peer's* run as `"mine"`
+with our origin (the test asserting this "must never happen" stops one turn short) ·
+`--allow-remote` never reaches the core · `--json` emits raw C1 (`JSON.stringify` escapes ESC but
+not U+009B/9C/9D/DEL) · failed `start()` leaves a live reconnect timer · `ContinuityFatalError`
+carries no `request_id`/`origin`, and `input-rejected` is not session-fatal.
+
+**S3** — sanitizer bodies over 4096 survive as visible text (flips at 4097) · invisible class misses
+U+E0100–E01EF and U+FFF9–FFFB · `--timeout` above ~24.8 days overflows and fires in ~4ms ·
+`renderDelta` treats an `undefined` origin as `self` · `SessionCore`'s conformance assertion does
+not catch the bivariance it claims · NDJSON drops `loop_status.status` · `conversation_*` results
+narrowed by cast, and `--write-pointer` can clobber a good pointer.
