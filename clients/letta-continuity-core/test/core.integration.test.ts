@@ -499,6 +499,17 @@ describe("ContinuityCore integration", () => {
       await injector.start();
       await observer.start();
 
+      // Watch the error channel on BOTH surfaces. This is the assertion that used to be missing:
+      // the test built the exact settled-race scenario and then asserted `expect(true).toBe(true)`,
+      // so it certified as green a path that emitted a user-visible error on every approval —
+      // a false ProtocolError on the winner (the ack carries no `disposition`, and demanding one
+      // was our bug) and "input rejected by the server" on the loser (the settled race is the
+      // expected outcome of the policy, not a rejection of anyone's turn).
+      const injectorErrors: string[] = [];
+      const observerErrors: string[] = [];
+      injector.onError((e) => injectorErrors.push(e.message));
+      observer.onError((e) => observerErrors.push(e.message));
+
       injector.send("do a risky thing");
       await waitFor(() => {
         const responses = server.received.filter(
@@ -507,8 +518,12 @@ describe("ContinuityCore integration", () => {
         );
         return responses.length >= 2;
       });
-      // Both answered; at least one was accepted.
-      expect(true).toBe(true);
+      // Let both acks land before judging the error channel.
+      await waitFor(() => server.received.length > 0);
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(injectorErrors).toEqual([]);
+      expect(observerErrors).toEqual([]);
     });
 
     it("a redelivered approval does not produce a second response from the same client", async () => {
@@ -547,6 +562,54 @@ describe("ContinuityCore integration", () => {
         (m) => m.type === "input" && (m.payload as { kind?: string }).kind === "approval_response",
       ).length;
       expect(after).toBe(first);
+    });
+
+    it("an approval redelivered AFTER A RECONNECT is answered again", async () => {
+      // The mirror of the test above, and the more dangerous direction. Suppression is right on
+      // one connection and wrong across a seam: a deny that was written to a socket which then
+      // died was never received, so the server re-broadcasts the still-pending request on the new
+      // connection. If the at-most-once set survives the seam, that redelivery is skipped and
+      // NOBODY answers — the one outcome that hangs the turn on every attached surface. The server
+      // settles duplicates itself, so answering twice is free and staying silent is not.
+      server = new MockAppServer({ approvalMode: true });
+      url = await server.start();
+      const { core } = await makeCore();
+      await core.start();
+      core.send("do a risky thing");
+      await waitFor(() =>
+        server.received.some(
+          (m) =>
+            m.type === "input" && (m.payload as { kind?: string }).kind === "approval_response",
+        ),
+      );
+      const answered = server.received.find(
+        (m) => m.type === "input" && (m.payload as { kind?: string }).kind === "approval_response",
+      )?.payload as { request_id: string };
+      const before = server.received.filter(
+        (m) => m.type === "input" && (m.payload as { kind?: string }).kind === "approval_response",
+      ).length;
+
+      server.dropAllConnections();
+      await waitFor(() => server.connectionCount > 0, 5_000);
+      // Give the reconnect's runtime_start + snapshot time to settle before redelivering.
+      await new Promise((r) => setTimeout(r, 150));
+
+      server.sendRaw({
+        type: "control_request",
+        request_id: answered.request_id,
+        request: {
+          subtype: "can_use_tool",
+          tool_name: "Bash",
+          tool_call_id: answered.request_id.replace(/^perm-/, ""),
+        },
+      });
+      await waitFor(() => {
+        const n = server.received.filter(
+          (m) =>
+            m.type === "input" && (m.payload as { kind?: string }).kind === "approval_response",
+        ).length;
+        return n > before;
+      }, 3_000);
     });
 
     it("every approval is surfaced to consumers, not silently swallowed", async () => {

@@ -139,6 +139,15 @@ const FIXTURES = {
     accepted: true,
     disposition: "queued",
   },
+  // An approval_response ack. `disposition` is a message-QUEUE concept, so it is absent here:
+  // the server's own typedef declares it optional and `acknowledgeInput(handled, ...)` on the
+  // approval path passes no third argument. Captured from the 0.30.20 bundle.
+  input_accepted_approval_ack: {
+    type: "input_accepted",
+    request_id: "appr-abc123-7",
+    runtime: RT,
+    accepted: true,
+  },
   input_rejected: {
     type: "input_accepted",
     request_id: "input-abc123-11",
@@ -395,10 +404,16 @@ describe("contract: DRIFT fails loudly (the upgrade gate)", () => {
     expect(() => validateInboundFrame(parseFrame(JSON.stringify(noDisp)))).toThrow(/disposition/);
   });
 
-  it("input_accepted drift: an accepted ack without a disposition fails loudly", () => {
-    const drifted = { ...FIXTURES.input_accepted_started } as Record<string, unknown>;
-    drifted.disposition = undefined;
-    expect(() => validateInboundFrame(parseFrame(JSON.stringify(drifted)))).toThrow(/disposition/);
+  it("an accepted ack with NO disposition validates — the approval-response shape", () => {
+    // This assertion is inverted from what it was. The old rule ("an accepted ack MUST carry a
+    // disposition") pinned the client's misreading as the contract: the server's typedef declares
+    // `disposition?: "started" | "queued"` and both the approval path and the teleport path ack
+    // without one. Requiring it meant every approval this client answered raised a false
+    // ProtocolError AND had its ack dropped — poisoning the very drift signal this file exists to
+    // provide, on the one path with no live capture to check against.
+    expect(() =>
+      validateInboundFrame(parseFrame(JSON.stringify(FIXTURES.input_accepted_approval_ack))),
+    ).not.toThrow();
 
     const noAccepted = { ...FIXTURES.input_accepted_started } as Record<string, unknown>;
     noAccepted.accepted = undefined;

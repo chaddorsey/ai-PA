@@ -98,7 +98,7 @@ export class ContinuityCore {
   private runtime: Runtime | null = null;
   private ws: WsConnection | null = null;
   private liveDedup: LiveDedup | null = null;
-  /** Which runs on the shared conversation are ours (drives approval fail-closed). */
+  /** Which runs on the shared conversation are ours — drives ORIGIN LABELLING, not approvals. */
   private readonly ownership = new RunOwnership();
   /**
    * Makes this instance's correlation ids distinct from any other client PROCESS on the same
@@ -106,11 +106,21 @@ export class ContinuityCore {
    */
   private readonly clientNonce: string;
   /**
-   * control_request ids already answered. Bounded implicitly by the turn rate; entries are cheap
-   * strings and a conversation's approval count is small. Prevents a redelivered frame from
+   * control_request ids already answered ON THIS CONNECTION. Prevents a redelivered frame from
    * emitting a second (harmless but noisy) response.
+   *
+   * CLEARED ON RECONNECT, deliberately. An entry means "we put a deny on the wire", which is not
+   * the same as "the server received it" — a socket that dies between the two leaves the approval
+   * unanswered while this set claims otherwise. Since the server settles duplicates itself,
+   * re-answering after a seam is strictly the safe direction and silence is not.
    */
-  private readonly answeredApprovals = new Set<string>();
+  private answeredApprovals = new Set<string>();
+  /**
+   * request_ids of approval responses WE sent, so their acks can be told apart from acks for the
+   * user's own turns. The server answers the loser of a settled approval race with
+   * `accepted:false, "Approval request is no longer pending"` — expected, not an error.
+   */
+  private sentApprovalResponses = new Set<string>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
   private readonly errorListeners = new Set<(err: Error) => void>();
@@ -288,6 +298,20 @@ export class ContinuityCore {
   private routeFrame(frame: ServerFrame): void {
     // Correlation bookkeeping first — these frames decide which runs are ours (ownership.ts).
     if (isInputAccepted(frame)) {
+      // An ack for an approval response we sent is NOT an ack for a user turn. On a shared
+      // conversation the server settles each approval race and answers the loser
+      // `accepted:false, "Approval request is no longer pending"` — the expected outcome of
+      // everyone answering, which is the policy. Reporting it through emitError put a red
+      // "input rejected by the server" on N-1 surfaces per approval, indistinguishable from a
+      // real rejection of the user's own message.
+      if (this.sentApprovalResponses.delete(frame.request_id)) {
+        if (!frame.accepted) {
+          this.config.onWarn?.(
+            `approval settled by another surface: ${frame.error ?? "no longer pending"}`,
+          );
+        }
+        return;
+      }
       this.ownership.onInputAccepted(frame.request_id, frame.accepted, frame.disposition);
       if (!frame.accepted) {
         this.emitError(new Error(`input rejected by the server: ${frame.error ?? "unknown"}`));
@@ -315,15 +339,23 @@ export class ContinuityCore {
     if (isControlRequest(frame)) {
       const id = frame.request_id;
       if (!this.answeredApprovals.has(id) && this.ws && this.runtime) {
+        const responseId = nextRequestId("appr", this.clientNonce);
+        // Send FIRST, record second. Recording an intent as if it were a delivered answer is how
+        // an approval goes unanswered: `send` throws when the socket is not OPEN, and a watchdog
+        // restart lands exactly there. With the id already marked, the server's redelivery on the
+        // new connection is suppressed and NOBODY answers — the one outcome that hangs every
+        // surface. Same ordering rule as send() below, where the cost of getting it wrong is only
+        // a mislabelled turn.
+        try {
+          this.sentApprovalResponses.add(responseId);
+          this.ws.send(buildApprovalDeny(responseId, this.runtime, id, APPROVAL_DENY_MESSAGE));
+        } catch (err) {
+          this.sentApprovalResponses.delete(responseId);
+          // Leave `id` unanswered so a redelivery after reconnect is answered rather than skipped.
+          this.emitError(err instanceof Error ? err : new Error(String(err)));
+          return;
+        }
         this.answeredApprovals.add(id);
-        this.ws.send(
-          buildApprovalDeny(
-            nextRequestId("appr", this.clientNonce),
-            this.runtime,
-            id,
-            APPROVAL_DENY_MESSAGE,
-          ),
-        );
         this.emitApproval(frame, "denied");
       }
       return;
@@ -385,6 +417,10 @@ export class ContinuityCore {
       // The gap may have hidden an ack, a dequeue, or a turn_finished — attribution is no
       // longer trustworthy, so unknown approvals fail closed until outstanding work drains.
       this.ownership.onReconnect();
+      // Per-connection state: an answer we believe we sent may have died with the old socket, and
+      // an ack for it can no longer arrive. Both sets must not outlive the connection.
+      this.answeredApprovals = new Set();
+      this.sentApprovalResponses = new Set();
       this.ws = ws;
       await ws.connect();
       // Snapshot BEFORE resuming live so the message-id watermark bridges the seam.

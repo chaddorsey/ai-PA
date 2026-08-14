@@ -573,10 +573,13 @@ export function validateInboundFrame(frame: ServerFrame): void {
         throw new ProtocolError("input_accepted: missing `request_id`");
       if (typeof frame.accepted !== "boolean")
         throw new ProtocolError("input_accepted: missing boolean `accepted`");
-      // An accepted input MUST say what happened to it: "started" vs "queued" is what decides
-      // whether a claim arms now or waits for its dequeue notice.
-      if (frame.accepted && typeof frame.disposition !== "string")
-        throw new ProtocolError("input_accepted: accepted ack missing `disposition`");
+      // `disposition` decides whether a claim arms now or waits for its dequeue notice — but it
+      // is OPTIONAL, and demanding it was wrong. It is a message-queue concept: the server's
+      // typedef declares `disposition?`, and an ack for an `approval_response` (or the teleport
+      // path) carries none. Requiring it rejected a frame a correct server sends on every
+      // approval. A wrongly-TYPED disposition is still drift and still fails loudly.
+      if (frame.disposition !== undefined && typeof frame.disposition !== "string")
+        throw new ProtocolError("input_accepted: `disposition` present but not a string");
       return; // no event_seq: this is a control-channel ack, not a broadcast
     }
     case Inbound.appServerInfoResponse:
