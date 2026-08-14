@@ -442,6 +442,78 @@ describe("ContinuityCore integration", () => {
     );
   });
 
+  it("ONE core serving TWO origins attributes each run back to its own sender", async () => {
+    // The M1 Unit 6 shape: one core, N browsers. send() minted ids from a single
+    // construction-time nonce and returned nothing, so every run the core started was equally
+    // "ours" to every consumer — each browser would have seen the others' turns under its own
+    // label. This is the assertion that could not even be WRITTEN against the old signature.
+    server = new MockAppServer();
+    url = await server.start();
+    const { core, events } = await makeCore();
+    await core.start();
+
+    const a = core.send("from tab A", { origin: "tab-A" });
+    const b = core.send("from tab B", { origin: "tab-B" });
+    expect(a.clientMessageId).not.toBe(b.clientMessageId);
+    expect(a.origin).toBe("tab-A");
+
+    const originsAtStart: Array<string | undefined> = [];
+    core.onRender((e) => {
+      if (e.type === "turn_start" && e.runId && core.ownsRun(e.runId)) {
+        originsAtStart.push(core.runOrigin(e.runId));
+      }
+    });
+    await waitFor(() => events.filter((e) => e.type === "turn_finished").length >= 2, 5_000);
+
+    // Both runs are ours, and each carries the origin that submitted it — not a shared "mine".
+    expect(originsAtStart.slice().sort()).toEqual(["tab-A", "tab-B"]);
+  });
+
+  it("a core can be targeted programmatically, with no pointer FILE", async () => {
+    // A bridge serving a conversation per request had to materialise a temp file and delete it,
+    // on a path with no other disk dependency — and Unit 8's seed step, which mints the
+    // conversation id via conversationCreate, had nowhere to put the result.
+    server = new MockAppServer();
+    url = await server.start();
+    const core = new ContinuityCore({
+      pointer: { agentId: AGENT, conversationId: CONV, label: "programmatic" },
+      url,
+      openTimeoutMs: 2000,
+      helloTimeoutMs: 2000,
+    });
+    cores.push(core);
+    const events: RenderEvent[] = [];
+    core.onRender((e) => events.push(e));
+
+    await core.start();
+    core.send("hello");
+    await waitFor(() => events.some((e) => e.type === "turn_finished"));
+  });
+
+  it("a core given NEITHER a pointer nor a path says so plainly", async () => {
+    server = new MockAppServer();
+    url = await server.start();
+    const core = new ContinuityCore({ url });
+    cores.push(core);
+    await expect(core.start()).rejects.toThrow(/needs a target/);
+  });
+
+  it("reconnect exhaustion is reported as FATAL, not just as an error", async () => {
+    // onError alone could not tell "something went wrong" from "stop waiting", so a client that
+    // had permanently lost the App Server still exited 0.
+    server = new MockAppServer();
+    url = await server.start();
+    const { core } = await makeCore({ reconnectDelayMs: 10, maxReconnectAttempts: 1 });
+    const fatals: string[] = [];
+    core.onError(() => {});
+    core.onFatal((e) => fatals.push(e.reason));
+    await core.start();
+
+    await server.stop();
+    await waitFor(() => fatals.length > 0, 5_000);
+    expect(fatals).toContain("reconnect-exhausted");
+  });
+
   it("a claim stranded by a lost ack is REAPED, so attribution recovers", async () => {
     // reapIdle was documented as the bound on stuck claims, unit-tested, and called by nothing.
     // The consequence was not a slow leak but a permanent one: one stranded claim pins

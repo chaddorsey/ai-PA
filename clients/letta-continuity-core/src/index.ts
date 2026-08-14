@@ -80,9 +80,50 @@ const REAP_IDLE_MS = 900_000;
 const APPROVAL_DENY_MESSAGE =
   "Auto-denied: this conversation is shared across surfaces and has no interactive approval UI yet (milestone 1).";
 
+/**
+ * A condition the session cannot recover from.
+ *
+ * Distinct from the ordinary `onError` channel because consumers must be able to tell "something
+ * went wrong" from "stop waiting". Both used to arrive as a bare Error on the same channel, whose
+ * only consumer printed prose — so a client that had permanently lost the App Server still exited
+ * 0, and a library consumer could only tell dead from closed-on-purpose by string-matching.
+ */
+export class ContinuityFatalError extends Error {
+  constructor(
+    message: string,
+    readonly reason: "reconnect-exhausted" | "input-rejected",
+  ) {
+    super(message);
+    this.name = "ContinuityFatalError";
+  }
+}
+
+export interface SendOptions {
+  /**
+   * Who is submitting this turn. Omit for a single-surface client; supply a stable per-consumer
+   * value (a browser session id, say) when one core serves several.
+   */
+  origin?: string;
+}
+
+export interface SendHandle {
+  requestId: string;
+  clientMessageId: string;
+  origin?: string;
+}
+
 export interface ContinuityCoreConfig {
   /** Path to the durable `{agent, conversation}` pointer file (pointer.ts). */
-  pointerPath: string;
+  /**
+   * Where to read the {agent, conversation} from. Optional now: pass `pointer` instead when the
+   * caller already knows its target. Requiring a FILE meant a bridge serving a conversation per
+   * request had to materialise a temp file and delete it, on a code path with no other disk
+   * dependency — and Unit 8's seed step, which mints the conversation via conversationCreate,
+   * had nowhere to put the result.
+   */
+  pointerPath?: string;
+  /** A resolved target, used in preference to `pointerPath`. */
+  pointer?: ContinuityPointer;
   url?: string;
   pinnedVersion?: string | readonly string[];
   versionPolicy?: VersionPolicy;
@@ -159,6 +200,7 @@ export class ContinuityCore {
   private reapTimer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
   private readonly errorListeners = new Set<(err: Error) => void>();
+  private readonly fatalListeners = new Set<(err: ContinuityFatalError) => void>();
   private readonly approvalListeners = new Set<(e: ApprovalEvent) => void>();
 
   constructor(config: ContinuityCoreConfig) {
@@ -187,6 +229,12 @@ export class ContinuityCore {
     this.errorListeners.add(cb);
     return () => this.errorListeners.delete(cb);
   }
+
+  /** Subscribe to session-fatal conditions. Fires at most once per cause. */
+  onFatal(cb: (err: ContinuityFatalError) => void): () => void {
+    this.fatalListeners.add(cb);
+    return () => this.fatalListeners.delete(cb);
+  }
   /**
    * Approval activity on this conversation. Surfaced even though M1 answers automatically: an
    * auto-deny the user never sees is indistinguishable from the agent choosing not to use a tool,
@@ -209,7 +257,7 @@ export class ContinuityCore {
   /** Resolve the pointer, connect, and begin streaming. */
   async start(): Promise<void> {
     this.stopped = false;
-    this.pointer = await readPointer(this.config.pointerPath);
+    this.pointer = await this.resolvePointer();
     this.runtime = {
       agent_id: this.pointer.agentId,
       conversation_id: this.pointer.conversationId,
@@ -223,20 +271,27 @@ export class ContinuityCore {
    * ours (see ownership.ts), which is what lets the transcript label it `you`/`agent` rather than
    * `peer`. It has no bearing on approvals — those are answered unconditionally.
    */
-  send(text: string): void {
+  send(text: string, opts: SendOptions = {}): SendHandle {
     if (!this.ws || !this.runtime) throw new Error("ContinuityCore not started");
-    const requestId = nextRequestId("input", this.clientNonce);
-    const clientMessageId = nextRequestId("cm", this.clientNonce);
+    // Vary the nonce per send when the caller supplies an origin. protocol.nextRequestId has
+    // always taken `nonce` as a PARAMETER for exactly this reason — "the web client is ONE core
+    // fanning out to N browsers, so it must be able to vary the nonce per send" — but the facade
+    // captured a single construction-time value and offered no way to. A bridge therefore could
+    // not tell which browser a run belonged to: every run the core started was equally "ours".
+    const nonce = opts.origin ? `${this.clientNonce}-${opts.origin}` : this.clientNonce;
+    const requestId = nextRequestId("input", nonce);
+    const clientMessageId = nextRequestId("cm", nonce);
     // Register the claim only once the frame is actually on the wire. Registering first leaves a
     // claim for a send that threw, and nothing can ever resolve it — hasOutstanding() then stays
     // true for the process lifetime, which pins every downstream bound that depends on it.
-    this.ownership.beginSend(requestId, clientMessageId);
+    this.ownership.beginSend(requestId, clientMessageId, opts.origin);
     try {
       this.ws.send(buildInput(this.runtime, text, { requestId, clientMessageId }));
     } catch (err) {
       this.ownership.abandon(requestId);
       throw err;
     }
+    return { requestId, clientMessageId, origin: opts.origin };
   }
 
   /** Current run-ownership state (owned run ids, unbound claims, degraded flag). */
@@ -255,9 +310,17 @@ export class ContinuityCore {
    * `update_queue` is broadcast to every subscriber, so depth alone cannot tell the surface that
    * is waiting from the surface whose turn is currently running.
    */
-  queueHasMine(frame: ServerFrame): boolean {
+  queueHasMine(frame: ServerFrame, origin?: string): boolean {
     if (!isQueue(frame)) return false;
-    return this.ownership.ownsAnyMessage(queuedClientMessageIds(frame));
+    return this.ownership.ownsAnyMessage(queuedClientMessageIds(frame), origin);
+  }
+
+  /**
+   * The origin that submitted `runId`, if we own it. A bridge uses this to route a run's output
+   * back to the consumer that asked for it, instead of broadcasting every run to all of them.
+   */
+  runOrigin(runId: string | undefined): string | undefined {
+    return runId === undefined ? undefined : this.ownership.originOf(runId);
   }
 
   ownsRun(runId: string | undefined): boolean {
@@ -339,6 +402,14 @@ export class ContinuityCore {
     return ws;
   }
 
+  private async resolvePointer(): Promise<ContinuityPointer> {
+    if (this.config.pointer) return this.config.pointer;
+    if (this.config.pointerPath) return readPointer(this.config.pointerPath);
+    throw new Error(
+      "ContinuityCore needs a target: pass `pointer` (an {agentId, conversationId}) or `pointerPath`",
+    );
+  }
+
   /** Begin the idle sweep. Idempotent; cleared in stop(). */
   private startReaper(): void {
     if (this.reapTimer) return;
@@ -393,7 +464,12 @@ export class ContinuityCore {
       }
       this.ownership.onInputAccepted(frame.request_id, frame.accepted, frame.disposition);
       if (!frame.accepted) {
-        this.emitError(new Error(`input rejected by the server: ${frame.error ?? "unknown"}`));
+        this.emitFatal(
+          new ContinuityFatalError(
+            `input rejected by the server: ${frame.error ?? "unknown"}`,
+            "input-rejected",
+          ),
+        );
       }
       return; // control-channel ack: never rendered
     }
@@ -486,9 +562,10 @@ export class ContinuityCore {
     if (!mayRetry) {
       // Exhaustion is a dead end the user must be told about: the process stays alive and the
       // prompt still accepts input, so a bare state change reads as "quiet", not "gave up".
-      this.emitError(
-        new Error(
+      this.emitFatal(
+        new ContinuityFatalError(
           "reconnect budget exhausted — the App Server did not come back. Restart this client once it is up.",
+          "reconnect-exhausted",
         ),
       );
       return;
@@ -583,6 +660,14 @@ export class ContinuityCore {
     );
   }
 
+  private emitFatal(err: ContinuityFatalError): void {
+    // Fatal implies error: existing consumers that only watch onError keep working unchanged.
+    this.emitError(err);
+    fanOut(this.fatalListeners, [err], (e) =>
+      this.config.onWarn?.(`fatal listener threw: ${e.message}`),
+    );
+  }
+
   private emitError(err: Error): void {
     fanOut(this.errorListeners, [err], (e) =>
       this.config.onWarn?.(`error listener threw: ${e.message}`),
@@ -593,6 +678,7 @@ export class ContinuityCore {
 export type { RenderEvent, RenderListener } from "./stream.js";
 export type { ConnectionState } from "./connection.js";
 export type { ContinuityPointer } from "./pointer.js";
+export { readPointer, writePointer, PointerError } from "./pointer.js";
 export { assertLoopbackUrl, TrustBoundaryError } from "./trust.js";
 export type { Attribution, OwnershipSnapshot } from "./ownership.js";
 export * as protocol from "./protocol.js";

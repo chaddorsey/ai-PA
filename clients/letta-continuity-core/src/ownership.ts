@@ -52,6 +52,13 @@ interface Claim {
   requestId: string;
   clientMessageId: string;
   state: ClaimState;
+  /**
+   * Which caller submitted this. Meaningless for a single-surface client, load-bearing for a
+   * bridge: M1 Unit 6 is ONE core fanning out to N browsers, and without this every run the core
+   * started is equally "ours" to all of them — so each browser would see every other browser's
+   * turn under its own `you`/`agent` label.
+   */
+  origin?: string;
 }
 
 export interface OwnershipSnapshot {
@@ -63,8 +70,8 @@ export interface OwnershipSnapshot {
 export class RunOwnership {
   /** Claims not yet bound to a run, in submission order. */
   private readonly claims: Claim[] = [];
-  /** run_id → the request_id that produced it. */
-  private readonly owned = new Map<string, string>();
+  /** run_id → the claim that produced it (request_id + submitting origin). */
+  private readonly owned = new Map<string, { requestId: string; origin?: string }>();
   /** Every run_id ever attributed, so "new run" means genuinely new. */
   private readonly seenRuns = new Set<string>();
   /**
@@ -95,9 +102,9 @@ export class RunOwnership {
   }
 
   /** Record a send. Call with the same ids used to build the `input` frame. */
-  beginSend(requestId: string, clientMessageId: string): void {
+  beginSend(requestId: string, clientMessageId: string, origin?: string): void {
     this.touch();
-    this.claims.push({ requestId, clientMessageId, state: "awaiting-ack" });
+    this.claims.push({ requestId, clientMessageId, state: "awaiting-ack", origin });
   }
 
   /** Drop a claim whose `input` never reached the wire (the send threw). */
@@ -202,7 +209,7 @@ export class RunOwnership {
       return;
     }
     const [claim] = this.claims.splice(index, 1);
-    if (claim) this.owned.set(runId, claim.requestId);
+    if (claim) this.owned.set(runId, { requestId: claim.requestId, origin: claim.origin });
   }
 
   /**
@@ -235,13 +242,28 @@ export class RunOwnership {
     return "unknown";
   }
 
+  /**
+   * The origin that submitted this run, when we own it. `undefined` means either "not ours" or
+   * "ours, submitted without an origin" — the single-surface case, where the distinction is moot.
+   */
+  originOf(runId: string): string | undefined {
+    return this.owned.get(runId)?.origin;
+  }
+
   owns(runId: string): boolean {
     return this.owned.has(runId);
   }
 
-  /** Whether any of these queued client_message_ids is one of ours. */
-  ownsAnyMessage(clientMessageIds: readonly string[]): boolean {
-    return clientMessageIds.some((id) => this.claims.some((c) => c.clientMessageId === id));
+  /**
+   * Whether any of these queued client_message_ids is ours — optionally narrowed to one origin,
+   * so a bridge can tell each browser about its OWN queued turn rather than the core's.
+   */
+  ownsAnyMessage(clientMessageIds: readonly string[], origin?: string): boolean {
+    return clientMessageIds.some((id) =>
+      this.claims.some(
+        (c) => c.clientMessageId === id && (origin === undefined || c.origin === origin),
+      ),
+    );
   }
 
   hasOutstanding(): boolean {
