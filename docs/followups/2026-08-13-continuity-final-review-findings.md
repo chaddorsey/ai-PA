@@ -14,9 +14,23 @@ kieran-typescript, adversarial)
 > recorded per item. Suites after: **145 core + 4 skipped, 54 terminal, 4 live**, plus a live
 > terminal round-trip. The P2/P3 sections below are **not** addressed and remain open.
 >
-> Unit 5 stays open regardless: the P2 set still contains `reapIdle` being unreachable, `event_seq`
-> poisoning, the stale `index.ts:7` header that invites reintroducing the original bug, and the two
-> remaining vacuous tests.
+> **STATUS 2026-08-14 — the P2/P3 set below is now FIXED too** (`69ec98db`…`9ffe6fa9`). Suites:
+> **151 core + 4 skipped, 58 terminal, 4 live**, plus a live terminal round-trip. Each fix again
+> carries a test verified to fail against the unfixed code — notably the origin bound, which the
+> reviewer had proven passed with BOTH eviction loops disabled and now fails at "expected 2000 to
+> be less than or equal to 512".
+>
+> **One earlier claim narrowed by this work.** ownership.ts was described as "hardening against"
+> the inverse dequeue ordering. Driving that ordering end-to-end for the first time showed what
+> the hardening actually buys: the claim is still `queued` when the run is first seen, so nothing
+> binds and attribution degrades to `unknown`. It does **not** still attribute correctly. That is
+> acceptable only because the live server was captured emitting the dequeue first, and there is
+> now a test saying so rather than leaving the stronger reading in place.
+>
+> **Still open and deliberately not addressed here** (pre-existing, outside Unit 5's charter,
+> relevant to Unit 8): the agent-native gaps — no one-shot mode, exit codes always 0, diagnostics
+> on stdout, pointer helpers unexported, and `send()` unable to distinguish which browser sent a
+> turn in a one-core/N-browser bridge. That last one needs settling **before** M1 Unit 6 starts.
 
 The remediation fixed the defect the previous review named. It also left, and in three places
 introduced, a comparable set — including a **new "nobody answers" path in the very approval code
