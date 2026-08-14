@@ -233,7 +233,14 @@ export class WsConnection {
     );
   }
 
-  /** Fire-and-forget send of an already-built frame (e.g. `input`, `approval_send`). */
+  /**
+   * Fire-and-forget send of an already-built frame — an `input` from buildInput, or the approval
+   * response from buildApprovalDeny (which is also an `input`, with an approval_response payload).
+   *
+   * `approval_send` used to be named here. It is not a server command and never was; a frame with
+   * that type is dropped SILENTLY by the command guard, which is how the original approval bug
+   * looked from the client: no error, no response, a turn parked forever.
+   */
   send(frame: ServerFrame): void {
     this.rawSend(frame);
   }

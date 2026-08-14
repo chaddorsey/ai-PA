@@ -90,6 +90,25 @@ export const StopReasons = {
   error: "error",
 } as const;
 
+/**
+ * `input_accepted.disposition` values. These decide whether a claim arms now or waits for its
+ * dequeue notice, so they are behaviour, not decoration — and they were the last wire strings
+ * still living as bare literals in ownership.ts, where a rename would compile silently.
+ *
+ * `submitting` is absent from the server's published typedef but is emitted by the bundle.
+ */
+export const InputDispositions = {
+  started: "started",
+  queued: "queued",
+  submitting: "submitting",
+} as const;
+
+/** `update_queue.removed[].disposition` values. */
+export const QueueDispositions = {
+  dequeued: "dequeued",
+  cancelled: "cancelled",
+} as const;
+
 /** `update_loop_status.loop_status.status` values with behavioural meaning. */
 export const LoopStatuses = {
   waitingOnInput: "WAITING_ON_INPUT",
@@ -161,7 +180,7 @@ export interface Runtime {
  * exfiltrates conversation content to a remote host on render and has no terminal analogue.
  * Sanitizing centrally would corrupt content for one sink while under-protecting the other.
  */
-export type UntrustedText = string & { readonly __untrusted?: unique symbol };
+export type UntrustedText = string & { readonly __untrusted: unique symbol };
 
 /** Mark a server-derived string as untrusted at the type level. Runtime no-op. */
 export function untrusted(text: string): UntrustedText {
@@ -504,10 +523,24 @@ function isRuntime(v: unknown): v is Runtime {
  * or `conversations`, this throws LOUDLY instead of silently mis-parsing.
  * Unknown frame types pass through (forward-compat); known ones are checked hard.
  */
+/**
+ * A plausible per-connection ordering counter.
+ *
+ * `typeof === "number"` was not enough. StreamAssembler latches its watermark to whatever arrives
+ * and drops everything at or below it, so ONE frame carrying MAX_SAFE_INTEGER (or Infinity, or
+ * NaN, or a sign-flipped counter) raises the watermark past every future frame — leaving the
+ * client connected, accepting input, rendering nothing and reporting nothing, with no reset short
+ * of a reconnect. That is precisely the silent mis-parse this file exists to make impossible, so
+ * an out-of-range counter now fails loudly through the same drift path as any other bad field.
+ */
+function isEventSeq(v: unknown): v is number {
+  return typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
+}
+
 export function validateInboundFrame(frame: ServerFrame): void {
   switch (frame.type) {
     case Inbound.streamDelta: {
-      if (typeof frame.event_seq !== "number")
+      if (!isEventSeq(frame.event_seq))
         throw new ProtocolError("stream_delta: missing numeric `event_seq`");
       if (!isRuntime(frame.runtime)) throw new ProtocolError("stream_delta: missing `runtime`");
       const delta = frame.delta;
@@ -522,7 +555,7 @@ export function validateInboundFrame(frame: ServerFrame): void {
       return;
     }
     case Inbound.turnFinished: {
-      if (typeof frame.event_seq !== "number")
+      if (!isEventSeq(frame.event_seq))
         throw new ProtocolError("turn_finished: missing numeric `event_seq`");
       if (typeof frame.turn_id !== "string")
         throw new ProtocolError("turn_finished: missing `turn_id`");
@@ -532,14 +565,14 @@ export function validateInboundFrame(frame: ServerFrame): void {
       return;
     }
     case Inbound.updateLoopStatus: {
-      if (typeof frame.event_seq !== "number")
+      if (!isEventSeq(frame.event_seq))
         throw new ProtocolError("update_loop_status: missing numeric `event_seq`");
       if (!isObject(frame.loop_status) || typeof frame.loop_status.status !== "string")
         throw new ProtocolError("update_loop_status: missing `loop_status.status`");
       return;
     }
     case Inbound.updateQueue: {
-      if (typeof frame.event_seq !== "number")
+      if (!isEventSeq(frame.event_seq))
         throw new ProtocolError("update_queue: missing numeric `event_seq`");
       // Both arrays drive run attribution, and `disposition` decides whether a claim arms or is
       // dropped. A rename here silently re-routes attribution, so it must fail loudly instead.
@@ -555,7 +588,7 @@ export function validateInboundFrame(frame: ServerFrame): void {
     }
     case Inbound.updateSubagentState:
     case Inbound.updateDeviceStatus: {
-      if (typeof frame.event_seq !== "number")
+      if (!isEventSeq(frame.event_seq))
         throw new ProtocolError(`${frame.type}: missing numeric \`event_seq\``);
       return;
     }
@@ -636,7 +669,13 @@ export function subagentCount(f: SubagentStateFrame): number {
 /** Queue removals as a typed list (defensive: the arrays are server-shaped). */
 export function queueRemovals(f: QueueFrame): QueueRemoval[] {
   return (Array.isArray(f.removed) ? f.removed : []).filter(
-    (r): r is QueueRemoval => isObject(r) && typeof r.client_message_id === "string",
+    (r): r is QueueRemoval =>
+      isObject(r) &&
+      typeof r.client_message_id === "string" &&
+      // Narrowing to QueueRemoval asserts `disposition` too, so it has to be checked. Without
+      // this the consumer's `=== "dequeued" ? arm : drop` treated an ABSENT disposition as a
+      // cancellation and destroyed the claim.
+      typeof r.disposition === "string",
   );
 }
 
@@ -685,18 +724,22 @@ export function deltaMessageType(f: StreamDeltaFrame): string {
  */
 export function deltaText(f: StreamDeltaFrame): UntrustedText {
   const d = f.delta;
-  if (typeof d.reasoning === "string") return d.reasoning;
+  // untrusted() is the ONLY sanctioned way to mint this type. Now that the brand is required
+  // rather than optional, a raw string can no longer slip into an UntrustedText slot by accident
+  // — which is what made the old declaration a bidirectional alias for `string` and the whole
+  // boundary decorative.
+  if (typeof d.reasoning === "string") return untrusted(d.reasoning);
   for (const key of ["content", "text", "message"] as const) {
     const v = d[key];
-    if (typeof v === "string") return v;
+    if (typeof v === "string") return untrusted(v);
     if (Array.isArray(v)) {
       const joined = v
         .map((c) => (isObject(c) && typeof c.text === "string" ? c.text : ""))
         .join("");
-      if (joined) return joined;
+      if (joined) return untrusted(joined);
     }
   }
-  return "";
+  return untrusted("");
 }
 
 /** Tool name from an approval control request, for the notice shown to the user. */

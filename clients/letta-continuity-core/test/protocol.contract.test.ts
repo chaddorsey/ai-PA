@@ -44,6 +44,7 @@ import {
   nextRequestId,
   parseFrame,
   queueDepth,
+  queueRemovals,
   subagentCount,
   validateInboundFrame,
 } from "../src/protocol.js";
@@ -418,6 +419,38 @@ describe("contract: DRIFT fails loudly (the upgrade gate)", () => {
     const noAccepted = { ...FIXTURES.input_accepted_started } as Record<string, unknown>;
     noAccepted.accepted = undefined;
     expect(() => validateInboundFrame(parseFrame(JSON.stringify(noAccepted)))).toThrow(/accepted/);
+  });
+
+  it("an out-of-range event_seq fails loudly instead of poisoning the stream", () => {
+    // StreamAssembler latches its watermark to whatever arrives and drops everything at or below
+    // it, so ONE absurd counter silently wedges the connection for its whole life: connected,
+    // accepting input, rendering nothing, reporting nothing. `typeof === "number"` let all of
+    // these through.
+    for (const bad of [
+      Number.MAX_SAFE_INTEGER + 1,
+      Number.POSITIVE_INFINITY,
+      Number.NaN,
+      -1,
+      1.5,
+    ]) {
+      const frame = { ...FIXTURES.stream_delta, event_seq: bad };
+      expect(() => validateInboundFrame(parseFrame(JSON.stringify(frame)))).toThrow(/event_seq/);
+    }
+    // MAX_SAFE_INTEGER itself is in range and must still pass — the bound is on plausibility,
+    // not on being small.
+    const ok = { ...FIXTURES.stream_delta, event_seq: Number.MAX_SAFE_INTEGER };
+    expect(() => validateInboundFrame(parseFrame(JSON.stringify(ok)))).not.toThrow();
+  });
+
+  it("a queue removal with no disposition is not narrowed as if it had one", () => {
+    // queueRemovals() asserted `r is QueueRemoval` — which declares a required disposition —
+    // while only checking client_message_id. The consumer then read the absent field and its
+    // `dequeued ? arm : drop` branch destroyed the claim as though the server had cancelled it.
+    const frame = {
+      ...FIXTURES.update_queue,
+      removed: [{ client_message_id: "cm-abc123-4" }],
+    };
+    expect(queueRemovals(parseFrame(JSON.stringify(frame)) as never)).toEqual([]);
   });
 
   it("an UNKNOWN delta type with no id fails loudly (not silently allowed)", () => {

@@ -35,6 +35,8 @@
  * hung conversation.
  */
 
+import { InputDispositions, QueueDispositions, StopReasons } from "./protocol.js";
+
 /**
  * Upper bound on remembered run ids. Sets preserve insertion order, so the oldest is evicted
  * first. Attribution only needs recent runs; this is generous by orders of magnitude.
@@ -45,9 +47,6 @@ export type ClaimState = "awaiting-ack" | "queued" | "armed" | "lost";
 
 /** How a run relates to this client. See RunOwnership.attribute. */
 export type Attribution = "mine" | "foreign" | "unknown";
-
-/** `turn_finished` carries this when the turn is parked on an approval, not actually done. */
-export const STOP_REASON_REQUIRES_APPROVAL = "requires_approval";
 
 interface Claim {
   requestId: string;
@@ -68,17 +67,25 @@ export class RunOwnership {
   private readonly owned = new Map<string, string>();
   /** Every run_id ever attributed, so "new run" means genuinely new. */
   private readonly seenRuns = new Set<string>();
-  /** client_message_ids whose queue transition we have already applied — replay detection. */
+  /**
+   * client_message_ids whose queue transition we have already applied — replay detection.
+   * Capped like seenRuns: this client is meant to sit attached for days, so "grows with the send
+   * rate" is not a bound.
+   */
   private readonly consumedMessageIds = new Set<string>();
   /** Runs positively attributed to a peer — seen while we held nothing outstanding. */
   private readonly foreignRuns = new Set<string>();
   private lastActivity: number;
   private readonly clock: () => number;
   /**
-   * True when a reconnect may have hidden the frames that would have resolved a claim.
-   * While degraded with claims outstanding we fall back to fail-CLOSED behaviour: treat an
-   * unattributable approval as ours and deny it. Over-denying is recoverable; a hung turn
-   * on every surface is not.
+   * DIAGNOSTIC ONLY. True when something may have hidden the frames that would have resolved a
+   * claim — a reconnect, or a queue disposition we do not understand — so `attribute()` should be
+   * read as low-confidence until everything outstanding drains. No behaviour branches on it.
+   *
+   * It used to describe a fail-CLOSED approval fallback. That code is gone: approvals no longer
+   * consult attribution at all, because the server broadcasts each request and settles the race
+   * itself. Leaving the old wording here invited exactly the reintroduction that would hang every
+   * surface.
    */
   private degraded = false;
 
@@ -101,22 +108,24 @@ export class RunOwnership {
 
   /** Apply an `input_accepted` ack. Unknown request_ids (a peer's) are ignored. */
   onInputAccepted(requestId: string, accepted: boolean, disposition?: string): void {
+    // An ack is forward progress. Without this the idle reaper measures from the last stream
+    // frame, so a send that is acked and then waits quietly in the queue looks idle.
+    this.touch();
     const claim = this.claims.find((c) => c.requestId === requestId);
     if (!claim) return;
     if (!accepted) {
       this.drop(claim);
       return;
     }
-    // "started" and "submitting" both mean a run is beginning for us now, so both arm.
-    // Only the explicit "queued" waits for a dequeue notice. An UNKNOWN (future) disposition
-    // also arms, deliberately: arming risks over-claiming a run and over-denying an approval,
-    // which is recoverable, whereas failing to arm risks not denying our own approval and
-    // hanging every surface. The M1 policy prefers the recoverable failure.
-    // An UNKNOWN disposition PARKS rather than arms. The original rationale for arming was that
-    // failing to arm risked not denying our own approval — but approvals no longer depend on
-    // attribution, so arming now only risks binding a run that is not ours and mislabelling it.
-    // Parking yields "unknown", which is the honest answer.
-    claim.state = disposition === "started" || disposition === "submitting" ? "armed" : "queued";
+    // "started" and "submitting" both mean a run is beginning for us now, so both arm; only
+    // "queued" waits for a dequeue notice. An UNKNOWN disposition PARKS rather than arms. The
+    // original rationale for arming was that failing to arm risked not denying our own approval —
+    // but approvals no longer consult attribution at all, so arming now only risks binding a run
+    // that is not ours and mislabelling it. Parking yields "unknown", which is the honest answer.
+    claim.state =
+      disposition === InputDispositions.started || disposition === InputDispositions.submitting
+        ? "armed"
+        : "queued";
   }
 
   /**
@@ -137,6 +146,7 @@ export class RunOwnership {
     removals: Array<{ client_message_id: string; disposition: string }>,
     onAnomaly?: (msg: string) => void,
   ): void {
+    this.touch();
     for (const removal of removals) {
       const claim = this.claims.find((c) => c.clientMessageId === removal.client_message_id);
       if (!claim) {
@@ -156,9 +166,22 @@ export class RunOwnership {
         );
         continue;
       }
-      this.consumedMessageIds.add(removal.client_message_id);
-      if (removal.disposition === "dequeued") claim.state = "armed";
-      else this.drop(claim); // an explicit cancel: it will never run
+      if (removal.disposition === QueueDispositions.dequeued) {
+        this.consume(removal.client_message_id);
+        claim.state = "armed";
+      } else if (removal.disposition === QueueDispositions.cancelled) {
+        this.consume(removal.client_message_id);
+        this.drop(claim); // an explicit cancel: it will never run
+      } else {
+        // Anything else is drift, and `else = cancelled` was the wrong default: a renamed or
+        // newly-added disposition would silently destroy a live claim, after which our own turns
+        // render under the peer label. Hold the claim, say so, and let attribution degrade
+        // honestly rather than confidently reporting the opposite of the truth.
+        this.degraded = true;
+        onAnomaly?.(
+          `unknown queue disposition "${removal.disposition}" for ${removal.client_message_id} — claim held, attribution degraded`,
+        );
+      }
     }
   }
 
@@ -191,7 +214,7 @@ export class RunOwnership {
    */
   onTurnFinished(runId: string, stopReason?: string): void {
     this.touch();
-    if (stopReason === STOP_REASON_REQUIRES_APPROVAL) return;
+    if (stopReason === StopReasons.requiresApproval) return;
     this.remember(runId);
     this.owned.delete(runId);
     if (this.owned.size === 0 && this.claims.length === 0) this.degraded = false;
@@ -223,8 +246,8 @@ export class RunOwnership {
   /**
    * A reconnect may have hidden an ack, a dequeue, or a turn_finished. Claims and owned runs
    * are KEPT (our turn may still be running server-side and its `turn_finished` will arrive
-   * on the new connection), but attribution is no longer trustworthy, so unknown approvals
-   * fail closed until everything outstanding drains.
+   * on the new connection), but attribution is no longer trustworthy, so runs are reported as
+   * low-confidence until everything outstanding drains.
    */
   onReconnect(): void {
     this.touch();
@@ -254,6 +277,16 @@ export class RunOwnership {
     this.owned.clear();
     if (claims || runs) this.degraded = false;
     return { claims, runs };
+  }
+
+  /** Record a consumed message id, evicting oldest-first so the set cannot grow without bound. */
+  private consume(clientMessageId: string): void {
+    this.consumedMessageIds.add(clientMessageId);
+    while (this.consumedMessageIds.size > MAX_REMEMBERED_RUNS) {
+      const oldest = this.consumedMessageIds.values().next().value;
+      if (oldest === undefined) break;
+      this.consumedMessageIds.delete(oldest);
+    }
   }
 
   /** Mark stream activity; expiry is measured from here. */

@@ -4,7 +4,9 @@
  * One raw-WS ordered connection to the sole-owner App Server for a single `{agent, conversation}`:
  *   • live render of own AND foreign turns off one `event_seq`-ordered stream (stream.ts)
  *   • `conversation_*` management RPCs (for later rail reuse)
- *   • approvals that FAIL CLOSED — the injecting client auto-denies; observers never respond
+ *   • approvals answered UNCONDITIONALLY and always denied (M1) — the server broadcasts each
+ *     request to every subscriber and settles the race itself, so the only dangerous outcome is
+ *     nobody answering. Do NOT gate this on run ownership (see routeFrame).
  *   • bounded reconnect + `conversation_messages_list` catch-up with message-id dedup (catchup.ts)
  *
  * No SDK dep, no second observer connection, no arbitration/flock — the server queue-serializes
@@ -52,6 +54,25 @@ import { WsConnection } from "./ws.js";
 const WS_URL = "ws://127.0.0.1:4577/ws";
 
 /**
+ * How often to sweep for claims and owned runs the stream stopped resolving, and how much
+ * observed inactivity counts as stuck.
+ *
+ * RunOwnership.reapIdle existed, was documented as the bound on that state, was covered by unit
+ * tests — and was called by nothing. So a single lost `input_accepted` or `turn_finished` (the
+ * ordinary watchdog-restart path) stranded a claim for the life of the process, which pinned
+ * hasOutstanding() true, which permanently disabled the positivelyForeign branch, after which
+ * EVERY peer turn attributed as "unknown" and a solo user's own turns rendered as `peer ›`.
+ *
+ * The idle budget is generous on purpose: turns here run 51s-600s, so anything short enough to
+ * bound a stuck claim quickly is short enough to reap a live one.
+ */
+/** Far beyond any redelivery window; the set is per-connection, so this is a backstop. */
+const MAX_ANSWERED_APPROVALS = 512;
+
+const REAP_INTERVAL_MS = 60_000;
+const REAP_IDLE_MS = 900_000;
+
+/**
  * The reason attached to every M1 auto-deny. The server requires a string message on a deny, and
  * this one is written for the human who finds it in a transcript, not for a log parser.
  */
@@ -75,6 +96,11 @@ export interface ContinuityCoreConfig {
   /** Override the per-instance correlation nonce (tests, or a bridge fanning out to N browsers). */
   clientNonce?: string;
   onWarn?: (msg: string) => void;
+  /**
+   * Idle-sweep tuning. Defaults are sized for real turns (51s-600s); tests override them.
+   */
+  reapIntervalMs?: number;
+  reapIdleMs?: number;
   /**
    * Opt OUT of the loopback trust boundary. Off by default, and deliberately awkward to reach:
    * the App Server has no client auth, so a non-loopback peer sees everything typed and the whole
@@ -129,6 +155,7 @@ export class ContinuityCore {
    */
   private sentApprovalResponses = new Set<string>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reapTimer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
   private readonly errorListeners = new Set<(err: Error) => void>();
   private readonly approvalListeners = new Set<(e: ApprovalEvent) => void>();
@@ -187,12 +214,13 @@ export class ContinuityCore {
       conversation_id: this.pointer.conversationId,
     };
     await this.openConnection();
+    this.startReaper();
   }
 
   /**
-   * Submit a user turn. Registers a correlation claim so the resulting run can be identified
-   * as ours (see ownership.ts) — which is what makes approval fail-closed exact rather than
-   * a guess based on how many turns are outstanding.
+   * Submit a user turn. Registers a correlation claim so the resulting run can be identified as
+   * ours (see ownership.ts), which is what lets the transcript label it `you`/`agent` rather than
+   * `peer`. It has no bearing on approvals — those are answered unconditionally.
    */
   send(text: string): void {
     if (!this.ws || !this.runtime) throw new Error("ContinuityCore not started");
@@ -258,6 +286,10 @@ export class ContinuityCore {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    if (this.reapTimer) {
+      clearInterval(this.reapTimer);
+      this.reapTimer = null;
+    }
     this.ws?.close();
     this.ws = null;
     this.connectionState.disconnected();
@@ -295,11 +327,38 @@ export class ContinuityCore {
     return ws;
   }
 
+  /** Begin the idle sweep. Idempotent; cleared in stop(). */
+  private startReaper(): void {
+    if (this.reapTimer) return;
+    const idleMs = this.config.reapIdleMs ?? REAP_IDLE_MS;
+    this.reapTimer = setInterval(() => {
+      const reaped = this.ownership.reapIdle(idleMs, Date.now());
+      if (reaped.claims || reaped.runs) {
+        this.config.onWarn?.(
+          `reaped ${reaped.claims} stuck claim(s) and ${reaped.runs} unfinished run(s) after ${idleMs / 1000}s of stream inactivity — attribution has been reset`,
+        );
+      }
+    }, this.config.reapIntervalMs ?? REAP_INTERVAL_MS);
+    this.reapTimer.unref?.();
+  }
+
   private async openConnection(): Promise<void> {
     this.connectionState.connecting();
     const ws = this.newConnection();
     this.ws = ws;
-    await ws.connect();
+    try {
+      await ws.connect();
+    } catch (err) {
+      // connect() cleans up only on the open-timeout path; a version refusal or a hello timeout
+      // rejects with the socket still OPEN and its listeners attached. Left alone, that socket's
+      // eventual close runs handleClose for a session the caller has already given up on, and
+      // starts a full reconnect loop for it. The terminal happens to call stop() here; the core
+      // must not depend on every consumer remembering to.
+      ws.close();
+      this.ws = null;
+      this.connectionState.disconnected();
+      throw err;
+    }
     this.connectionState.connected();
   }
 
@@ -364,6 +423,11 @@ export class ContinuityCore {
           return;
         }
         this.answeredApprovals.add(id);
+        while (this.answeredApprovals.size > MAX_ANSWERED_APPROVALS) {
+          const oldest = this.answeredApprovals.values().next().value;
+          if (oldest === undefined) break;
+          this.answeredApprovals.delete(oldest);
+        }
         this.emitApproval(frame, "denied");
       }
       return;
@@ -430,13 +494,19 @@ export class ContinuityCore {
       const ws = this.newConnection();
       // New connection ⇒ event_seq restarts; forget the per-connection ordering watermark.
       this.assembler.reset();
-      // The gap may have hidden an ack, a dequeue, or a turn_finished — attribution is no
-      // longer trustworthy, so unknown approvals fail closed until outstanding work drains.
+      // The gap may have hidden an ack, a dequeue, or a turn_finished — so run attribution is no
+      // longer trustworthy and armed claims are demoted. Approvals are unaffected: they do not
+      // consult attribution.
       this.ownership.onReconnect();
       // Per-connection state: an answer we believe we sent may have died with the old socket, and
       // an ack for it can no longer arrive. Both sets must not outlive the connection.
       this.answeredApprovals = new Set();
       this.sentApprovalResponses = new Set();
+      // Drop the previous snapshot's watermark NOW, not when the next one arrives. Between
+      // connect() and fetchSnapshot() resolving — up to rpcTimeoutMs — live frames were being
+      // filtered against the PREVIOUS reconnect's id set. Harmless only while the live and
+      // snapshot id namespaces stay disjoint, which is exactly what M1 Unit 7 will change.
+      this.liveDedup = null;
       // Tear down the outgoing connection explicitly; overwriting the field alone leaks it.
       const previous = this.ws;
       this.ws = ws;

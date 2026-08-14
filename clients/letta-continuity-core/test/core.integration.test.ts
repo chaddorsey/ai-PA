@@ -359,6 +359,30 @@ describe("ContinuityCore integration", () => {
     await waitFor(() => core.state === "connected", 5000);
   });
 
+  it("a claim stranded by a lost ack is REAPED, so attribution recovers", async () => {
+    // reapIdle was documented as the bound on stuck claims, unit-tested, and called by nothing.
+    // The consequence was not a slow leak but a permanent one: one stranded claim pins
+    // hasOutstanding() true, which disables the positivelyForeign branch, after which every peer
+    // turn attributes as "unknown" for the life of the process — and since ownsRun maps unknown
+    // to false, a solo user's own turns start rendering as `peer`. This test drives the facade,
+    // not RunOwnership directly, because driving RunOwnership is exactly what hid the gap.
+    server = new MockAppServer({ suppressResponsesFor: ["input"] });
+    url = await server.start();
+    const warnings: string[] = [];
+    const { core } = await makeCore({
+      onWarn: (m: string) => warnings.push(m),
+      reapIntervalMs: 20,
+      reapIdleMs: 60,
+    });
+    await core.start();
+
+    core.send("this send never gets acked");
+    expect(core.ownershipSnapshot().pending).toBe(1);
+
+    await waitFor(() => core.ownershipSnapshot().pending === 0, 3_000);
+    expect(warnings.some((w) => /reaped 1 stuck claim/.test(w))).toBe(true);
+  });
+
   it("a consumer listener that throws does not take the connection (or the process) down", async () => {
     // Every fan-out runs synchronously inside the ws socket's `message` handler, so a throwing
     // listener escaped into an EventEmitter and became an uncaughtException — process exit under

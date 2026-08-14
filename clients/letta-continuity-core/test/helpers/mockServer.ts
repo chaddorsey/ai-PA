@@ -84,7 +84,7 @@ export class MockAppServer {
   private wss: WebSocketServer | null = null;
   private readonly conns = new Set<ConnState>();
   private runCounter = 0;
-  /** Frames received from clients, for assertions (e.g. approval_send). */
+  /** Frames received from clients, for assertions (e.g. the approval-deny `input`). */
   readonly received: Array<Record<string, unknown>> = [];
   /** Count of frames dropped by a command guard (malformed envelope). */
   rejected = 0;
