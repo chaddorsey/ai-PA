@@ -23,6 +23,7 @@ import {
   type AppServerInfoResponseFrame,
   type ConversationCreateResponseFrame,
   type ConversationListResponseFrame,
+  type MessagesListResponseFrame,
   Outbound,
   PINNED_PROTOCOL_VERSION,
   PINNED_SERVER_VERSION,
@@ -31,6 +32,7 @@ import {
   buildAppServerInfo,
   buildConversationCreate,
   buildConversationList,
+  buildConversationMessagesList,
   buildInput,
   buildRuntimeStart,
   isStreamDelta,
@@ -89,7 +91,11 @@ describe.skipIf(!LIVE)(`live contract (opt-in, ${URL}, docs agent)`, () => {
       rpcTimeoutMs: 10000,
     });
     const frames: ServerFrame[] = [];
+    const protocolErrors: Error[] = [];
     ws.onFrame((f) => frames.push(f));
+    // Without this the gate passes while the client silently DISCARDS a frame per turn — which is
+    // exactly what happened before the id-less `stop_reason` delta was allowlisted.
+    ws.onError((e) => protocolErrors.push(e));
     try {
       const hello = await ws.connect();
       expect(hello.success).toBe(true);
@@ -143,6 +149,38 @@ describe.skipIf(!LIVE)(`live contract (opt-in, ${URL}, docs agent)`, () => {
       // A turn that errored out still emits turn_finished — assert it actually succeeded,
       // otherwise a broken candidate server passes the gate on shape alone.
       expect(finished.at(-1)?.stop_reason).not.toBe("error");
+
+      // Exercise the reconnect path's RPC live. Its envelope had never been proven against a real
+      // server, and its failure mode is silent (a guard-failing frame is dropped, so the client
+      // just times out and resumes with no dedup).
+      const snapshot = await ws.request<MessagesListResponseFrame>(
+        (rid) => buildConversationMessagesList(rid, rt),
+        Outbound.conversationMessagesList,
+      );
+      expect(snapshot.success).toBe(true);
+      expect(Array.isArray(snapshot.messages)).toBe(true);
+      expect(snapshot.messages.length).toBeGreaterThan(0);
+
+      // PINS THE ANSWER to M1 Unit 7's open premise. Snapshot ids and live per-chunk delta ids
+      // come from different namespaces (ui-msg-* vs letta-msg-*), so LiveDedup — which compares
+      // them directly — can never match on a real server. Asserted rather than described so the
+      // day it stops being true, this fails and Unit 7 is told.
+      const liveIds = new Set(
+        frames
+          .filter(isStreamDelta)
+          .map((f) => f.delta.id)
+          .filter((id): id is string => !!id),
+      );
+      const snapshotIds = new Set(
+        snapshot.messages.map((m) => (m as { id?: string }).id).filter((id): id is string => !!id),
+      );
+      const overlap = [...liveIds].filter((id) => snapshotIds.has(id));
+      expect(liveIds.size).toBeGreaterThan(0);
+      expect(snapshotIds.size).toBeGreaterThan(0);
+      expect(overlap).toEqual([]);
+
+      // No frame was discarded during a complete, healthy turn.
+      expect(protocolErrors.map((e) => e.message)).toEqual([]);
     } finally {
       ws.close();
     }

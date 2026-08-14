@@ -486,7 +486,21 @@ export function validateInboundFrame(frame: ServerFrame): void {
         throw new ProtocolError("update_loop_status: missing `loop_status.status`");
       return;
     }
-    case Inbound.updateQueue:
+    case Inbound.updateQueue: {
+      if (typeof frame.event_seq !== "number")
+        throw new ProtocolError("update_queue: missing numeric `event_seq`");
+      // Both arrays drive run attribution, and `disposition` decides whether a claim arms or is
+      // dropped. A rename here silently re-routes attribution, so it must fail loudly instead.
+      if (!Array.isArray(frame.queue) || !Array.isArray(frame.removed))
+        throw new ProtocolError("update_queue: missing `queue`/`removed` arrays");
+      for (const removal of frame.removed) {
+        if (!isObject(removal) || typeof removal.client_message_id !== "string")
+          throw new ProtocolError("update_queue: removal missing `client_message_id`");
+        if (typeof removal.disposition !== "string")
+          throw new ProtocolError("update_queue: removal missing `disposition`");
+      }
+      return;
+    }
     case Inbound.updateSubagentState:
     case Inbound.updateDeviceStatus: {
       if (typeof frame.event_seq !== "number")
@@ -507,6 +521,10 @@ export function validateInboundFrame(frame: ServerFrame): void {
         throw new ProtocolError("input_accepted: missing `request_id`");
       if (typeof frame.accepted !== "boolean")
         throw new ProtocolError("input_accepted: missing boolean `accepted`");
+      // An accepted input MUST say what happened to it: "started" vs "queued" is what decides
+      // whether a claim arms now or waits for its dequeue notice.
+      if (frame.accepted && typeof frame.disposition !== "string")
+        throw new ProtocolError("input_accepted: accepted ack missing `disposition`");
       return; // no event_seq: this is a control-channel ack, not a broadcast
     }
     case Inbound.appServerInfoResponse:

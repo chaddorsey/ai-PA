@@ -15,7 +15,8 @@
     "lint:fix": "biome check --write src test",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "npm run typecheck && npm run lint && npm run test"
+    "check": "npm run typecheck && npm run lint && npm run test",
+    "check:live": "LETTA_LIVE_WS=1 vitest run test/live.contract.test.ts"
   },
   "dependencies": {
     "ws": "^8.18.0"

@@ -11,6 +11,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  CONTROL_DELTA_TYPES,
   Inbound,
   Outbound,
   ProtocolError,
@@ -101,7 +102,45 @@ const FIXTURES = {
     ...meta,
     event_seq: 2,
   },
-  update_queue: { type: "update_queue", queue: [], removed: [], ...meta, event_seq: 3 },
+  // POPULATED on purpose. The previous fixture had empty arrays, so QueueItem and QueueRemoval —
+  // the shapes run attribution keys on — were never round-tripped at all.
+  update_queue: {
+    type: "update_queue",
+    queue: [
+      {
+        id: "q-1",
+        client_message_id: "cm-abc123-4",
+        kind: "message",
+        source: "user",
+        content: "queued text",
+        enqueued_at: "2026-08-13T00:00:00.000Z",
+      },
+    ],
+    removed: [{ client_message_id: "cm-abc123-4", disposition: "dequeued" }],
+    ...meta,
+    event_seq: 3,
+  },
+  input_accepted_started: {
+    type: "input_accepted",
+    request_id: "input-abc123-3",
+    runtime: RT,
+    accepted: true,
+    disposition: "started",
+  },
+  input_accepted_queued: {
+    type: "input_accepted",
+    request_id: "input-abc123-9",
+    runtime: RT,
+    accepted: true,
+    disposition: "queued",
+  },
+  input_rejected: {
+    type: "input_accepted",
+    request_id: "input-abc123-11",
+    runtime: RT,
+    accepted: false,
+    error: "Runtime is no longer active",
+  },
   update_subagent_state: { type: "update_subagent_state", subagents: [], ...meta, event_seq: 4 },
   update_device_status: {
     type: "update_device_status",
@@ -288,12 +327,44 @@ describe("contract: DRIFT fails loudly (the upgrade gate)", () => {
     ).toThrow(/delta\.id/);
   });
 
-  it("a CONTENT delta missing delta.id is still rejected (the watermark guard holds)", () => {
-    const delta = { ...(FIXTURES.stream_delta.delta as Record<string, unknown>) };
-    delta.id = undefined;
+  it("the CONTROL allowlist is a narrow exemption, not a hole in the watermark guard", () => {
+    // This slot previously held a byte-identical copy of the test above. What it should assert is
+    // the OTHER side of the allowlist: a control delta without an id is accepted, while the
+    // allowlist stays narrow enough that content types can never slip into it.
     expect(() =>
-      validateInboundFrame(parseFrame(JSON.stringify({ ...FIXTURES.stream_delta, delta }))),
-    ).toThrow(/delta\.id/);
+      validateInboundFrame(parseFrame(JSON.stringify(FIXTURES.stream_delta_stop_reason))),
+    ).not.toThrow();
+    expect(CONTROL_DELTA_TYPES.has("assistant_message")).toBe(false);
+    expect(CONTROL_DELTA_TYPES.has("reasoning_message")).toBe(false);
+    expect(CONTROL_DELTA_TYPES.has("usage_statistics")).toBe(false);
+  });
+
+  it("update_queue drift: a renamed client_message_id or disposition fails loudly", () => {
+    // These two fields decide whether a claim arms or is dropped, so a rename silently re-routes
+    // attribution — the failure mode with no visible symptom.
+    const noId = {
+      ...FIXTURES.update_queue,
+      removed: [{ otid: "cm-abc123-4", disposition: "dequeued" }],
+    };
+    expect(() => validateInboundFrame(parseFrame(JSON.stringify(noId)))).toThrow(
+      /client_message_id/,
+    );
+
+    const noDisp = {
+      ...FIXTURES.update_queue,
+      removed: [{ client_message_id: "cm-abc123-4", outcome: "dequeued" }],
+    };
+    expect(() => validateInboundFrame(parseFrame(JSON.stringify(noDisp)))).toThrow(/disposition/);
+  });
+
+  it("input_accepted drift: an accepted ack without a disposition fails loudly", () => {
+    const drifted = { ...FIXTURES.input_accepted_started } as Record<string, unknown>;
+    drifted.disposition = undefined;
+    expect(() => validateInboundFrame(parseFrame(JSON.stringify(drifted)))).toThrow(/disposition/);
+
+    const noAccepted = { ...FIXTURES.input_accepted_started } as Record<string, unknown>;
+    noAccepted.accepted = undefined;
+    expect(() => validateInboundFrame(parseFrame(JSON.stringify(noAccepted)))).toThrow(/accepted/);
   });
 
   it("an UNKNOWN delta type with no id fails loudly (not silently allowed)", () => {
