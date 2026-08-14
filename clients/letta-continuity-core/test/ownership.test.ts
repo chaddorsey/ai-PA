@@ -21,7 +21,7 @@ describe("RunOwnership", () => {
     o.onRunObserved("local-run-251");
 
     expect(o.owns("local-run-251")).toBe(true);
-    expect(o.shouldRespondToApproval("local-run-251")).toBe(true);
+    expect(o.attribute("local-run-251")).toBe("mine");
 
     o.onTurnFinished("local-run-251");
     expect(o.owns("local-run-251")).toBe(false);
@@ -32,7 +32,8 @@ describe("RunOwnership", () => {
     const o = new RunOwnership();
     o.onRunObserved("local-run-999");
     expect(o.owns("local-run-999")).toBe(false);
-    expect(o.shouldRespondToApproval("local-run-999")).toBe(false);
+    // Positively foreign: we held nothing outstanding, so nothing of ours could have started.
+    expect(o.attribute("local-run-999")).toBe("foreign");
   });
 
   it("THE COUNTER BUG: a foreign turn_finished must not release our claim", () => {
@@ -46,7 +47,7 @@ describe("RunOwnership", () => {
     o.onTurnFinished("local-run-900");
 
     expect(o.owns("local-run-251")).toBe(true);
-    expect(o.shouldRespondToApproval("local-run-251")).toBe(true);
+    expect(o.attribute("local-run-251")).toBe("mine");
   });
 
   it("THE MIRROR BUG: we must not answer a foreign approval while our own turn runs", () => {
@@ -56,9 +57,10 @@ describe("RunOwnership", () => {
     o.onRunObserved("local-run-251");
     o.onRunObserved("local-run-900"); // a peer's run, unclaimed (no armed claim left)
 
-    // A counter would still be >0 here and would wrongly deny the peer's approval.
-    expect(o.shouldRespondToApproval("local-run-900")).toBe(false);
-    expect(o.shouldRespondToApproval("local-run-251")).toBe(true);
+    // A counter would still be >0 here and would mislabel the peer's turn as ours.
+    // Not "foreign": we had a run in flight when 900 appeared, so it is merely unattributable.
+    expect(o.attribute("local-run-900")).toBe("unknown");
+    expect(o.attribute("local-run-251")).toBe("mine");
   });
 
   it("a `queued` ack waits for OUR dequeue before claiming a run", () => {
@@ -204,34 +206,51 @@ describe("RunOwnership", () => {
     expect(o.snapshot().pending).toBe(1); // the second claim is still unbound
   });
 
-  it("after a reconnect with work outstanding, an UNKNOWN approval fails CLOSED", () => {
+  /**
+   * ASSERTION CHANGE, deliberate. The four tests replaced here asserted a fail-CLOSED approval
+   * policy driven by `degraded` — "an unattributable approval is answered by us". That premise is
+   * gone: the server broadcasts approvals to every subscriber and settles the race itself, so
+   * answering is unconditional and never consults attribution
+   * (docs/plans/2026-08-13-approval-contract-findings.md). One of them —
+   * "degraded mode still refuses a run already attributed to someone else" — was additionally
+   * WRONG on its own terms: that run had merely been seen while we were unarmed, which is not the
+   * same as being positively a peer's, and conflating the two is what made a lost ack silently
+   * unattributable. `degraded` survives only as a diagnostic.
+   */
+  it("a reconnect with work outstanding degrades (diagnostic) and demotes armed claims", () => {
     const o = new RunOwnership();
     o.beginSend("REQ-A", "CM-A");
     o.onInputAccepted("REQ-A", true, "started");
-    o.onReconnect(); // the ack/dequeue/turn_finished we needed may have been missed
+    o.onReconnect();
 
     expect(o.snapshot().degraded).toBe(true);
-    // Unattributable → deny (bounded error) rather than risk hanging both surfaces.
-    expect(o.shouldRespondToApproval(undefined)).toBe(true);
-    expect(o.shouldRespondToApproval("local-run-unknown")).toBe(true);
+    // The armed claim must NOT bind the first run on the new connection: across the gap an
+    // unknown number of runs may have begun and ended, so it could easily be a peer's.
+    o.onRunObserved("local-run-after-gap");
+    expect(o.owns("local-run-after-gap")).toBe(false);
+    expect(o.attribute("local-run-after-gap")).toBe("unknown");
   });
 
-  it("a reconnect with nothing outstanding does not degrade, and stays silent", () => {
+  it("a reconnect with nothing outstanding does not degrade", () => {
     const o = new RunOwnership();
     o.onReconnect();
     expect(o.snapshot().degraded).toBe(false);
-    expect(o.shouldRespondToApproval(undefined)).toBe(false);
   });
 
-  it("degraded mode still refuses a run already attributed to someone else", () => {
+  it("a run seen while we hold a QUEUED claim is unknown, not foreign", () => {
+    // The distinction the old `seenRuns` conflation lost. Our dequeue notice may still be in
+    // flight, so this run can still turn out to be ours.
     const o = new RunOwnership();
-    o.onRunObserved("local-run-400"); // a peer's run, seen before our send
     o.beginSend("REQ-A", "CM-A");
-    o.onInputAccepted("REQ-A", true, "started");
-    o.onReconnect();
+    o.onInputAccepted("REQ-A", true, "queued");
+    o.onRunObserved("local-run-600");
+    expect(o.attribute("local-run-600")).toBe("unknown");
+  });
 
-    expect(o.snapshot().degraded).toBe(true);
-    expect(o.shouldRespondToApproval("local-run-400")).toBe(false);
+  it("a run seen while we hold NOTHING is positively foreign", () => {
+    const o = new RunOwnership();
+    o.onRunObserved("local-run-601");
+    expect(o.attribute("local-run-601")).toBe("foreign");
   });
 
   it("degraded clears once all outstanding work drains", () => {
@@ -244,7 +263,50 @@ describe("RunOwnership", () => {
 
     o.onTurnFinished("local-run-500");
     expect(o.snapshot().degraded).toBe(false);
-    expect(o.shouldRespondToApproval(undefined)).toBe(false);
+  });
+
+  it("turn_finished with requires_approval does NOT release the run", () => {
+    // The turn is parked awaiting an approval, not finished. Releasing here would make a late
+    // approval read as a peer's and would let expiry reap a run that is very much alive.
+    const o = new RunOwnership();
+    o.beginSend("REQ-A", "CM-A");
+    o.onInputAccepted("REQ-A", true, "started");
+    o.onRunObserved("local-run-700");
+    o.onTurnFinished("local-run-700", "requires_approval");
+    expect(o.owns("local-run-700")).toBe(true);
+
+    o.onTurnFinished("local-run-700", "end_turn");
+    expect(o.owns("local-run-700")).toBe(false);
+  });
+
+  describe("expiry (keyed on stream INACTIVITY, not elapsed time since submission)", () => {
+    it("reaps a claim whose stream has gone quiet, clearing degraded", () => {
+      let now = 1_000;
+      const o = new RunOwnership({ clock: () => now });
+      o.beginSend("REQ-A", "CM-A"); // ack lost in a drop
+      o.onReconnect();
+      expect(o.snapshot().degraded).toBe(true);
+
+      now += 60_000;
+      const reaped = o.reapIdle(30_000, now);
+      expect(reaped.claims).toBe(1);
+      expect(o.hasOutstanding()).toBe(false);
+      expect(o.snapshot().degraded).toBe(false);
+    });
+
+    it("does NOT reap while the stream is still active — turns here run 51s-600s", () => {
+      let now = 1_000;
+      const o = new RunOwnership({ clock: () => now });
+      o.beginSend("REQ-A", "CM-A");
+      o.onInputAccepted("REQ-A", true, "started");
+      o.onRunObserved("local-run-800");
+
+      now += 120_000;
+      o.onRunObserved("local-run-800"); // still streaming: activity, even on a known run
+      const reaped = o.reapIdle(30_000, now);
+      expect(reaped).toEqual({ claims: 0, runs: 0 });
+      expect(o.owns("local-run-800")).toBe(true);
+    });
   });
 
   it("`submitting` arms like `started`", () => {
@@ -255,11 +317,17 @@ describe("RunOwnership", () => {
     expect(o.owns("local-run-600")).toBe(true);
   });
 
-  it("an UNKNOWN future disposition arms — over-denying beats hanging every surface", () => {
+  it("an UNKNOWN future disposition PARKS rather than arms", () => {
+    // ASSERTION REVERSED, deliberate. This previously asserted the opposite, justified as
+    // "over-denying beats hanging every surface" — arming meant we would still answer our own
+    // approval. That justification died with the approval coupling: answering no longer consults
+    // attribution, so arming on an unrecognised disposition now only risks binding a run that is
+    // not ours and mislabelling it. Parking yields "unknown", which is the honest answer.
     const o = new RunOwnership();
     o.beginSend("REQ-A", "CM-A");
     o.onInputAccepted("REQ-A", true, "some-future-disposition");
     o.onRunObserved("local-run-601");
-    expect(o.owns("local-run-601")).toBe(true);
+    expect(o.owns("local-run-601")).toBe(false);
+    expect(o.attribute("local-run-601")).toBe("unknown");
   });
 });

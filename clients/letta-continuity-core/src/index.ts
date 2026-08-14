@@ -17,7 +17,7 @@ import {
   type ConnectionState,
   ConnectionStateMachine,
 } from "./connection.js";
-import { type OwnershipSnapshot, RunOwnership } from "./ownership.js";
+import { type Attribution, type OwnershipSnapshot, RunOwnership } from "./ownership.js";
 import { type ContinuityPointer, readPointer } from "./pointer.js";
 import {
   type ControlRequestFrame,
@@ -173,8 +173,16 @@ export class ContinuityCore {
     if (!this.ws || !this.runtime) throw new Error("ContinuityCore not started");
     const requestId = nextRequestId("input", this.clientNonce);
     const clientMessageId = nextRequestId("cm", this.clientNonce);
+    // Register the claim only once the frame is actually on the wire. Registering first leaves a
+    // claim for a send that threw, and nothing can ever resolve it — hasOutstanding() then stays
+    // true for the process lifetime, which pins every downstream bound that depends on it.
     this.ownership.beginSend(requestId, clientMessageId);
-    this.ws.send(buildInput(this.runtime, text, { requestId, clientMessageId }));
+    try {
+      this.ws.send(buildInput(this.runtime, text, { requestId, clientMessageId }));
+    } catch (err) {
+      this.ownership.abandon(requestId);
+      throw err;
+    }
   }
 
   /** Current run-ownership state (owned run ids, unbound claims, degraded flag). */
@@ -188,7 +196,12 @@ export class ContinuityCore {
    * is live (e.g. at turn_start) and remember the answer.
    */
   ownsRun(runId: string | undefined): boolean {
-    return runId !== undefined && this.ownership.owns(runId);
+    return this.ownership.attribute(runId) === "mine";
+  }
+
+  /** Full classification: ours, positively a peer's, or not attributable. */
+  attributeRun(runId: string | undefined): Attribution {
+    return this.ownership.attribute(runId);
   }
 
   /** List conversations for the pointer's agent (rail primitive). */
@@ -323,7 +336,7 @@ export class ContinuityCore {
     const runId = frameRunId(frame);
     if (runId !== undefined) this.ownership.onRunObserved(runId);
     if (isTurnFinished(frame) && typeof frame.run_id === "string") {
-      this.ownership.onTurnFinished(frame.run_id);
+      this.ownership.onTurnFinished(frame.run_id, frame.stop_reason);
     }
     this.assembler.ingest(frame);
   }
@@ -410,5 +423,5 @@ export class ContinuityCore {
 export type { RenderEvent, RenderListener } from "./stream.js";
 export type { ConnectionState } from "./connection.js";
 export type { ContinuityPointer } from "./pointer.js";
-export type { OwnershipSnapshot } from "./ownership.js";
+export type { Attribution, OwnershipSnapshot } from "./ownership.js";
 export * as protocol from "./protocol.js";

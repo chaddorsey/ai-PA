@@ -243,6 +243,20 @@ describe("ContinuityCore integration", () => {
     expect(new Set(cms).size).toBe(2); // disjoint — the whole point
   });
 
+  it("a send that throws leaves no phantom claim", async () => {
+    // beginSend used to run before the write. A claim for a frame that never left can never be
+    // resolved by any ack or dequeue, so hasOutstanding() stayed true for the process lifetime.
+    server = new MockAppServer();
+    url = await server.start();
+    const { core } = await makeCore({ maxReconnectAttempts: 0 });
+    await core.start();
+
+    server.dropAllConnections();
+    await waitFor(() => core.state !== "connected");
+    expect(() => core.send("into the void")).toThrow(/socket not open/);
+    expect(core.ownershipSnapshot().pending).toBe(0);
+  });
+
   it("happy path: send a turn, render stream_delta → turn_finished", async () => {
     server = new MockAppServer();
     url = await server.start();

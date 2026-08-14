@@ -1,39 +1,47 @@
 /**
  * ownership.ts — which runs on the shared conversation are OURS.
  *
- * The approval policy (M1) is "the injecting client auto-denies; observers stay silent".
- * That needs an exact answer to "is this approval for a turn I started?" — a bare
- * outstanding-turn counter cannot answer it, because on a shared conversation a FOREIGN
- * turn's `turn_finished` decrements the same counter. The two failure modes are symmetric
- * and both bad: zeroing early means we do NOT deny our own approval and the turn hangs both
- * surfaces; staying non-zero means we DO deny a foreign approval (a duplicate deny).
+ * SCOPE (narrowed 2026-08-13). This module used to decide whether to answer a tool approval. It
+ * no longer does: the server broadcasts each approval to every subscriber and settles the race
+ * itself, so answering is unconditional and needs no attribution
+ * (docs/plans/2026-08-13-approval-contract-findings.md). What remains is still worth getting
+ * right, but it is UX and bookkeeping, not safety:
+ *   • labelling a turn as ours vs a peer's, which is the visible proof of cross-surface continuity
+ *   • knowing whether we have work in flight, so state can be bounded
  *
- * The server gives us everything needed to do this exactly (verified live on 0.30.19):
+ * How attribution works (frame shapes verified live on 0.30.19):
  *
  *   send `input` with a `request_id` + `client_message_id`
- *     → `input_accepted{request_id, accepted, disposition}`
- *         disposition "started"  → our turn is the one beginning now; claim the next new run
- *         disposition "queued"   → we sit behind another turn; our `client_message_id` appears
- *                                  in `update_queue.queue`, and when it leaves as
- *                                  `removed:[{client_message_id, disposition:"dequeued"}]`
- *                                  our turn is the one beginning next → claim the next new run
+ *     → `input_accepted{request_id, accepted, disposition}`   (UNICAST — peers do not see ours)
+ *         "started"/"submitting" → our run is beginning now; claim the next new run
+ *         "queued"               → our `client_message_id` sits in `update_queue`; when it leaves
+ *                                  as `removed:[{client_message_id, disposition:"dequeued"}]`
+ *                                  our run is next
  *         accepted:false         → nothing of ours will run; drop the claim
- *     → the claimed `run_id` is owned until its `turn_finished` arrives
+ *     → the claimed `run_id` is owned until its `turn_finished`
  *
- * Claims are FIFO: the server runs one turn at a time per {agent, conversation}, so the
- * order in which our claims arm is the order our runs start.
+ * Claims are FIFO: the server runs one turn at a time per {agent, conversation}, so the order our
+ * claims arm is the order our runs start.
  *
- * LOAD-BEARING ASSUMPTION: an armed claim takes the next new run id it sees. This is sound
- * only because the server serializes turns per {agent, conversation} (Unit 1) — "started"
- * means OUR run is the active one, so no foreign run can begin before it. If that
- * serialization guarantee ever changes, this attribution breaks and the approval policy has
- * to be rebuilt on an explicit run id in the ack instead.
+ * LOAD-BEARING ASSUMPTION: an armed claim takes the next new run id it sees. Sound only because
+ * the server serializes turns — "started" means OUR run is the active one. Across a reconnect that
+ * reasoning does not hold (an unknown number of runs may have begun and ended unseen), so armed
+ * claims are demoted at the seam rather than carried.
  *
- * `client_message_id`s are broadcast to every client, so a peer sees ours and we see theirs —
- * but each only ever matches its OWN values, which is what makes the attribution safe.
+ * Attribution is INFERRED FROM STREAM POSITION, not read from the wire: no frame carries both our
+ * `client_message_id` and a `run_id`. `conversation_messages_list` does echo our
+ * `client_message_id` as `otid`, but with no `run_id`, so exact mapping is unavailable. This is an
+ * accepted, bounded risk — the consequence of getting it wrong is now a mislabelled turn, not a
+ * hung conversation.
  */
 
-export type ClaimState = "awaiting-ack" | "queued" | "armed";
+export type ClaimState = "awaiting-ack" | "queued" | "armed" | "lost";
+
+/** How a run relates to this client. See RunOwnership.attribute. */
+export type Attribution = "mine" | "foreign" | "unknown";
+
+/** `turn_finished` carries this when the turn is parked on an approval, not actually done. */
+export const STOP_REASON_REQUIRES_APPROVAL = "requires_approval";
 
 interface Claim {
   requestId: string;
@@ -56,6 +64,10 @@ export class RunOwnership {
   private readonly seenRuns = new Set<string>();
   /** client_message_ids whose queue transition we have already applied — replay detection. */
   private readonly consumedMessageIds = new Set<string>();
+  /** Runs positively attributed to a peer — seen while we held nothing outstanding. */
+  private readonly foreignRuns = new Set<string>();
+  private lastActivity: number;
+  private readonly clock: () => number;
   /**
    * True when a reconnect may have hidden the frames that would have resolved a claim.
    * While degraded with claims outstanding we fall back to fail-CLOSED behaviour: treat an
@@ -64,9 +76,21 @@ export class RunOwnership {
    */
   private degraded = false;
 
+  constructor(opts: { clock?: () => number } = {}) {
+    this.clock = opts.clock ?? (() => Date.now());
+    this.lastActivity = this.clock();
+  }
+
   /** Record a send. Call with the same ids used to build the `input` frame. */
   beginSend(requestId: string, clientMessageId: string): void {
+    this.touch();
     this.claims.push({ requestId, clientMessageId, state: "awaiting-ack" });
+  }
+
+  /** Drop a claim whose `input` never reached the wire (the send threw). */
+  abandon(requestId: string): void {
+    const claim = this.claims.find((c) => c.requestId === requestId);
+    if (claim) this.drop(claim);
   }
 
   /** Apply an `input_accepted` ack. Unknown request_ids (a peer's) are ignored. */
@@ -82,7 +106,11 @@ export class RunOwnership {
     // also arms, deliberately: arming risks over-claiming a run and over-denying an approval,
     // which is recoverable, whereas failing to arm risks not denying our own approval and
     // hanging every surface. The M1 policy prefers the recoverable failure.
-    claim.state = disposition === "queued" ? "queued" : "armed";
+    // An UNKNOWN disposition PARKS rather than arms. The original rationale for arming was that
+    // failing to arm risked not denying our own approval — but approvals no longer depend on
+    // attribution, so arming now only risks binding a run that is not ours and mislabelling it.
+    // Parking yields "unknown", which is the honest answer.
+    claim.state = disposition === "started" || disposition === "submitting" ? "armed" : "queued";
   }
 
   /**
@@ -133,32 +161,49 @@ export class RunOwnership {
    * armed claim; later sightings of the same run are no-ops.
    */
   onRunObserved(runId: string): void {
+    this.touch();
     if (this.seenRuns.has(runId)) return;
     this.seenRuns.add(runId);
     const index = this.claims.findIndex((c) => c.state === "armed");
-    if (index === -1) return; // a foreign turn
+    if (index === -1) {
+      // Only POSITIVELY foreign when we had nothing outstanding at all. If we hold a queued or
+      // awaiting-ack claim this run may still turn out to be ours (the dequeue notice can be in
+      // flight), so it stays "unknown" rather than being written off as a peer's.
+      if (!this.hasOutstanding()) this.foreignRuns.add(runId);
+      return;
+    }
     const [claim] = this.claims.splice(index, 1);
     if (claim) this.owned.set(runId, claim.requestId);
   }
 
-  /** Release a finished run. Foreign run ids are ignored. */
-  onTurnFinished(runId: string): void {
+  /**
+   * Release a finished run. Foreign run ids are ignored.
+   *
+   * `requires_approval` is NOT a finish. The server emits `turn_finished` with that stop reason
+   * while the turn is still parked waiting on an approval, so releasing there would make a late
+   * approval read as somebody else's and would let expiry reap a run that is very much alive.
+   */
+  onTurnFinished(runId: string, stopReason?: string): void {
+    this.touch();
+    if (stopReason === STOP_REASON_REQUIRES_APPROVAL) return;
     this.seenRuns.add(runId);
     this.owned.delete(runId);
     if (this.owned.size === 0 && this.claims.length === 0) this.degraded = false;
   }
 
   /**
-   * Should THIS client respond to an approval for `runId`?
+   * Classify a run: ours, positively a peer's, or not attributable.
    *
-   * Exact when the run is attributable. When the run id is absent or unknown AND we are
-   * degraded with work outstanding, answer true — fail closed, per the M1 policy that an
-   * approval-gated turn must resolve to a bounded deny rather than hang every surface.
+   * `positivelyForeign` has an OBSERVABLE definition — a run first seen at a moment when we held
+   * zero claims and zero owned runs, so nothing of ours could have been starting. "Seen while we
+   * were queued" is emphatically NOT foreign: treating it that way is what previously made a lost
+   * ack silently unattributable.
    */
-  shouldRespondToApproval(runId: string | undefined): boolean {
-    if (runId !== undefined && this.owned.has(runId)) return true;
-    if (runId !== undefined && this.seenRuns.has(runId)) return false; // attributed elsewhere
-    return this.degraded && this.hasOutstanding();
+  attribute(runId: string | undefined): Attribution {
+    if (runId === undefined) return "unknown";
+    if (this.owned.has(runId)) return "mine";
+    if (this.foreignRuns.has(runId)) return "foreign";
+    return "unknown";
   }
 
   owns(runId: string): boolean {
@@ -176,7 +221,38 @@ export class RunOwnership {
    * fail closed until everything outstanding drains.
    */
   onReconnect(): void {
+    this.touch();
     if (this.hasOutstanding()) this.degraded = true;
+    // An armed claim means "take the NEXT new run". That reasoning depends on an uninterrupted
+    // stream; across a gap an unknown number of runs may have started and finished, so the next
+    // run we see could easily be a peer's. Demote rather than carry: the claim still counts as
+    // outstanding (so nothing is silently forgotten) but it will no longer bind a run.
+    for (const claim of this.claims) {
+      if (claim.state === "armed") claim.state = "lost";
+    }
+  }
+
+  /**
+   * Expire claims and owned runs that have seen no stream activity for `idleMs`.
+   *
+   * Keyed on observed INACTIVITY, not elapsed time since submission. Turns in this system run
+   * 51s-600s, so any wall-clock budget short enough to bound a stuck claim is short enough to
+   * reap a live one. This follows the same forward-progress principle the App Server's own
+   * watchdog uses. Returns what was reaped so the caller can surface it.
+   */
+  reapIdle(idleMs: number, now: number): { claims: number; runs: number } {
+    if (now - this.lastActivity < idleMs) return { claims: 0, runs: 0 };
+    const claims = this.claims.length;
+    const runs = this.owned.size;
+    this.claims.length = 0;
+    this.owned.clear();
+    if (claims || runs) this.degraded = false;
+    return { claims, runs };
+  }
+
+  /** Mark stream activity; expiry is measured from here. */
+  private touch(): void {
+    this.lastActivity = this.clock();
   }
 
   snapshot(): OwnershipSnapshot {
