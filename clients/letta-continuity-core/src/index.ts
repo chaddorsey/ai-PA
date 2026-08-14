@@ -75,6 +75,12 @@ export interface ContinuityCoreConfig {
   /** Override the per-instance correlation nonce (tests, or a bridge fanning out to N browsers). */
   clientNonce?: string;
   onWarn?: (msg: string) => void;
+  /**
+   * Opt OUT of the loopback trust boundary. Off by default, and deliberately awkward to reach:
+   * the App Server has no client auth, so a non-loopback peer sees everything typed and the whole
+   * conversation history. See trust.ts.
+   */
+  allowRemote?: boolean;
 }
 
 /**
@@ -280,6 +286,7 @@ export class ContinuityCore {
       rpcTimeoutMs: this.config.rpcTimeoutMs,
       serverInfoTimeoutMs: this.config.serverInfoTimeoutMs,
       clientNonce: this.clientNonce,
+      allowRemote: this.config.allowRemote,
       onWarn: this.config.onWarn,
     });
     ws.onFrame((f) => this.routeFrame(f));
@@ -504,5 +511,6 @@ export class ContinuityCore {
 export type { RenderEvent, RenderListener } from "./stream.js";
 export type { ConnectionState } from "./connection.js";
 export type { ContinuityPointer } from "./pointer.js";
+export { assertLoopbackUrl, TrustBoundaryError } from "./trust.js";
 export type { Attribution, OwnershipSnapshot } from "./ownership.js";
 export * as protocol from "./protocol.js";

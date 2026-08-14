@@ -28,6 +28,7 @@ import {
   parseFrame,
   validateInboundFrame,
 } from "./protocol.js";
+import { assertLoopbackUrl } from "./trust.js";
 
 export interface WsConnectionOptions {
   url: string;
@@ -45,6 +46,8 @@ export interface WsConnectionOptions {
   serverInfoTimeoutMs?: number;
   /** Per-instance nonce making this connection's correlation ids unique across processes. */
   clientNonce?: string;
+  /** Opt OUT of the loopback trust boundary. See trust.ts for what that costs. */
+  allowRemote?: boolean;
   onWarn?: (msg: string) => void;
 }
 
@@ -83,6 +86,8 @@ export class WsConnection {
   private lastIdentity: ServerIdentityCheck | null = null;
 
   constructor(options: WsConnectionOptions) {
+    // Before anything else: this is the one check that must not be the consumer's job.
+    assertLoopbackUrl(options.url, options.allowRemote ?? false);
     // Resolve each field with ??, NOT by spreading `options` over the defaults. A caller that
     // forwards an unset config value passes the key with an explicit `undefined`, and a spread
     // happily overwrites the default with it — yielding `setTimeout(fn, undefined)`, which
@@ -93,6 +98,7 @@ export class WsConnection {
       pinnedVersion: options.pinnedVersion,
       versionPolicy: options.versionPolicy,
       clientNonce: options.clientNonce,
+      allowRemote: options.allowRemote ?? false,
       onWarn: options.onWarn ?? (() => {}),
       openTimeoutMs: options.openTimeoutMs ?? DEFAULTS.openTimeoutMs,
       helloTimeoutMs: options.helloTimeoutMs ?? DEFAULTS.helloTimeoutMs,

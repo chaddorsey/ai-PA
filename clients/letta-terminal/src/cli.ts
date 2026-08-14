@@ -4,6 +4,7 @@
 
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { assertLoopbackUrl as coreAssertLoopbackUrl } from "@ai-pa/letta-continuity-core";
 
 export interface CliOptions {
   pointerPath: string;
@@ -56,28 +57,18 @@ IN-SESSION
 
 /**
  * Loopback binding IS the trust boundary for this design — the App Server takes no client auth
- * because it only listens on 127.0.0.1 (R20). A client that will dial anywhere and then treat the
- * peer as the trusted App Server inverts that: everything typed, and the whole conversation
- * history via conversation_messages_list, goes to the remote host in cleartext, and whatever it
- * streams back renders under the agent's own label. `ws.ts` already ASSERTS this invariant in a
- * comment; this enforces it.
+ * because it only listens on 127.0.0.1 (R20).
+ *
+ * The rule itself now lives in the CORE, next to the code that opens the socket, so every surface
+ * gets it rather than only the one whose argument parser remembers to ask. This wrapper exists to
+ * keep the CLI's error type (and therefore its friendly exit path) unchanged.
  */
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
-
 export function assertLoopbackUrl(raw: string, allowRemote: boolean): void {
-  let parsed: URL;
   try {
-    parsed = new URL(raw);
-  } catch {
-    throw new CliError(`--url is not a valid URL: ${raw}`);
+    coreAssertLoopbackUrl(raw, allowRemote);
+  } catch (err) {
+    throw new CliError(err instanceof Error ? err.message : String(err));
   }
-  if (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") {
-    throw new CliError(`--url must be ws:// or wss:// (got ${parsed.protocol})`);
-  }
-  if (allowRemote || LOOPBACK_HOSTS.has(parsed.hostname)) return;
-  throw new CliError(
-    `refusing a non-loopback App Server at ${parsed.hostname}: loopback is this design's trust boundary and there is no client authentication. Pass --allow-remote if you genuinely mean it.`,
-  );
 }
 
 export function parseArgs(argv: readonly string[], env: NodeJS.ProcessEnv = {}): CliOptions {
