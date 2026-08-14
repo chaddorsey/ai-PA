@@ -332,7 +332,13 @@ Grouped into three phases. Phase A de-risks and builds the runtime foundation; P
   this unit advertised was **absent, not merely fragile**: the approval path targeted frames the
   server never sends. Remediation is tracked in
   `docs/plans/2026-08-13-001-fix-continuity-core-review-remediation-plan.md` (Units 1–12, all
-  landed). Re-close this box once that plan's outcomes are reviewed. Original note follows.
+  landed). **STILL OPEN 2026-08-14.** That remediation was reviewed and found to contain a
+  comparable defect set; its fixes landed, and a five-agent review of THOSE found a comparable set
+  again — including a P0 where the approval send/record ordering (the headline fix) has no test at
+  all: reverting it to the pre-fix hang leaves 155 tests passing. Thirteen such mutations leave the
+  suite green. The corrective work, and the reason it is scoped around test binding rather than
+  around the bug list, is `docs/plans/2026-08-14-001-fix-continuity-test-binding-goal.md`.
+  Do not re-close this box until that goal's acceptance criteria are met. Original note follows.
   — DONE 2026-08-13 (branch `feat/msc-app-server-sole-owner`). Built `clients/letta-terminal/`: `render.ts` (PURE event→text, so the loop is testable with no TTY), `session.ts` (render loop against a `SessionCore` seam), `cli.ts`, `main.ts` (readline + real `ContinuityCore`), plus a tracked `bin/letta-continuity` wrapper installed to `~/bin/letta-continuity`. **26 tests** (own-vs-peer labelling, attribution surviving ownership release at turn end, visible reconnect, queue-behind indicator, subagent activity, stream/line-break correctness, CLI parsing + exit codes). **Live verified** against `:4577`: a typed turn renders as `agent ›` and a turn injected from another surface renders live as `peer ›` — the terminal half of R5. Live run also caught two real bugs, both fixed with regressions (below). Reconnect visibility is covered offline; live disruption belongs to Unit 7, which owns the reconnect/catch-up proof.
 >
 > **Two bugs the live run caught that unit tests could not:**
