@@ -133,10 +133,17 @@ export class WsConnection {
   }
 
   /**
-   * Run the `app_server_info` version gate. A drift under `refuse` policy (or a missing
-   * required capability under any policy) throws and aborts connect. A server that does not
-   * answer the RPC at all degrades to a warning — it predates the command, and the committed
-   * contract test remains the gate for those.
+   * Run the `app_server_info` version gate.
+   *
+   * Three failure classes were previously laundered into one warning, which let a drifted server
+   * through even under `refuse` — the policy chosen precisely to keep it out:
+   *
+   *   (a) no response at all      → the server predates the command. Genuinely "too old": warn.
+   *   (b) a response that fails validation → DRIFT. The gate's whole purpose.
+   *   (c) a response of the wrong type     → DRIFT.
+   *
+   * (b) and (c) both surface as `ProtocolError` now that a validation failure rejects the pending
+   * RPC (see failPending), which is what makes them distinguishable from (a) at all.
    */
   private async assertIdentity(): Promise<ServerIdentityCheck | null> {
     let info: AppServerInfoResponseFrame;
@@ -147,8 +154,17 @@ export class WsConnection {
         this.opts.serverInfoTimeoutMs,
       );
     } catch (err) {
+      const drift = err instanceof ProtocolError;
+      const detail = err instanceof Error ? err.message : String(err);
+      if (drift && this.opts.versionPolicy === "refuse") {
+        throw new ProtocolError(
+          `app_server_info did not round-trip (${detail}) — refusing to attach to an unverified server`,
+        );
+      }
       this.opts.onWarn(
-        `app_server_info unavailable (${err instanceof Error ? err.message : String(err)}); server version unverified — the contract test is the only upgrade gate`,
+        drift
+          ? `app_server_info drifted (${detail}); server version unverified — re-run the contract test`
+          : `app_server_info unavailable (${detail}); server version unverified — the contract test is the only upgrade gate`,
       );
       return null;
     }
@@ -178,14 +194,14 @@ export class WsConnection {
 
   private doHello(): Promise<RuntimeStartResponseFrame> {
     const requestId = nextRequestId("rt");
-    const frame = buildRuntimeStart(requestId, this.opts.runtime);
-    const p = this.registerPending<RuntimeStartResponseFrame>(
+    const responseType = RpcResponseFor[Outbound.runtimeStart];
+    if (!responseType) throw new ProtocolError("no known response type for `runtime_start`");
+    return this.sendAndAwait<RuntimeStartResponseFrame>(
+      buildRuntimeStart(requestId, this.opts.runtime),
       requestId,
-      "runtime_start_response",
+      responseType,
       this.opts.helloTimeoutMs,
     );
-    this.rawSend(frame);
-    return p;
   }
 
   /** Send a `conversation_*` RPC and await its `*_response`, correlated by request_id. */
@@ -197,10 +213,12 @@ export class WsConnection {
     const responseType = RpcResponseFor[requestType];
     if (!responseType) throw new ProtocolError(`no known response type for RPC \`${requestType}\``);
     const requestId = nextRequestId("rpc");
-    const frame = build(requestId);
-    const p = this.registerPending<T>(requestId, responseType, timeoutMs ?? this.opts.rpcTimeoutMs);
-    this.rawSend(frame);
-    return p;
+    return this.sendAndAwait<T>(
+      build(requestId),
+      requestId,
+      responseType,
+      timeoutMs ?? this.opts.rpcTimeoutMs,
+    );
   }
 
   /** Fire-and-forget send of an already-built frame (e.g. `input`, `approval_send`). */
@@ -222,11 +240,23 @@ export class WsConnection {
     return this.closedByUs;
   }
 
-  private registerPending<T extends ServerFrame>(
+  /**
+   * Send a frame and register its waiter — in that order, and atomically from the caller's view.
+   *
+   * The ordering is load-bearing. Registering first and sending second leaks a pending entry
+   * (with a live timer) whenever `rawSend` throws synchronously, because the caller never receives
+   * the promise to await. That orphan later rejects with nobody listening, which under Node's
+   * default unhandled-rejection policy terminates the process — during a reconnect, which is
+   * exactly when the client is supposed to be recovering.
+   */
+  private sendAndAwait<T extends ServerFrame>(
+    frame: ServerFrame,
     requestId: string,
     responseType: string,
     timeoutMs: number,
   ): Promise<T> {
+    // Throws before any state is created, so a closed socket leaves nothing behind.
+    this.rawSend(frame);
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(requestId);
@@ -263,7 +293,11 @@ export class WsConnection {
     try {
       validateInboundFrame(frame);
     } catch (e) {
-      // Loud drift signal — surface it, do not silently mis-render.
+      // Loud drift signal — surface it, do not silently mis-render. If this frame was an answer
+      // to an in-flight RPC, reject THAT promise with the drift error: otherwise the caller waits
+      // out its full timeout and reports a contract break as "the server was slow", which is how
+      // a renamed field reaches the operator disguised as a transient failure.
+      this.failPending(frame, e as Error);
       this.emitError(e as Error);
       return;
     }
@@ -287,6 +321,17 @@ export class WsConnection {
       return;
     }
     for (const l of this.frameListeners) l(frame);
+  }
+
+  /** Reject the pending RPC this frame was answering, if any. No-op for broadcasts. */
+  private failPending(frame: ServerFrame, err: Error): void {
+    const requestId = typeof frame.request_id === "string" ? frame.request_id : undefined;
+    if (!requestId) return;
+    const pend = this.pending.get(requestId);
+    if (!pend) return;
+    this.pending.delete(requestId);
+    clearTimeout(pend.timer);
+    pend.reject(err);
   }
 
   private handleClose(code: number, reason: string): void {

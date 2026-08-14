@@ -140,6 +140,84 @@ describe("ContinuityCore integration", () => {
     await waitFor(() => events.some((e) => e.type === "turn_finished"));
   });
 
+  describe("connection and RPC error semantics", () => {
+    it("an RPC issued while the socket is closed throws, leaks no pending entry, and never rejects unhandled", async () => {
+      // Regression: registerPending-then-send left a live timer on a promise nobody held, whose
+      // later rejection is an unhandled rejection — fatal under Node's default policy, during a
+      // reconnect. Ordering is now send-then-register.
+      server = new MockAppServer();
+      url = await server.start();
+      const { core } = await makeCore({ rpcTimeoutMs: 200, maxReconnectAttempts: 0 });
+      await core.start();
+
+      const unhandled: unknown[] = [];
+      const onUnhandled = (r: unknown): void => {
+        unhandled.push(r);
+      };
+      process.on("unhandledRejection", onUnhandled);
+      try {
+        // Drop the socket server-side but leave `core.ws` in place, so the RPC actually reaches
+        // rawSend. (core.stop() would null `ws` and short-circuit before the path under test.)
+        server.dropAllConnections();
+        await waitFor(() => core.state !== "connected");
+
+        await expect(core.conversationList()).rejects.toThrow(/socket not open/);
+        // Well past the RPC timeout an orphaned entry would have carried.
+        await new Promise((r) => setTimeout(r, 400));
+        expect(unhandled).toEqual([]);
+      } finally {
+        process.off("unhandledRejection", onUnhandled);
+      }
+    });
+
+    it("a response frame that fails validation rejects its RPC with the drift error, not a timeout", async () => {
+      server = new MockAppServer({ suppressResponsesFor: ["conversation_list"] });
+      url = await server.start();
+      const { core } = await makeCore({ rpcTimeoutMs: 5000 });
+      await core.start();
+
+      const started = Date.now();
+      const pending = core.conversationList();
+      // Same request_id the client just used, correct type, but `conversations` renamed —
+      // the shape a server-side field rename produces.
+      await waitFor(() => server.received.some((m) => m.type === "conversation_list"));
+      const rid = server.received.filter((m) => m.type === "conversation_list").at(-1)
+        ?.request_id as string;
+      server.sendRaw({
+        type: "conversation_list_response",
+        request_id: rid,
+        success: true,
+        threads: [],
+      });
+
+      await expect(pending).rejects.toThrow(/conversations/);
+      // The point of the fix: it fails fast with the real reason, not after the RPC budget.
+      expect(Date.now() - started).toBeLessThan(2000);
+    });
+
+    it("--strict-version refuses a server whose app_server_info drifts", async () => {
+      server = new MockAppServer({ driftAppServerInfo: true });
+      url = await server.start();
+      const { core } = await makeCore({ versionPolicy: "refuse", maxReconnectAttempts: 0 });
+      await expect(core.start()).rejects.toThrow(/refusing to attach/);
+    });
+
+    it("a server too old to answer app_server_info still connects under refuse policy (warns)", async () => {
+      // "No answer" is a genuinely different class from "answered wrong": it means the build
+      // predates the command. Refusing here would lock the client out of older servers.
+      server = new MockAppServer({ omitAppServerInfo: true });
+      url = await server.start();
+      const warns: string[] = [];
+      const { core } = await makeCore({
+        versionPolicy: "refuse",
+        serverInfoTimeoutMs: 150,
+        onWarn: (m) => warns.push(m),
+      });
+      await core.start();
+      expect(warns.some((w) => /app_server_info unavailable/.test(w))).toBe(true);
+    });
+  });
+
   it("happy path: send a turn, render stream_delta → turn_finished", async () => {
     server = new MockAppServer();
     url = await server.start();

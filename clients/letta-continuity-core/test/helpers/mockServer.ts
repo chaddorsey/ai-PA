@@ -35,6 +35,11 @@ export interface MockServerOptions {
   capabilities?: Record<string, boolean>;
   /** If true, the server does not answer `app_server_info` at all (an older build). */
   omitAppServerInfo?: boolean;
+  /**
+   * If true, answer `app_server_info` with a frame that fails validation (drift), rather than not
+   * answering at all. These are different failure classes and the version gate must tell them apart.
+   */
+  driftAppServerInfo?: boolean;
   /** Snapshot returned by conversation_messages_list. */
   messagesSnapshot?: Array<{ id?: string; [k: string]: unknown }>;
   /** conversation_messages_list_response.success (default true). */
@@ -46,6 +51,11 @@ export interface MockServerOptions {
   approvalMode?: boolean;
   /** If false, the server never auto-responds to `input` (tests drive turns manually). */
   autoTurnOnInput?: boolean;
+  /**
+   * Command types the server accepts but never answers, so a test can supply the response itself
+   * via sendRaw (e.g. to inject a drifted frame as the ONLY answer to a live RPC).
+   */
+  suppressResponsesFor?: string[];
   /**
    * Force the `input_accepted` disposition, simulating this client sitting behind a peer's
    * in-flight turn without having to script the peer's whole turn.
@@ -106,6 +116,15 @@ export class MockAppServer {
     this.wss = null;
   }
 
+  /**
+   * Send an arbitrary payload to every connected client, bypassing every builder. The only way to
+   * exercise what the client does with a frame it considers malformed or drifted.
+   */
+  sendRaw(payload: unknown): void {
+    const text = typeof payload === "string" ? payload : JSON.stringify(payload);
+    for (const c of this.conns) c.socket.send(text);
+  }
+
   /** Simulate a watchdog stall-restart: drop every client socket at once. */
   dropAllConnections(): void {
     for (const c of this.conns) c.socket.terminate();
@@ -128,6 +147,7 @@ export class MockAppServer {
     const msg = JSON.parse(data.toString()) as Record<string, unknown>;
     this.received.push(msg);
     const type = msg.type as string;
+    if (this.options.suppressResponsesFor?.includes(type)) return;
     if (type === "app_server_info") this.handleAppServerInfo(conn, msg);
     else if (type === "runtime_start") this.handleRuntimeStart(conn, msg);
     else if (type === "input") this.handleInput(conn, msg);
@@ -156,6 +176,14 @@ export class MockAppServer {
   /** Mirrors the live 0.30.19 `app_server_info_response` (captured verbatim from :4577). */
   private handleAppServerInfo(conn: ConnState, msg: Record<string, unknown>): void {
     if (this.options.omitAppServerInfo) return; // an older server: never answers
+    if (this.options.driftAppServerInfo) {
+      // Correct type + request_id so it routes to the pending RPC, but `success` is gone —
+      // exactly the shape a field rename produces.
+      conn.socket.send(
+        JSON.stringify({ type: "app_server_info_response", request_id: msg.request_id }),
+      );
+      return;
+    }
     conn.socket.send(
       JSON.stringify({
         type: "app_server_info_response",
