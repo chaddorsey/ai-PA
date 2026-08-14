@@ -14,6 +14,7 @@ export interface SessionCore {
   onRender(cb: (event: RenderEvent) => void): () => void;
   onConnectionState(cb: (state: ConnectionState) => void): () => void;
   onError(cb: (err: Error) => void): () => void;
+  onApproval(cb: (e: { toolName: string | undefined; outcome: string }) => void): () => void;
   ownsRun(runId: string | undefined): boolean;
   send(text: string): void;
 }
@@ -45,6 +46,7 @@ export class TerminalSession {
       this.core.onRender((event) => this.onRender(event)),
       this.core.onConnectionState((state) => this.onConnectionState(state)),
       this.core.onError((err) => this.onError(err)),
+      this.core.onApproval((e) => this.onApproval(e)),
     );
     return () => {
       for (const off of this.unsubscribes) off();
@@ -72,6 +74,21 @@ export class TerminalSession {
     if (text) this.write(text);
   }
 
+  /**
+   * An approval is a security-relevant event, so it is shown even though M1 answers it
+   * automatically: an auto-deny nobody sees is indistinguishable from the agent choosing not to
+   * use a tool. The tool NAME is server-derived and sanitized by renderNotice; the tool ARGUMENTS
+   * are deliberately never surfaced — they routinely carry file contents or credentials.
+   */
+  private onApproval(e: { toolName: string | undefined; outcome: string }): void {
+    this.write(
+      this.renderer.renderNotice(
+        `tool approval requested (${e.toolName ?? "unknown tool"}) — auto-${e.outcome}; no approval UI in this milestone`,
+        "warn",
+      ),
+    );
+  }
+
   private onError(err: Error): void {
     this.write(this.renderer.renderNotice(err.message, "error"));
   }
@@ -84,8 +101,23 @@ export class TerminalSession {
     const trimmed = line.trim();
     if (trimmed === "") return "ignored";
     if (trimmed === "/exit" || trimmed === "/quit") return "exit";
+    // Submit FIRST, echo second. `core.send()` throws when the socket is not open, and echoing
+    // before the send would print the line as though it had been delivered — the transcript would
+    // claim something that never happened. A throw here also used to escape the readline handler
+    // and kill the process, which is the worst possible moment: the user typing during a
+    // reconnect is exactly when the client must degrade visibly instead of vanishing.
+    try {
+      this.core.send(trimmed);
+    } catch (err) {
+      this.write(
+        this.renderer.renderNotice(
+          `not sent (${err instanceof Error ? err.message : String(err)}) — still reconnecting`,
+          "warn",
+        ),
+      );
+      return "ignored";
+    }
     this.write(this.renderer.renderLocalInput(trimmed));
-    this.core.send(trimmed);
     return "sent";
   }
 

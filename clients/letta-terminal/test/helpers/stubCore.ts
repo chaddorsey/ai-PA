@@ -12,6 +12,7 @@ export class StubCore implements SessionCore {
   private renderCbs: Array<(e: RenderEvent) => void> = [];
   private stateCbs: Array<(s: ConnectionState) => void> = [];
   private errorCbs: Array<(e: Error) => void> = [];
+  private approvalCbs: Array<(e: { toolName: string | undefined; outcome: string }) => void> = [];
   /** Runs this "client" started — drives ownsRun(), as real attribution would. */
   readonly ownedRuns = new Set<string>();
   readonly sent: string[] = [];
@@ -35,10 +36,25 @@ export class StubCore implements SessionCore {
       this.errorCbs = this.errorCbs.filter((c) => c !== cb);
     };
   }
+  onApproval(cb: (e: { toolName: string | undefined; outcome: string }) => void): () => void {
+    this.approvalCbs.push(cb);
+    return () => {
+      this.approvalCbs = this.approvalCbs.filter((c) => c !== cb);
+    };
+  }
+  approval(toolName: string | undefined, outcome = "denied"): void {
+    for (const cb of this.approvalCbs) cb({ toolName, outcome });
+  }
   ownsRun(runId: string | undefined): boolean {
     return runId !== undefined && this.ownedRuns.has(runId);
   }
+  /** Overridable so a test can make the send fail the way a closed socket does. */
+  sendImpl: ((text: string) => void) | null = null;
   send(text: string): void {
+    if (this.sendImpl) {
+      this.sendImpl(text);
+      return;
+    }
     this.sent.push(text);
   }
 

@@ -11,6 +11,7 @@
 import { createInterface } from "node:readline";
 import { ContinuityCore } from "@ai-pa/letta-continuity-core";
 import { CliError, USAGE, parseArgs } from "./cli.js";
+import { sanitize } from "./sanitize.js";
 import { TerminalSession } from "./session.js";
 
 async function main(): Promise<number> {
@@ -35,7 +36,9 @@ async function main(): Promise<number> {
     pointerPath: options.pointerPath,
     ...(options.url ? { url: options.url } : {}),
     versionPolicy: options.strictVersion ? "refuse" : "warn",
-    onWarn: (msg) => process.stderr.write(`— ${msg}\n`),
+    // onWarn payloads embed server strings (snapshot errors, reported versions, capability
+    // names). They bypass the Renderer, so they are sanitized here rather than trusted.
+    onWarn: (msg) => process.stderr.write(`— ${sanitize(msg, { maxLength: 512 })}\n`),
   });
 
   const session = new TerminalSession(core, {
@@ -49,15 +52,20 @@ async function main(): Promise<number> {
     await core.start();
   } catch (err) {
     // Pointer problems and version refusals both land here, and both are actionable.
-    process.stderr.write(`\nCould not attach: ${(err as Error).message}\n`);
+    // Version-gate failures embed server-reported version and capability strings.
+    process.stderr.write(
+      `\nCould not attach: ${sanitize((err as Error).message, { maxLength: 512 })}\n`,
+    );
     detach();
     core.stop();
     return 1;
   }
 
   const runtime = core.getRuntime();
+  // Pointer-derived, and the pointer decides which AGENT this attaches to — a swapped pointer
+  // silently retargets the session, so show it and do not trust its contents.
   write(
-    `— attached to ${runtime.agent_id} · conversation ${runtime.conversation_id}
+    `— attached to ${sanitize(runtime.agent_id, { maxLength: 120 })} · conversation ${sanitize(runtime.conversation_id, { maxLength: 120 })}
 — type a message and press Enter; /exit to leave
 `,
   );
@@ -84,7 +92,8 @@ async function main(): Promise<number> {
 main().then(
   (code) => process.exit(code),
   (err) => {
-    process.stderr.write(`fatal: ${err instanceof Error ? err.stack : String(err)}\n`);
+    const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+    process.stderr.write(`fatal: ${sanitize(detail, { maxLength: 4096 })}\n`);
     process.exit(1);
   },
 );

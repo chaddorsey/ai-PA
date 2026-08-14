@@ -12,6 +12,7 @@
  */
 
 import type { ConnectionState, RenderEvent } from "@ai-pa/letta-continuity-core";
+import { indentContinuation, sanitize } from "./sanitize.js";
 
 export interface RendererOptions {
   /** Emit ANSI colour. Callers should pass `stdout.isTTY`. */
@@ -33,6 +34,9 @@ const ANSI = {
   yellow: "\x1b[33m",
   red: "\x1b[31m",
 };
+
+/** Notices are status lines, not content, so they are bounded harder than delta text. */
+const NOTICE_MAX_LENGTH = 512;
 
 const ASSISTANT = "assistant_message";
 const REASONING = "reasoning_message";
@@ -91,7 +95,11 @@ export class Renderer {
   /** A status/system line (connection changes, errors, notices). */
   renderNotice(text: string, level: "info" | "warn" | "error" = "info"): string {
     const codes = level === "error" ? [ANSI.red] : level === "warn" ? [ANSI.yellow] : [ANSI.dim];
-    return `${this.closeStream()}${this.paint(`— ${text}`, ...codes)}\n`;
+    // Notices routinely carry server-derived strings (error messages, stop reasons, tool names),
+    // so they go through the same sanitizer as delta text — and are bounded harder, because a
+    // notice is a status line, not content.
+    const safe = indentContinuation(sanitize(text, { maxLength: NOTICE_MAX_LENGTH }));
+    return `${this.closeStream()}${this.paint(`— ${safe}`, ...codes)}\n`;
   }
 
   renderConnectionState(state: ConnectionState): string {
@@ -174,7 +182,10 @@ export class Renderer {
       this.streaming = true;
       this.currentStreamKey = streamKey;
     }
-    return prefixOut + (isReasoning ? this.paint(text, ANSI.dim) : text);
+    // Sanitize BEFORE the client adds its own colouring, so our escapes survive and the
+    // server's do not. Indent continuation lines so content cannot occupy the label column.
+    const safe = indentContinuation(sanitize(text));
+    return prefixOut + (isReasoning ? this.paint(safe, ANSI.dim) : safe);
   }
 
   /** Flush any open streamed line (e.g. before exiting). */

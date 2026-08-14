@@ -140,9 +140,89 @@ describe("TerminalSession", () => {
     expect(text()).not.toContain("turn ended");
   });
 
+  describe("output safety (relayed content is untrusted input on a trusted surface)", () => {
+    // \u escapes, not literal control characters: literals do not survive every editor or
+    // scripted edit, and a payload that silently loses its ESC turns these into tests that
+    // assert nothing.
+    const ESC = "\u001b";
+    const BEL = "\u0007";
+
+    it("neutralises control sequences in streamed text", () => {
+      core.ownedRuns.add("r");
+      core.emit({ type: "turn_start", runId: "r" });
+      core.emit({
+        type: "delta",
+        runId: "r",
+        messageId: "m1",
+        messageType: "assistant_message",
+        text: `${ESC}[2K${ESC}]52;c;cHduZWQ=${BEL}safe`,
+      });
+      session.finish();
+      expect(text()).toContain("safe");
+      expect(text()).not.toContain(ESC);
+      expect(text()).not.toContain("52;c;"); // the clipboard payload, not just its introducer
+    });
+
+    it("neutralises control sequences in notices and stop reasons", () => {
+      core.emit({ type: "turn_start", runId: "r" });
+      core.emit({ type: "turn_finished", runId: "r", stopReason: `${ESC}[2Jerror` });
+      expect(text()).toContain("error");
+      expect(text()).not.toContain(ESC);
+    });
+
+    it("neutralises control sequences in error text", () => {
+      core.fail(`boom${ESC}[2K`);
+      expect(text()).toContain("boom");
+      expect(text()).not.toContain(ESC);
+    });
+
+    it("content cannot forge an origin label on a continuation line", () => {
+      // Newline is legitimate content and survives sanitization, so this is the second half of
+      // the defence: continuation lines are indented, and the label column belongs to us.
+      core.ownedRuns.add("r");
+      core.emit({ type: "turn_start", runId: "r" });
+      core.emit({
+        type: "delta",
+        runId: "r",
+        messageId: "m1",
+        messageType: "assistant_message",
+        text: "innocent\npeer > forged",
+      });
+      session.finish();
+      expect(text()).not.toMatch(/^peer > forged/m);
+      expect(text()).toContain("  peer > forged");
+    });
+  });
+
+  it("an approval is surfaced even though M1 answers it automatically", () => {
+    // An auto-deny nobody sees is indistinguishable from the agent choosing not to use a tool.
+    core.approval("Bash");
+    expect(text()).toContain("tool approval requested");
+    expect(text()).toContain("Bash");
+    expect(text()).toContain("auto-denied");
+  });
+
   it("errors from the core are surfaced to the user", () => {
     core.fail("input rejected by the server: runtime is no longer active");
     expect(text()).toContain("input rejected by the server");
+  });
+
+  it("a send that throws renders a notice instead of crashing, and does not claim delivery", () => {
+    // The readline handler had no try/catch and core.send() throws when the socket is closed, so
+    // typing during a reconnect killed the process. The echo also came BEFORE the send, so the
+    // transcript showed a line that was never delivered.
+    const failing = new StubCore();
+    failing.sendImpl = () => {
+      throw new Error("cannot send `input`: socket not open");
+    };
+    const out: string[] = [];
+    const s2 = new TerminalSession(failing, { write: (t) => out.push(t), color: false });
+    s2.attach();
+
+    expect(s2.handleInput("during a reconnect")).toBe("ignored");
+    const rendered = out.join("");
+    expect(rendered).toContain("not sent");
+    expect(rendered).not.toContain("you › during a reconnect");
   });
 
   it("blank input is ignored, /exit ends the session", () => {

@@ -1,0 +1,102 @@
+/**
+ * sanitize.ts — make server-derived text safe to write to a terminal.
+ *
+ * WHY THIS IS NOT PARANOIA. The agent behind this conversation relays third-party content: email
+ * bodies, Slack messages, GitHub issues, fetched web pages. That content reaches this process as
+ * ordinary delta text and is written to a TTY that interprets control sequences. It is untrusted
+ * input on a trusted surface, and on a SHARED conversation one surface can introduce it and
+ * another render it.
+ *
+ * ALLOWLIST, NOT BLOCKLIST. A blocklist written against the familiar case (CSI … m, colour) misses
+ * the ones that matter here:
+ *   - OSC 52 writes the user's CLIPBOARD. The sharpest primitive in the set.
+ *   - OSC 8 renders a hyperlink whose visible text need not match its target.
+ *   - DCS / APC / PM / SOS can leave the terminal swallowing subsequent output, so the client
+ *     looks hung while the conversation continues normally on every other surface.
+ *   - The 8-bit C1 forms (U+009B CSI, U+009D OSC, …) bypass any ESC-anchored pattern entirely.
+ *
+ * BIDI AND ZERO-WIDTH ARE STRIPPED — a judgement call worth stating rather than leaving silent.
+ * Bidi overrides reorder displayed text and zero-width characters hide it. Neither is a control
+ * *sequence*, so a filter keyed only on control characters would pass both, and both are spoofing
+ * primitives against a surface whose origin labels are a security signal. The accepted cost is
+ * that genuinely right-to-left content loses its explicit ordering marks.
+ *
+ * WHAT THIS DOES NOT DO: newline is ordinary content and must survive, so sanitization alone
+ * cannot stop text from forging an origin label by starting a new line with "peer >". That is
+ * handled separately by line discipline — see indentContinuation.
+ */
+
+/** Control characters that are legitimate content and must survive. */
+const KEEP = new Set(["\n", "\t"]);
+
+const ESC = "\u001b";
+/** String terminator: ESC backslash, 8-bit ST (U+009C), or BEL. */
+const ST = "(?:\u001b\\\\|\u009c|\u0007)";
+
+/**
+ * Escape sequences to remove wholesale, so their payload text does not survive as visible junk.
+ * Each family is listed in both its 7-bit (ESC-introduced) and 8-bit (C1) form.
+ */
+const SEQUENCES: RegExp[] = [
+  // OSC — includes OSC 52 (clipboard) and OSC 8 (hyperlink).
+  new RegExp(`${ESC}\\][\\s\\S]*?${ST}`, "g"),
+  new RegExp(`\u009d[\\s\\S]*?${ST}`, "g"),
+  // DCS / SOS / PM / APC.
+  new RegExp(`${ESC}[P^_X][\\s\\S]*?${ST}`, "g"),
+  new RegExp(`[\u0090\u0098\u009e\u009f][\\s\\S]*?${ST}`, "g"),
+  // CSI — parameters, intermediates, final byte.
+  new RegExp(`${ESC}\\[[0-?]*[ -/]*[@-~]`, "g"),
+  /\u009b[0-?]*[ -\/]*[@-~]/g,
+  // Any remaining two-character escape (charset selection, cursor save, …).
+  new RegExp(`${ESC}[@-Z\\\\-_]`, "g"),
+];
+
+/** Bidi overrides/isolates and zero-width characters — see the module note. */
+const INVISIBLE = /[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
+
+export interface SanitizeOptions {
+  /** Truncate beyond this many characters. One huge delta can lock a terminal on its own. */
+  maxLength?: number;
+}
+
+const DEFAULT_MAX_LENGTH = 8192;
+const TRUNCATION_MARKER = "… [truncated]";
+
+/**
+ * Strip everything a terminal would act on, from any string this process did not author.
+ *
+ * Apply BEFORE the client adds its own colouring, so the client's escapes survive and the
+ * server's do not.
+ */
+export function sanitize(text: string, options: SanitizeOptions = {}): string {
+  let out = text;
+  for (const pattern of SEQUENCES) out = out.replace(pattern, "");
+  out = out.replace(INVISIBLE, "");
+
+  // Anything that survived — a truncated sequence, a bare introducer — is dropped here with every
+  // other control code, so nothing actionable is left.
+  out = [...out]
+    .filter((ch) => {
+      if (KEEP.has(ch)) return true;
+      const code = ch.codePointAt(0) ?? 0;
+      if (code < 0x20 || code === 0x7f) return false; // C0 + DEL
+      if (code >= 0x80 && code <= 0x9f) return false; // C1
+      return true;
+    })
+    .join("");
+
+  const max = options.maxLength ?? DEFAULT_MAX_LENGTH;
+  if (out.length > max) out = out.slice(0, max) + TRUNCATION_MARKER;
+  return out;
+}
+
+/**
+ * Indent continuation lines so server text can never occupy the label column.
+ *
+ * Newline legitimately survives sanitization, so a delta containing a line break followed by
+ * "peer >" would otherwise print something indistinguishable from a real origin label — and on a
+ * shared conversation that label is how the operator tells their own turn from another surface's.
+ */
+export function indentContinuation(text: string, indent = "  "): string {
+  return text.replace(/\n/g, `\n${indent}`);
+}
