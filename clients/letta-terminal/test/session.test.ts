@@ -54,6 +54,28 @@ describe("TerminalSession", () => {
     expect(text()).not.toContain("peer ›");
   });
 
+  it("an UNATTRIBUTABLE turn is hedged, not asserted to be another surface's", () => {
+    // Attribution is inferred from stream position and cannot be made exact, so `unknown` is a
+    // routine outcome. The renderer used to collapse it into "peer", which states that a second
+    // surface exists when the truth is only that we cannot tell — and on a shared conversation
+    // the origin label is the security signal the operator reads. A hedge is honest; a confident
+    // wrong answer is not.
+    core.emit({ type: "turn_start", runId: "run-mystery" });
+    core.emit({
+      type: "delta",
+      runId: "run-mystery",
+      messageId: "m1",
+      messageType: "assistant_message",
+      text: "who sent this?",
+    });
+    session.finish();
+
+    expect(text()).toContain("origin unknown");
+    expect(text()).toContain("agent? › who sent this?");
+    expect(text()).not.toContain("a turn from another surface is starting");
+    expect(text()).not.toContain("peer › who sent this?");
+  });
+
   it("own and peer turns interleave without cross-labelling", () => {
     core.turn("run-a", ["alpha"], { own: true });
     core.turn("run-b", ["beta"], { own: false });
@@ -92,6 +114,14 @@ describe("TerminalSession", () => {
 
   it("an empty queue update prints nothing", () => {
     core.queueDepth(0);
+    expect(text()).toBe("");
+  });
+
+  it("a queue update with none of OUR messages in it prints nothing", () => {
+    // update_queue is broadcast to every subscriber, so the surface whose turn is actually
+    // RUNNING was being told it was queued behind itself. An operator reading their live turn as
+    // blocked is likely to retype or Ctrl-C, which on a shared conversation makes it worse.
+    core.queueDepth(2, false);
     expect(text()).toBe("");
   });
 

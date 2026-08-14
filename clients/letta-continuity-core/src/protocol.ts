@@ -661,6 +661,19 @@ export function queueDepth(f: QueueFrame): number {
   return Array.isArray(f.queue) ? f.queue.length : 0;
 }
 
+/**
+ * The `client_message_id`s currently queued.
+ *
+ * `update_queue` is BROADCAST, so depth alone says nothing about whether the reader is the one
+ * waiting — the surface whose turn is actually running was being told it was queued behind itself.
+ */
+export function queuedClientMessageIds(f: QueueFrame): string[] {
+  if (!Array.isArray(f.queue)) return [];
+  return f.queue
+    .map((q) => (isObject(q) && typeof q.client_message_id === "string" ? q.client_message_id : ""))
+    .filter((id) => id !== "");
+}
+
 /** Number of active subagents reported by an `update_subagent_state` frame. */
 export function subagentCount(f: SubagentStateFrame): number {
   return Array.isArray(f.subagents) ? f.subagents.length : 0;

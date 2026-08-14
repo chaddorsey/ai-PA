@@ -14,12 +14,7 @@
  * disconnect (absent → rendered).
  */
 
-import {
-  type MessagesListResponseFrame,
-  type Runtime,
-  type ServerFrame,
-  buildConversationMessagesList,
-} from "./protocol.js";
+import type { MessagesListResponseFrame } from "./protocol.js";
 
 /** Extract the stable id from a snapshot message entry. */
 function messageId(entry: { id?: unknown; [k: string]: unknown }): string | undefined {
@@ -27,26 +22,25 @@ function messageId(entry: { id?: unknown; [k: string]: unknown }): string | unde
 }
 
 export interface CatchupSnapshot {
-  /** Ordered historical messages from the snapshot, to (re)paint the transcript. */
-  messages: Array<{ id?: string; [k: string]: unknown }>;
-  /** Set of message ids already known — the dedup watermark for the live resume. */
+  /**
+   * Set of message ids already known — the dedup watermark for the live resume.
+   *
+   * This used to sit alongside a `messages` array documented as being "to (re)paint the
+   * transcript". No client ever repainted, and nothing read the field, so every reconnect
+   * shallow-copied the whole conversation history and threw it away. Repainting is real work for
+   * M1 Unit 7 (which owns the catch-up proof); it should arrive with a consumer, not before one.
+   */
   seenMessageIds: Set<string>;
 }
 
 /** Turn a `conversation_messages_list_response` into a dedup watermark. */
 export function snapshotFromResponse(resp: MessagesListResponseFrame): CatchupSnapshot {
   const seen = new Set<string>();
-  const messages: Array<{ id?: string; [k: string]: unknown }> = [];
   for (const m of resp.messages) {
     const id = messageId(m);
-    const entry: { id?: string; [k: string]: unknown } = { ...m };
-    if (id !== undefined) {
-      entry.id = id;
-      seen.add(id);
-    }
-    messages.push(entry);
+    if (id !== undefined) seen.add(id);
   }
-  return { messages, seenMessageIds: seen };
+  return { seenMessageIds: seen };
 }
 
 /**

@@ -239,6 +239,11 @@ export class RunOwnership {
     return this.owned.has(runId);
   }
 
+  /** Whether any of these queued client_message_ids is one of ours. */
+  ownsAnyMessage(clientMessageIds: readonly string[]): boolean {
+    return clientMessageIds.some((id) => this.claims.some((c) => c.clientMessageId === id));
+  }
+
   hasOutstanding(): boolean {
     return this.owned.size > 0 || this.claims.length > 0;
   }

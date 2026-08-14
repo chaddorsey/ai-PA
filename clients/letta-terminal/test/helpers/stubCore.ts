@@ -15,6 +15,12 @@ export class StubCore implements SessionCore {
   private approvalCbs: Array<(e: { toolName: string | undefined; outcome: string }) => void> = [];
   /** Runs this "client" started — drives ownsRun(), as real attribution would. */
   readonly ownedRuns = new Set<string>();
+  /**
+   * Runs positively attributed to a peer. Anything in NEITHER set is `unknown`, which is a real
+   * outcome the stub must be able to produce: attribution is inferred from stream position and
+   * cannot be made exact, and the renderer used to collapse unknown into "peer".
+   */
+  readonly foreignRuns = new Set<string>();
   readonly sent: string[] = [];
   private seq = 0;
 
@@ -47,6 +53,12 @@ export class StubCore implements SessionCore {
   }
   ownsRun(runId: string | undefined): boolean {
     return runId !== undefined && this.ownedRuns.has(runId);
+  }
+  attributeRun(runId: string | undefined): "mine" | "foreign" | "unknown" {
+    if (runId === undefined) return "unknown";
+    if (this.ownedRuns.has(runId)) return "mine";
+    if (this.foreignRuns.has(runId)) return "foreign";
+    return "unknown";
   }
   /** Overridable so a test can make the send fail the way a closed socket does. */
   sendImpl: ((text: string) => void) | null = null;
@@ -84,7 +96,10 @@ export class StubCore implements SessionCore {
     chunks: string[],
     opts: { own: boolean; messageId?: string } = { own: true },
   ): void {
+    // `own: false` means positively a PEER's, not merely unattributable. A test that wants the
+    // unknown case adds the run to neither set.
     if (opts.own) this.ownedRuns.add(runId);
+    else this.foreignRuns.add(runId);
     this.emit({ type: "turn_start", runId });
     // Each chunk gets its OWN message id, exactly as the live server does — a stub that
     // reused one id per message hid the bug where every chunk got its own labelled line.
@@ -101,7 +116,19 @@ export class StubCore implements SessionCore {
     this.emit({ type: "turn_finished", runId, stopReason: "end_turn" });
   }
 
-  queueDepth(depth: number): void {
+  /** Set by `queueDepth`; drives the seam so a broadcast-only queue can be modelled. */
+  queueMine = true;
+
+  queueHasMine(): boolean {
+    return this.queueMine;
+  }
+
+  /**
+   * `mine` defaults true for the common case. Pass false to model the real broadcast shape: a
+   * queue update that reaches a surface with nothing of its own waiting.
+   */
+  queueDepth(depth: number, mine = true): void {
+    this.queueMine = mine;
     this.emit({
       type: "queue",
       frame: {

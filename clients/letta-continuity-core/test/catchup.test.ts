@@ -18,7 +18,6 @@ describe("catchup snapshot + message-id watermark dedup", () => {
   it("snapshotFromResponse collects message ids into the watermark", () => {
     const snap = snapshotFromResponse(resp(["letta-msg-1", "letta-msg-2"]));
     expect(snap.seenMessageIds).toEqual(new Set(["letta-msg-1", "letta-msg-2"]));
-    expect(snap.messages).toHaveLength(2);
   });
 
   it("drops replay of a snapshot message, admits a genuinely new message", () => {

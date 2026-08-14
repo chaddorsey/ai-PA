@@ -7,7 +7,7 @@
  */
 
 import type { ConnectionState, ContinuityCore, RenderEvent } from "@ai-pa/letta-continuity-core";
-import { MAX_TRACKED_ORIGINS, Renderer, type RendererOptions } from "./render.js";
+import { MAX_TRACKED_ORIGINS, Renderer, type RendererOptions, type TurnOrigin } from "./render.js";
 
 /**
  * `ContinuityCore` must satisfy this seam. Without an explicit assertion the only check is the
@@ -28,6 +28,10 @@ export interface SessionCore {
   onError(cb: (err: Error) => void): () => void;
   onApproval(cb: (e: { toolName: string | undefined; outcome: string }) => void): () => void;
   ownsRun(runId: string | undefined): boolean;
+  /** Three-way attribution. `ownsRun` collapses `foreign` and `unknown` into a single false. */
+  attributeRun(runId: string | undefined): "mine" | "foreign" | "unknown";
+  /** Whether an update_queue frame contains one of OUR queued messages. */
+  queueHasMine(frame: unknown): boolean;
   send(text: string): void;
 }
 
@@ -44,7 +48,7 @@ export class TerminalSession {
    * Attribution must be captured at turn START — ownership is released at turn_finished, so a
    * later lookup reports every completed turn as foreign. Cached per run for the renderer.
    */
-  private readonly originCache = new Map<string, boolean>();
+  private readonly originCache = new Map<string, TurnOrigin>();
 
   constructor(core: SessionCore, options: SessionOptions) {
     this.core = core;
@@ -67,14 +71,20 @@ export class TerminalSession {
   }
 
   private onRender(event: RenderEvent): void {
+    // Capture attribution AT turn_start. Ownership is released at turn_finished, so asking later
+    // would report every completed turn of our own as somebody else's.
     if (event.type === "turn_start" && event.runId) {
-      this.originCache.set(event.runId, this.core.ownsRun(event.runId));
+      this.originCache.set(event.runId, this.attribute(event.runId));
     }
     const text = this.renderer.render(event, {
+      queueHasMine: (frame) => this.core.queueHasMine(frame),
+      attributeRun: (runId) => {
+        if (runId === undefined) return "self";
+        return this.originCache.get(runId) ?? this.attribute(runId);
+      },
       isOwnRun: (runId) => {
         if (runId === undefined) return true;
-        const cached = this.originCache.get(runId);
-        return cached ?? this.core.ownsRun(runId);
+        return (this.originCache.get(runId) ?? this.attribute(runId)) === "self";
       },
     });
     if (event.type === "turn_finished" && event.runId) this.originCache.delete(event.runId);
@@ -85,6 +95,12 @@ export class TerminalSession {
       this.originCache.delete(oldest);
     }
     if (text) this.write(text);
+  }
+
+  /** Map the core's attribution onto the renderer's origin vocabulary. */
+  private attribute(runId: string): TurnOrigin {
+    const a = this.core.attributeRun(runId);
+    return a === "mine" ? "self" : a === "foreign" ? "peer" : "unknown";
   }
 
   private onConnectionState(state: ConnectionState): void {

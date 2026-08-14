@@ -47,8 +47,9 @@ import {
   newClientNonce,
   nextRequestId,
   queueRemovals,
+  queuedClientMessageIds,
 } from "./protocol.js";
-import { type RenderEvent, type RenderListener, StreamAssembler } from "./stream.js";
+import { type RenderListener, StreamAssembler } from "./stream.js";
 import { WsConnection } from "./ws.js";
 
 const WS_URL = "ws://127.0.0.1:4577/ws";
@@ -248,6 +249,17 @@ export class ContinuityCore {
    * turns from a peer's. Note ownership is RELEASED at turn_finished, so ask while the turn
    * is live (e.g. at turn_start) and remember the answer.
    */
+  /**
+   * Whether any message queued in this `update_queue` frame is one of OURS.
+   *
+   * `update_queue` is broadcast to every subscriber, so depth alone cannot tell the surface that
+   * is waiting from the surface whose turn is currently running.
+   */
+  queueHasMine(frame: ServerFrame): boolean {
+    if (!isQueue(frame)) return false;
+    return this.ownership.ownsAnyMessage(queuedClientMessageIds(frame));
+  }
+
   ownsRun(runId: string | undefined): boolean {
     return this.ownership.attribute(runId) === "mine";
   }

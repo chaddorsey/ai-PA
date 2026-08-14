@@ -25,6 +25,8 @@ export interface RendererOptions {
   selfLabel?: string;
   /** Label for turns another surface started — the visible proof of cross-surface continuity. */
   peerLabel?: string;
+  /** Label for a turn we could not attribute; see TurnOrigin. */
+  unknownLabel?: string;
 }
 
 const ANSI = {
@@ -51,11 +53,23 @@ const NOTICE_MAX_LENGTH = 512;
 export const MAX_TRACKED_ORIGINS = 512;
 
 /** Which surface started a turn. `unknown` means it began before we could attribute it. */
-export type TurnOrigin = "self" | "peer";
+/**
+ * Which surface a turn came from.
+ *
+ * `unknown` is a real, expected outcome, not a defect: attribution is inferred from stream
+ * position and cannot be made exact (no frame carries both our client_message_id and a run_id).
+ * The renderer used to collapse it to `peer`, which asserts that another surface exists when the
+ * truth is that we cannot tell — and on a shared conversation the origin label is a security
+ * signal, so a confident wrong answer is worse than a hedged one.
+ */
+export type TurnOrigin = "self" | "peer" | "unknown";
 
 export interface RenderContext {
   /** Did THIS client start `runId`? Backed by the core's run-ownership attribution. */
   isOwnRun(runId: string | undefined): boolean;
+  /** Three-way attribution; `isOwnRun` is the collapsed form and loses the `unknown` case. */
+  attributeRun(runId: string | undefined): TurnOrigin;
+  queueHasMine(frame: unknown): boolean;
 }
 
 export class Renderer {
@@ -80,6 +94,7 @@ export class Renderer {
       showReasoning: options.showReasoning ?? false,
       selfLabel: options.selfLabel ?? "agent",
       peerLabel: options.peerLabel ?? "peer",
+      unknownLabel: options.unknownLabel ?? "agent?",
     };
   }
 
@@ -138,10 +153,15 @@ export class Renderer {
       case "turn_start": {
         // Decide origin ONCE, here: run ownership is released at turn_finished, so asking
         // later would report every finished turn as foreign.
-        const origin: TurnOrigin = ctx.isOwnRun(event.runId) ? "self" : "peer";
+        const origin = ctx.attributeRun(event.runId);
         if (event.runId) this.originByRun.set(event.runId, origin);
         if (origin === "peer") {
           return this.renderNotice("a turn from another surface is starting");
+        }
+        if (origin === "unknown") {
+          // Deliberately hedged. Claiming "another surface" here would be a guess presented as
+          // fact on the one label the operator uses to tell their own turn from someone else's.
+          return this.renderNotice("a turn is starting (origin unknown)");
         }
         return this.closeStream();
       }
@@ -158,7 +178,11 @@ export class Renderer {
       case "queue": {
         const depth = queueDepth(event);
         if (depth === null || depth === 0) return "";
-        // The server queue-serializes concurrent sends; surface the wait rather than looking hung.
+        // update_queue is BROADCAST, so a non-zero depth does not mean WE are waiting. Rendering
+        // it unconditionally told the surface whose turn was actually running that it was queued
+        // behind itself — and an operator reading their live turn as blocked is likely to retype
+        // or Ctrl-C, which on a shared conversation makes the real depth worse.
+        if (!ctx.queueHasMine(event.frame)) return "";
         return this.renderNotice(`queued behind ${depth} turn${depth === 1 ? "" : "s"}…`);
       }
 
@@ -191,8 +215,18 @@ export class Renderer {
     // message must append to the line already open.
     if (!this.streaming || this.currentStreamKey !== streamKey) {
       prefixOut = this.closeStream();
-      const label = origin === "peer" ? this.opts.peerLabel : this.opts.selfLabel;
-      const codes = origin === "peer" ? [ANSI.bold, ANSI.magenta] : [ANSI.bold];
+      const label =
+        origin === "peer"
+          ? this.opts.peerLabel
+          : origin === "unknown"
+            ? this.opts.unknownLabel
+            : this.opts.selfLabel;
+      const codes =
+        origin === "peer"
+          ? [ANSI.bold, ANSI.magenta]
+          : origin === "unknown"
+            ? [ANSI.bold, ANSI.yellow]
+            : [ANSI.bold];
       prefixOut += `${this.paint(`${label} ›`, ...codes)} `;
       this.streaming = true;
       this.currentStreamKey = streamKey;

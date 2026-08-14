@@ -1,6 +1,8 @@
 {
   "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
-  "organizeImports": { "enabled": true },
+  "organizeImports": {
+    "enabled": true
+  },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
@@ -16,10 +18,17 @@
       },
       "style": {
         "useNodejsImportProtocol": "error"
+      },
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error"
       }
     }
   },
   "files": {
-    "ignore": ["dist", "node_modules"]
+    "ignore": [
+      "dist",
+      "node_modules"
+    ]
   }
 }
