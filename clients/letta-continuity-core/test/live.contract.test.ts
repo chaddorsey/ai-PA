@@ -148,6 +148,33 @@ describe.skipIf(!LIVE)(`live contract (opt-in, ${URL}, docs agent)`, () => {
     }
   }, 90000);
 
+  it("the runtime's permission mode is still the one the approval preconditions assume", async () => {
+    // Leg 1b of the approval policy (docs/runbooks/continuity-conversation-preconditions.md).
+    // The client cannot control permission mode, so it verifies it instead: under `unrestricted`
+    // no permission-gated `can_use_tool` approval fires on the shared conversation. If this ever
+    // changes, the client's approval responder becomes load-bearing rather than a backstop, and
+    // that should surface as a failing check rather than as a hung conversation.
+    const ws = new WsConnection({ url: URL, runtime: RUNTIME, versionPolicy: "warn" });
+    const modes: string[] = [];
+    ws.onFrame((f) => {
+      const status = (f as { device_status?: { current_permission_mode?: string } }).device_status;
+      if (f.type === "update_device_status" && status?.current_permission_mode) {
+        modes.push(status.current_permission_mode);
+      }
+    });
+    try {
+      await ws.connect();
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline && modes.length === 0) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(modes.length).toBeGreaterThan(0);
+      expect(modes[0]).toBe("unrestricted");
+    } finally {
+      ws.close();
+    }
+  }, 30000);
+
   /**
    * End-to-end proof of run-ownership correlation (followup finding #1) against the real
    * server: two peers on ONE conversation both inject at once. The server serializes them,

@@ -295,6 +295,9 @@ describe("contract: outbound builders shape the pinned frames", () => {
     expect(input.payload).toEqual({
       kind: "create_message",
       client_message_id: "cm-1",
+      // Leg 1 of the approval policy: the server excludes AskUserQuestion-class tools from the
+      // turn, so the inherently-blocking tool class cannot be selected on a shared conversation.
+      exclude_interactive_tools: true,
       messages: [{ role: "user", content: "hi", client_message_id: "cm-1" }],
     });
   });

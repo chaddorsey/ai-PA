@@ -317,6 +317,17 @@ export function buildInput(
     payload: {
       kind: "create_message",
       client_message_id: correlation.clientMessageId,
+      // Leg 1 of the M1 approval policy, enforced per-turn by the client rather than by an
+      // operational precondition somebody has to remember. The server drops
+      // INTERACTIVE_USER_INPUT_TOOL_NAMES (currently ["AskUserQuestion"]) from the turn's tool
+      // context when this is set, so the class of tool that inherently blocks on a human answer
+      // cannot be selected on a shared conversation at all. The server's own headless
+      // /v1/responses path sets exactly this flag — that is the precedent being followed.
+      //
+      // It does NOT cover permission-gated approvals (`control_request` / `can_use_tool`), which
+      // depend on the runtime's permission mode. See
+      // docs/runbooks/continuity-conversation-preconditions.md.
+      exclude_interactive_tools: true,
       messages: [{ role: "user", content, client_message_id: correlation.clientMessageId }],
     },
   };
