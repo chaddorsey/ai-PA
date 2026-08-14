@@ -9,6 +9,9 @@
 import type { ConnectionState, RenderEvent } from "@ai-pa/letta-continuity-core";
 import { Renderer, type RendererOptions } from "./render.js";
 
+/** Upper bound on cached turn origins, matching the renderer's own cap. */
+const MAX_TRACKED_ORIGINS = 512;
+
 /** The slice of ContinuityCore this session needs — the seam a test stub implements. */
 export interface SessionCore {
   onRender(cb: (event: RenderEvent) => void): () => void;
@@ -66,6 +69,12 @@ export class TerminalSession {
       },
     });
     if (event.type === "turn_finished" && event.runId) this.originCache.delete(event.runId);
+    // A turn_finished lost across a reconnect would otherwise leak an entry per interrupted turn.
+    while (this.originCache.size > MAX_TRACKED_ORIGINS) {
+      const oldest = this.originCache.keys().next().value;
+      if (oldest === undefined) break;
+      this.originCache.delete(oldest);
+    }
     if (text) this.write(text);
   }
 

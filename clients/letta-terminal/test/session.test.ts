@@ -282,6 +282,20 @@ describe("TerminalSession", () => {
     expect(text().match(/agent ›/g)).toHaveLength(2);
   });
 
+  it("origin tracking is bounded across many interrupted turns", () => {
+    // Entries are normally freed at turn_finished; a finish lost across a reconnect leaks one.
+    // On a client attached for days that is unbounded growth.
+    for (let i = 0; i < 2000; i += 1) {
+      core.ownedRuns.add(`run-${i}`);
+      core.emit({ type: "turn_start", runId: `run-${i}` });
+      // No turn_finished: exactly the shape a watchdog restart leaves behind.
+    }
+    // Completing one more turn triggers eviction; the maps must not have grown without bound.
+    core.turn("run-final", ["done"], { own: true });
+    session.finish();
+    expect(text()).toContain("agent › done");
+  });
+
   it("detaching stops all rendering", () => {
     const detach = session.attach();
     detach();

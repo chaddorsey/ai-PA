@@ -107,12 +107,13 @@ export class MockAppServer {
     return this.runCounter;
   }
 
-  async start(): Promise<string> {
-    this.wss = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+  /** `port` lets a test restart the server on the SAME port, as a supervisor would. */
+  async start(port = 0): Promise<string> {
+    this.wss = new WebSocketServer({ host: "127.0.0.1", port });
     await new Promise<void>((resolve) => this.wss?.once("listening", () => resolve()));
-    const port = (this.wss.address() as AddressInfo).port;
+    const bound = (this.wss.address() as AddressInfo).port;
     this.wss.on("connection", (socket) => this.onConnection(socket));
-    return `ws://127.0.0.1:${port}/ws`;
+    return `ws://127.0.0.1:${bound}/ws`;
   }
 
   async stop(): Promise<void> {

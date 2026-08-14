@@ -38,6 +38,9 @@ const ANSI = {
 /** Notices are status lines, not content, so they are bounded harder than delta text. */
 const NOTICE_MAX_LENGTH = 512;
 
+/** Upper bound on remembered turn origins; see evictOldOrigins. */
+const MAX_TRACKED_ORIGINS = 512;
+
 const ASSISTANT = "assistant_message";
 const REASONING = "reasoning_message";
 
@@ -151,6 +154,7 @@ export class Renderer {
       case "turn_finished": {
         const out = this.closeStream();
         if (event.runId) this.originByRun.delete(event.runId);
+        this.evictOldOrigins();
         if (event.stopReason && event.stopReason !== "end_turn") {
           return `${out}${this.renderNotice(`turn ended: ${event.stopReason}`, "warn")}`;
         }
@@ -186,6 +190,21 @@ export class Renderer {
     // server's do not. Indent continuation lines so content cannot occupy the label column.
     const safe = indentContinuation(sanitize(text));
     return prefixOut + (isReasoning ? this.paint(safe, ANSI.dim) : safe);
+  }
+
+  /**
+   * Bound the origin map.
+   *
+   * Entries are normally removed at turn_finished, but a turn whose finish frame is lost across
+   * a reconnect — the ordinary watchdog path — leaks one. On a client meant to stay attached for
+   * days that is unbounded growth, and a recycled run id would render with a stale label.
+   */
+  private evictOldOrigins(): void {
+    while (this.originByRun.size > MAX_TRACKED_ORIGINS) {
+      const oldest = this.originByRun.keys().next().value;
+      if (oldest === undefined) break;
+      this.originByRun.delete(oldest);
+    }
   }
 
   /** Flush any open streamed line (e.g. before exiting). */

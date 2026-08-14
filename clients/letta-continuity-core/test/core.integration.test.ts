@@ -337,6 +337,42 @@ describe("ContinuityCore integration", () => {
     });
   });
 
+  it("recovers from an outage LONGER than the old budget, and says so if it gives up", async () => {
+    // The existing bounded-reconnect test only asserted convergence to `disconnected`; nothing
+    // ever asserted that a recovered server is re-attached, which is the normal watchdog path.
+    server = new MockAppServer();
+    url = await server.start();
+    const port = new URL(url).port;
+    const { core } = await makeCore({ reconnectDelayMs: 30, maxReconnectAttempts: 40 });
+    await core.start();
+
+    await server.stop(); // the watchdog kills the runtime
+    await waitFor(() => core.state === "reconnecting");
+
+    // Down for far longer than the previous 5-attempt / fixed-1s budget would have survived.
+    await new Promise((r) => setTimeout(r, 600));
+    expect(core.state).toBe("reconnecting");
+
+    // Same port: the supervisor brings the server back where it was.
+    server = new MockAppServer();
+    await server.start(Number(port));
+    await waitFor(() => core.state === "connected", 5000);
+  });
+
+  it("exhausting the budget surfaces an actionable error, not just a quiet state change", async () => {
+    server = new MockAppServer();
+    url = await server.start();
+    const { core } = await makeCore({ reconnectDelayMs: 10, maxReconnectAttempts: 1 });
+    const errors: string[] = [];
+    core.onError((e) => errors.push(e.message));
+    await core.start();
+
+    await server.stop();
+    await waitFor(() => core.state === "disconnected", 5000);
+    // The process stays alive and the prompt still accepts input, so silence reads as "quiet".
+    expect(errors.some((m) => /reconnect budget exhausted/.test(m))).toBe(true);
+  });
+
   it("happy path: send a turn, render stream_delta → turn_finished", async () => {
     server = new MockAppServer();
     url = await server.start();

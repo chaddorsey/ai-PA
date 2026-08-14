@@ -69,6 +69,8 @@ export interface ContinuityCoreConfig {
   helloTimeoutMs?: number;
   rpcTimeoutMs?: number;
   serverInfoTimeoutMs?: number;
+  /** Flat reconnect delay override (tests). Omit for exponential backoff with jitter. */
+  jitter?: () => number;
   /** Override the per-instance correlation nonce (tests, or a bridge fanning out to N browsers). */
   clientNonce?: string;
   onWarn?: (msg: string) => void;
@@ -117,11 +119,17 @@ export class ContinuityCore {
   constructor(config: ContinuityCoreConfig) {
     this.config = config;
     this.clientNonce = config.clientNonce ?? newClientNonce();
-    this.connectionState = new ConnectionStateMachine(
-      config.maxReconnectAttempts !== undefined
+    this.connectionState = new ConnectionStateMachine({
+      ...(config.maxReconnectAttempts !== undefined
         ? { maxReconnectAttempts: config.maxReconnectAttempts }
-        : {},
-    );
+        : {}),
+      // `reconnectDelayMs` keeps working as a FLAT override so the existing integration tests can
+      // still force a 15-20ms schedule; without it they would each wait out a real backoff.
+      ...(config.reconnectDelayMs !== undefined
+        ? { baseDelayMs: config.reconnectDelayMs, maxDelayMs: config.reconnectDelayMs }
+        : {}),
+      ...(config.jitter !== undefined ? { jitter: config.jitter } : {}),
+    });
   }
 
   onRender(cb: RenderListener): () => void {
@@ -351,8 +359,17 @@ export class ContinuityCore {
     if (this.stopped) return;
     if (this.reconnectTimer) return; // a reconnect is already queued — never double-schedule
     const mayRetry = this.connectionState.dropped();
-    if (!mayRetry) return; // exhausted → disconnected (bounded, no infinite loop)
-    const delay = this.config.reconnectDelayMs ?? 1_000;
+    if (!mayRetry) {
+      // Exhaustion is a dead end the user must be told about: the process stays alive and the
+      // prompt still accepts input, so a bare state change reads as "quiet", not "gave up".
+      this.emitError(
+        new Error(
+          "reconnect budget exhausted — the App Server did not come back. Restart this client once it is up.",
+        ),
+      );
+      return;
+    }
+    const delay = this.connectionState.nextDelayMs();
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       void this.reconnect();

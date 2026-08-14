@@ -35,6 +35,12 @@
  * hung conversation.
  */
 
+/**
+ * Upper bound on remembered run ids. Sets preserve insertion order, so the oldest is evicted
+ * first. Attribution only needs recent runs; this is generous by orders of magnitude.
+ */
+const MAX_REMEMBERED_RUNS = 2_000;
+
 export type ClaimState = "awaiting-ack" | "queued" | "armed" | "lost";
 
 /** How a run relates to this client. See RunOwnership.attribute. */
@@ -163,7 +169,7 @@ export class RunOwnership {
   onRunObserved(runId: string): void {
     this.touch();
     if (this.seenRuns.has(runId)) return;
-    this.seenRuns.add(runId);
+    this.remember(runId);
     const index = this.claims.findIndex((c) => c.state === "armed");
     if (index === -1) {
       // Only POSITIVELY foreign when we had nothing outstanding at all. If we hold a queued or
@@ -186,7 +192,7 @@ export class RunOwnership {
   onTurnFinished(runId: string, stopReason?: string): void {
     this.touch();
     if (stopReason === STOP_REASON_REQUIRES_APPROVAL) return;
-    this.seenRuns.add(runId);
+    this.remember(runId);
     this.owned.delete(runId);
     if (this.owned.size === 0 && this.claims.length === 0) this.degraded = false;
   }
@@ -261,6 +267,24 @@ export class RunOwnership {
       pending: this.claims.length,
       degraded: this.degraded,
     };
+  }
+
+  /**
+   * Record a run id, evicting the oldest once the cap is reached.
+   *
+   * `seenRuns` previously grew for the life of the process. This client is meant to sit attached
+   * to a constant-on runtime for days, and every turn from every surface adds an entry. The cap
+   * is far beyond the reordering window attribution actually needs — it only has to cover runs
+   * that might still be referenced by an in-flight frame.
+   */
+  private remember(runId: string): void {
+    this.seenRuns.add(runId);
+    while (this.seenRuns.size > MAX_REMEMBERED_RUNS) {
+      const oldest = this.seenRuns.values().next().value;
+      if (oldest === undefined) break;
+      this.seenRuns.delete(oldest);
+      this.foreignRuns.delete(oldest);
+    }
   }
 
   private drop(claim: Claim): void {
