@@ -49,6 +49,11 @@ export interface MockServerOptions {
   conversations?: Array<Record<string, unknown>>;
   /** If true, an `input` triggers an approval_request_message instead of completing a turn. */
   approvalMode?: boolean;
+  /**
+   * Emit the dequeue notice AFTER the run starts — the inverse of the captured live ordering.
+   * ownership.ts hardens against this defensively, so it is worth being able to drive it.
+   */
+  dequeueAfterRunStart?: boolean;
   /** If false, the server never auto-responds to `input` (tests drive turns manually). */
   autoTurnOnInput?: boolean;
   /**
@@ -372,18 +377,33 @@ export class MockAppServer {
     const messages: TurnMessage[] = [
       { id: `letta-msg-${1000 + this.runCounter}`, messageType: "assistant_message", text: "OK" },
     ];
-    this.broadcastTurn(item.conn.runtime as ConnState["runtime"], runId, messages);
-    // Announce the dequeue by the client's own id — this is how a QUEUED client learns its
-    // turn is the one starting next, and therefore which run to claim.
-    this.sendBroadcastAll(item.conn.runtime, "update_queue", {
-      queue: q.map((qi, i) => ({
-        id: `q-${i + 1}`,
-        client_message_id: qi.clientMessageId,
-        kind: "message",
-        source: "user",
-      })),
-      removed: [{ client_message_id: item.clientMessageId, disposition: "dequeued" }],
-    });
+    // Announce the dequeue by the client's own id BEFORE the run starts — this is the order the
+    // live server was captured using, and it is how a QUEUED client learns which run to claim.
+    //
+    // This used to run AFTER broadcastTurn, i.e. the inverse. The consequence was not a cosmetic
+    // mismatch: the ordering a real client will actually meet was never exercised through the
+    // wire at all, so the queued→armed→owned chain — the whole reason ownership.ts exists — had
+    // no end-to-end coverage. `dequeueAfterRunStart` keeps the inverse available on purpose,
+    // because ownership.ts hardens against it defensively and that hardening deserves a test too.
+    const announceDequeue = (): void => {
+      this.sendBroadcastAll(item.conn.runtime, "update_queue", {
+        queue: q.map((qi, i) => ({
+          id: `q-${i + 1}`,
+          client_message_id: qi.clientMessageId,
+          kind: "message",
+          source: "user",
+        })),
+        removed: [{ client_message_id: item.clientMessageId, disposition: "dequeued" }],
+      });
+    };
+
+    if (this.options.dequeueAfterRunStart) {
+      this.broadcastTurn(item.conn.runtime as ConnState["runtime"], runId, messages);
+      announceDequeue();
+    } else {
+      announceDequeue();
+      this.broadcastTurn(item.conn.runtime as ConnState["runtime"], runId, messages);
+    }
     setImmediate(() => this.drain(key));
   }
 

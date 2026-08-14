@@ -359,6 +359,89 @@ describe("ContinuityCore integration", () => {
     await waitFor(() => core.state === "connected", 5000);
   });
 
+  it("a QUEUED send is still attributed to us when its turn runs", async () => {
+    // The queued->armed->owned chain is the whole reason ownership.ts exists, and it had no
+    // end-to-end coverage: the mock emitted the dequeue notice AFTER the turn, the inverse of the
+    // live capture, so the ordering a real client meets was never driven through the wire. It was
+    // verified only by hand-feeding onQueueRemovals() in unit tests.
+    server = new MockAppServer();
+    url = await server.start();
+    const { core: peer } = await makeCore();
+    const { core: mine, events } = await makeCore();
+    await peer.start();
+    await mine.start();
+
+    // Peer occupies the conversation, so our send is queued rather than started.
+    peer.send("peer goes first");
+    mine.send("mine is queued behind it");
+
+    // Sample ownership AT turn_start. It is released at turn_finished, so asking afterwards
+    // always reads false — the exact trap that made an earlier version of this assertion useless.
+    const ownedAtStart: string[] = [];
+    mine.onRender((e) => {
+      if (e.type === "turn_start" && e.runId && mine.ownsRun(e.runId)) ownedAtStart.push(e.runId);
+    });
+    await waitFor(() => events.filter((e) => e.type === "turn_finished").length >= 2, 5_000);
+    expect(ownedAtStart).toHaveLength(1);
+    // And it drains: no claim is left dangling once the turn completes.
+    await waitFor(() => mine.ownershipSnapshot().pending === 0, 3_000);
+  });
+
+  it("under the INVERSE dequeue ordering a queued send degrades to unknown, never to a peer's run", async () => {
+    // ownership.ts is documented as hardening against the inverse of the live ordering. This pins
+    // what that hardening actually buys, which is narrower than it sounds: the claim is still
+    // "queued" when the run is first seen, so nothing binds and attribution degrades to unknown.
+    // It does NOT still attribute correctly. That is acceptable only because the live server was
+    // captured emitting the dequeue FIRST — but "degrades honestly" is the property, and the
+    // dangerous alternative (binding our claim to a peer's run and labelling their turn as ours)
+    // is what must never happen.
+    server = new MockAppServer({ dequeueAfterRunStart: true });
+    url = await server.start();
+    const { core: peer } = await makeCore();
+    const { core: mine, events } = await makeCore();
+    await peer.start();
+    await mine.start();
+
+    const misattributed: string[] = [];
+    mine.onRender((e) => {
+      if (e.type === "turn_start" && e.runId && mine.ownsRun(e.runId)) misattributed.push(e.runId);
+    });
+
+    peer.send("peer goes first");
+    mine.send("mine is queued behind it");
+    await waitFor(() => events.filter((e) => e.type === "turn_finished").length >= 2, 5_000);
+
+    // Exactly zero runs claimed: our own is unattributable here, and crucially the PEER's run was
+    // not claimed either. Silence is the honest answer; a wrong label would not be.
+    expect(misattributed).toEqual([]);
+  });
+
+  it("a catch-up snapshot that FAILS degrades to no-dedup and keeps rendering", async () => {
+    // Both degradation branches of fetchSnapshot were untested although the double already had
+    // the knobs to drive one. The failure mode being guarded against is the worst one available:
+    // a client that looks connected and renders nothing.
+    server = new MockAppServer({ messagesSuccess: false, messagesError: "conversation not found" });
+    url = await server.start();
+    const warnings: string[] = [];
+    const { core, events } = await makeCore({ onWarn: (m: string) => warnings.push(m) });
+    await core.start();
+
+    server.dropAllConnections();
+    // Wait for the transition, not just the destination — right after the drop the state is still
+    // "connected", so asserting on it directly passes before the reconnect has even begun.
+    await waitFor(() => core.state !== "connected", 5_000);
+    await waitFor(() => core.state === "connected", 5_000);
+    await waitFor(() => warnings.some((w) => /catch-up snapshot failed/.test(w)), 3_000);
+
+    // The point: live rendering survives the degraded snapshot.
+    const before = events.length;
+    core.send("after the failed snapshot");
+    await waitFor(
+      () => events.length > before && events.some((e) => e.type === "turn_finished"),
+      3_000,
+    );
+  });
+
   it("a claim stranded by a lost ack is REAPED, so attribution recovers", async () => {
     // reapIdle was documented as the bound on stuck claims, unit-tested, and called by nothing.
     // The consequence was not a slow leak but a permanent one: one stranded claim pins
