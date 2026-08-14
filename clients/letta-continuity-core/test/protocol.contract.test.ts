@@ -18,19 +18,19 @@ import {
   type ServerFrame,
   VALIDATED_SERVER_VERSIONS,
   __resetRequestCounter,
-  approvalRequestId,
   assertServerIdentity,
-  buildApprovalSend,
+  buildApprovalDeny,
   buildConversationCreate,
   buildConversationList,
   buildConversationMessagesList,
   buildInput,
   buildRuntimeStart,
+  controlRequestToolName,
   deltaMessageId,
   deltaMessageType,
   deltaText,
   frameEventSeq,
-  isApprovalRequest,
+  isControlRequest,
   isLoopStatus,
   isQueue,
   isStreamDelta,
@@ -109,13 +109,6 @@ const FIXTURES = {
     ...meta,
     event_seq: 1,
   },
-  approval_request_message: {
-    type: "approval_request_message",
-    approval_request_id: "appr-1",
-    run_id: "local-run-9",
-    ...meta,
-    event_seq: 20,
-  },
   stream_delta_stop_reason: {
     type: "stream_delta",
     delta: {
@@ -139,6 +132,22 @@ const FIXTURES = {
     },
     ...meta,
     event_seq: 30,
+  },
+  // Captured from the 0.30.20 bundle (requestApprovalOverWS / the can_use_tool control request).
+  // This is the ACTIONABLE approval request — broadcast to every subscriber.
+  control_request: {
+    type: "control_request",
+    request_id: "perm-toolu_01ABC",
+    request: {
+      subtype: "can_use_tool",
+      tool_name: "Bash",
+      input: { command: "echo hi" },
+      tool_call_id: "toolu_01ABC",
+      permission_suggestions: [],
+      blocked_path: null,
+    },
+    agent_id: RT.agent_id,
+    conversation_id: RT.conversation_id,
   },
   conversation_list_response: {
     type: "conversation_list_response",
@@ -218,10 +227,48 @@ describe("contract: inbound frames round-trip through parse + validate", () => {
     expect(isLoopStatus(parseFrame(JSON.stringify(FIXTURES.update_loop_status)))).toBe(true);
     expect(isQueue(parseFrame(JSON.stringify(FIXTURES.update_queue)))).toBe(true);
     expect(isSubagentState(parseFrame(JSON.stringify(FIXTURES.update_subagent_state)))).toBe(true);
-    const ap = parseFrame(JSON.stringify(FIXTURES.approval_request_message));
-    expect(isApprovalRequest(ap)).toBe(true);
-    if (!isApprovalRequest(ap)) throw new Error("guard");
-    expect(approvalRequestId(ap)).toBe("appr-1");
+  });
+});
+
+describe("contract: the approval control request", () => {
+  const CR = FIXTURES.control_request;
+
+  it("is recognised, and exposes the tool call the user needs to see", () => {
+    const f = parseFrame(JSON.stringify(CR));
+    expect(isControlRequest(f)).toBe(true);
+    if (!isControlRequest(f)) throw new Error("guard");
+    expect(controlRequestToolName(f)).toBe("Bash");
+    expect(f.request_id).toBe("perm-toolu_01ABC");
+  });
+
+  it("the deny response carries the request_id and a deny decision with a message", () => {
+    const f = buildApprovalDeny("appr-1", RT, "perm-toolu_01ABC", "denied by policy") as Record<
+      string,
+      unknown
+    >;
+    expect(f.type).toBe("input");
+    const payload = f.payload as Record<string, unknown>;
+    expect(payload.kind).toBe("approval_response");
+    expect(payload.request_id).toBe("perm-toolu_01ABC");
+    // Server validator: deny REQUIRES a string message.
+    expect(payload.decision).toEqual({ behavior: "deny", message: "denied by policy" });
+  });
+
+  it("M1 is deny-only: no builder can construct an allow decision", () => {
+    // Enforced by type — buildApprovalDeny takes no decision parameter, so reintroducing allow
+    // at the rail milestone requires a visible signature change rather than a one-word edit.
+    const f = buildApprovalDeny("a", RT, "perm-x", "m") as Record<string, unknown>;
+    const json = JSON.stringify(f);
+    expect(json).not.toContain("allow");
+  });
+
+  it("a control_request missing its request_id or tool_call_id fails loudly", () => {
+    const noReq = { ...CR } as Record<string, unknown>;
+    noReq.request_id = undefined;
+    expect(() => validateInboundFrame(parseFrame(JSON.stringify(noReq)))).toThrow(ProtocolError);
+
+    const noTool = { ...CR, request: { ...CR.request, tool_call_id: undefined } };
+    expect(() => validateInboundFrame(parseFrame(JSON.stringify(noTool)))).toThrow(/tool_call_id/);
   });
 });
 
@@ -360,13 +407,6 @@ describe("contract: outbound builders shape the pinned frames", () => {
       expect(typeof f.conversation_id).toBe("string");
       expect(f.query === undefined || isRecord(f.query)).toBe(true);
     });
-  });
-
-  it("approval_send fails CLOSED with decision deny", () => {
-    const f = buildApprovalSend("a1", RT, "appr-1", "deny") as Record<string, unknown>;
-    expect(f.type).toBe(Outbound.approvalSend);
-    expect(f.decision).toBe("deny");
-    expect(f.approval_request_id).toBe("appr-1");
   });
 });
 

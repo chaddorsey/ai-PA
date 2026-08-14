@@ -20,6 +20,7 @@ import {
 import { type OwnershipSnapshot, RunOwnership } from "./ownership.js";
 import { type ContinuityPointer, readPointer } from "./pointer.js";
 import {
+  type ControlRequestFrame,
   type ConversationCreateResponseFrame,
   type ConversationListResponseFrame,
   type ConversationSummary,
@@ -28,14 +29,14 @@ import {
   type Runtime,
   type ServerFrame,
   type VersionPolicy,
-  approvalRequestId,
-  buildApprovalSend,
+  buildApprovalDeny,
   buildConversationCreate,
   buildConversationList,
   buildConversationMessagesList,
   buildInput,
+  controlRequestToolName,
   frameRunId,
-  isApprovalRequest,
+  isControlRequest,
   isInputAccepted,
   isQueue,
   isStreamDelta,
@@ -48,6 +49,13 @@ import { type RenderEvent, type RenderListener, StreamAssembler } from "./stream
 import { WsConnection } from "./ws.js";
 
 const WS_URL = "ws://127.0.0.1:4577/ws";
+
+/**
+ * The reason attached to every M1 auto-deny. The server requires a string message on a deny, and
+ * this one is written for the human who finds it in a transcript, not for a log parser.
+ */
+const APPROVAL_DENY_MESSAGE =
+  "Auto-denied: this conversation is shared across surfaces and has no interactive approval UI yet (milestone 1).";
 
 export interface ContinuityCoreConfig {
   /** Path to the durable `{agent, conversation}` pointer file (pointer.ts). */
@@ -66,6 +74,20 @@ export interface ContinuityCoreConfig {
   onWarn?: (msg: string) => void;
 }
 
+/**
+ * An approval request seen on the conversation, and what this client did about it.
+ *
+ * `toolName` is server-derived and therefore untrusted: it must be sanitized before display.
+ * The tool ARGUMENTS are deliberately not exposed — they routinely carry file contents or
+ * credentials the agent is passing to a tool, and surfacing them would put that in terminal
+ * scrollback and any session capture.
+ */
+export interface ApprovalEvent {
+  requestId: string;
+  toolName: string | undefined;
+  outcome: "denied";
+}
+
 export class ContinuityCore {
   private readonly config: ContinuityCoreConfig;
   private readonly connectionState: ConnectionStateMachine;
@@ -81,9 +103,16 @@ export class ContinuityCore {
    * conversation. See protocol.newClientNonce for why a module-global counter is not enough.
    */
   private readonly clientNonce: string;
+  /**
+   * control_request ids already answered. Bounded implicitly by the turn rate; entries are cheap
+   * strings and a conversation's approval count is small. Prevents a redelivered frame from
+   * emitting a second (harmless but noisy) response.
+   */
+  private readonly answeredApprovals = new Set<string>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
   private readonly errorListeners = new Set<(err: Error) => void>();
+  private readonly approvalListeners = new Set<(e: ApprovalEvent) => void>();
 
   constructor(config: ContinuityCoreConfig) {
     this.config = config;
@@ -104,6 +133,16 @@ export class ContinuityCore {
   onError(cb: (err: Error) => void): () => void {
     this.errorListeners.add(cb);
     return () => this.errorListeners.delete(cb);
+  }
+  /**
+   * Approval activity on this conversation. Surfaced even though M1 answers automatically: an
+   * auto-deny the user never sees is indistinguishable from the agent choosing not to use a tool,
+   * which makes the whole policy unfalsifiable in practice — and an approval is a
+   * security-relevant event regardless of who answered it.
+   */
+  onApproval(cb: (e: ApprovalEvent) => void): () => void {
+    this.approvalListeners.add(cb);
+    return () => this.approvalListeners.delete(cb);
   }
 
   get state(): ConnectionState {
@@ -241,17 +280,32 @@ export class ContinuityCore {
       // fall through: the assembler may surface a "queued…" indicator
     }
 
-    // Approval fail-closed: only the client that STARTED this run responds, and it always
-    // DENIES in M1. Gating on run ownership (not an outstanding-turn counter) is what stops a
-    // foreign turn's completion from silencing our own deny, or our own gap from making us
-    // answer a peer's approval.
-    if (isApprovalRequest(frame)) {
-      if (this.ownership.shouldRespondToApproval(frame.run_id) && this.ws && this.runtime) {
-        const rid = nextRequestId("appr", this.clientNonce);
-        const approvalId = approvalRequestId(frame) ?? "";
-        this.ws.send(buildApprovalSend(rid, this.runtime, approvalId, "deny"));
+    // Approval: answer any request we have not already answered, and always DENY (M1).
+    //
+    // This deliberately does NOT gate on run ownership. The server broadcasts each approval to
+    // every subscribed connection and settles the race itself (`settled` guard in
+    // requestApprovalOverWS; the loser is answered "Approval request is no longer pending"), so a
+    // duplicate response is harmless and the ONLY dangerous outcome is nobody answering. Gating on
+    // attribution could produce exactly that — and attribution is inferred from stream position,
+    // so it is the less trustworthy of the two.
+    //
+    // The local at-most-once check is not for the server's benefit: it stops a redelivered frame
+    // after a reconnect from emitting a redundant response that would log as an anomaly.
+    if (isControlRequest(frame)) {
+      const id = frame.request_id;
+      if (!this.answeredApprovals.has(id) && this.ws && this.runtime) {
+        this.answeredApprovals.add(id);
+        this.ws.send(
+          buildApprovalDeny(
+            nextRequestId("appr", this.clientNonce),
+            this.runtime,
+            id,
+            APPROVAL_DENY_MESSAGE,
+          ),
+        );
+        this.emitApproval(frame, "denied");
       }
-      return; // observers do nothing; not rendered in M1
+      return;
     }
 
     // Reconnect replay↔live dedup on message id (never on event_seq).
@@ -337,6 +391,15 @@ export class ContinuityCore {
       );
       return null;
     }
+  }
+
+  private emitApproval(frame: ControlRequestFrame, outcome: ApprovalEvent["outcome"]): void {
+    const event: ApprovalEvent = {
+      requestId: frame.request_id,
+      toolName: controlRequestToolName(frame),
+      outcome,
+    };
+    for (const l of this.approvalListeners) l(event);
   }
 
   private emitError(err: Error): void {

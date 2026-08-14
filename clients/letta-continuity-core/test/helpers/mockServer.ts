@@ -81,6 +81,8 @@ export class MockAppServer {
   readonly received: Array<Record<string, unknown>> = [];
   /** Count of frames dropped by a command guard (malformed envelope). */
   rejected = 0;
+  /** control_request ids already answered — the server's own at-most-once guard. */
+  private readonly settledApprovals = new Set<string>();
   options: MockServerOptions;
   /** Simple per-runtime serialization flag for the concurrency test. */
   private busy = new Map<string, boolean>();
@@ -159,7 +161,7 @@ export class MockAppServer {
       if (this.guard(isObj(msg.body))) this.handleConversationCreate(conn, msg);
     } else if (type === "conversation_messages_list") {
       if (this.guard(typeof msg.conversation_id === "string")) this.handleMessagesList(conn, msg);
-    } else if (type === "approval_send") this.handleApprovalSend(conn, msg);
+    }
   }
 
   /**
@@ -236,6 +238,24 @@ export class MockAppServer {
   private handleInput(conn: ConnState, msg: Record<string, unknown>): void {
     if (!conn.runtime) return;
     const payload = isObj(msg.payload) ? msg.payload : {};
+    if (payload.kind === "approval_response") {
+      // Server-side at-most-once: the first response wins; later ones are told it is settled.
+      const settledId = String(payload.request_id);
+      const first = !this.settledApprovals.has(settledId);
+      this.settledApprovals.add(settledId);
+      if (typeof msg.request_id === "string") {
+        conn.socket.send(
+          JSON.stringify({
+            type: "input_accepted",
+            request_id: msg.request_id,
+            runtime: conn.runtime,
+            accepted: first,
+            ...(first ? {} : { error: "Approval request is no longer pending" }),
+          }),
+        );
+      }
+      return;
+    }
     const clientMessageId =
       typeof payload.client_message_id === "string" ? payload.client_message_id : `cm-${uid}`;
     const key = `${conn.runtime.agent_id}/${conn.runtime.conversation_id}`;
@@ -256,7 +276,9 @@ export class MockAppServer {
     }
 
     if (this.options.approvalMode) {
-      // Start a run, announce it so the injector can attribute it, THEN gate it on approval.
+      // The REAL shape (0.30.20 requestApprovalOverWS): announce the run so clients can attribute
+      // it, then broadcast a top-level control_request to EVERY subscriber — not just the
+      // initiator. The server settles the race itself, so every subscriber answering is expected.
       const runId = `local-run-${this.bump()}`;
       this.sendBroadcastAll(conn.runtime, "update_loop_status", {
         loop_status: {
@@ -265,10 +287,25 @@ export class MockAppServer {
           executing_tool_call_ids: [],
         },
       });
-      this.sendBroadcastAll(conn.runtime, "approval_request_message", {
-        approval_request_id: `appr-${runId}`,
-        run_id: runId,
-      });
+      const toolCallId = `toolu_${runId}`;
+      for (const sub of this.subscribers(conn.runtime)) {
+        sub.socket.send(
+          JSON.stringify({
+            type: "control_request",
+            request_id: `perm-${toolCallId}`,
+            request: {
+              subtype: "can_use_tool",
+              tool_name: "Bash",
+              input: { command: "echo hi" },
+              tool_call_id: toolCallId,
+              permission_suggestions: [],
+              blocked_path: null,
+            },
+            agent_id: conn.runtime.agent_id,
+            conversation_id: conn.runtime.conversation_id,
+          }),
+        );
+      }
       return;
     }
     if (!this.options.autoTurnOnInput) return;
@@ -444,13 +481,6 @@ export class MockAppServer {
         error: this.options.messagesError ?? null,
       }),
     );
-  }
-
-  private handleApprovalSend(conn: ConnState, msg: Record<string, unknown>): void {
-    // Resolve the approval as a bounded, cancelled turn (fail-closed path).
-    if (!conn.runtime) return;
-    const runId = `local-run-appr-${this.bump()}`;
-    this.broadcastTurn(conn.runtime, runId, [], msg.decision === "deny" ? "cancelled" : "end_turn");
   }
 
   private subscribers(runtime: { agent_id: string; conversation_id: string }): ConnState[] {

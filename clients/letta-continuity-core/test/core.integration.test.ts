@@ -307,68 +307,127 @@ describe("ContinuityCore integration", () => {
     expect(runIds.size).toBe(2); // two distinct serialized runs, neither dropped
   });
 
-  it("approval fails CLOSED: the injecting client auto-denies; an observer does not respond", async () => {
-    server = new MockAppServer({ approvalMode: true });
-    url = await server.start();
-    const { core: injector } = await makeCore();
-    const { core: observer } = await makeCore();
-    await injector.start();
-    await observer.start();
-    injector.send("do a risky thing");
-    // The injector must auto-send an approval_send=deny; the turn must resolve, not hang.
-    await waitFor(() =>
-      server.received.some((m) => m.type === "approval_send" && m.decision === "deny"),
-    );
-    const approvals = server.received.filter((m) => m.type === "approval_send");
-    expect(approvals).toHaveLength(1); // exactly one responder (the injector), not the observer
-    expect(approvals[0]?.decision).toBe("deny");
-  });
+  describe("approval policy (M1: deny-only)", () => {
+    /**
+     * ASSERTION CHANGE, deliberate. The three tests these replace asserted "exactly one
+     * responder — the injector; the observer stays silent". That premise is wrong: the server
+     * broadcasts each approval to EVERY subscribed connection and settles the race itself
+     * (`settled` guard in requestApprovalOverWS), answering the loser "Approval request is no
+     * longer pending". A duplicate response is therefore harmless, and gating on attribution
+     * could produce the only dangerous outcome — nobody answering. See
+     * docs/plans/2026-08-13-approval-contract-findings.md.
+     */
+    it("an approval is answered with a deny, and the response carries the request_id", async () => {
+      server = new MockAppServer({ approvalMode: true });
+      url = await server.start();
+      const { core } = await makeCore();
+      await core.start();
 
-  /**
-   * Followup finding #1: the old outstanding-turn COUNTER passed the test above while the
-   * guarantee was weak, because that test never puts a foreign turn in flight. These two
-   * exercise the concurrent case in both directions.
-   */
-  it("approval: a FOREIGN turn finishing does not silence the injector's own deny", async () => {
-    server = new MockAppServer({ approvalMode: true });
-    url = await server.start();
-    const { core: injector } = await makeCore();
-    await injector.start();
+      core.send("do a risky thing");
+      await waitFor(() =>
+        server.received.some(
+          (m) =>
+            m.type === "input" && (m.payload as { kind?: string }).kind === "approval_response",
+        ),
+      );
+      const resp = server.received.find(
+        (m) => m.type === "input" && (m.payload as { kind?: string }).kind === "approval_response",
+      );
+      const payload = resp?.payload as { request_id: string; decision: Record<string, unknown> };
+      expect(payload.request_id).toMatch(/^perm-/);
+      expect(payload.decision).toMatchObject({ behavior: "deny" });
+      expect(typeof payload.decision.message).toBe("string"); // server requires it on a deny
+    });
 
-    injector.send("do a risky thing");
-    await waitFor(() => injector.ownershipSnapshot().owned.length === 1);
-    const myRun = injector.ownershipSnapshot().owned[0] as string;
+    it("never emits an allow, whatever the path", async () => {
+      server = new MockAppServer({ approvalMode: true });
+      url = await server.start();
+      const { core } = await makeCore();
+      await core.start();
+      core.send("do a risky thing");
+      await waitFor(() =>
+        server.received.some(
+          (m) =>
+            m.type === "input" && (m.payload as { kind?: string }).kind === "approval_response",
+        ),
+      );
+      expect(JSON.stringify(server.received)).not.toContain('"allow"');
+    });
 
-    // A peer's turn completes on the same conversation. A counter would zero here and the
-    // injector would then fail to answer its OWN approval → both surfaces hang.
-    server.broadcastTurn({ agent_id: AGENT, conversation_id: CONV }, "local-run-foreign", [
-      { id: "letta-msg-FGN", messageType: "assistant_message", text: "elsewhere" },
-    ]);
-    await waitFor(() => server.received.some((m) => m.type === "approval_send"));
+    it("an OBSERVER also answers — that is correct now, and the server settles the race", async () => {
+      // Previously asserted the opposite. Both surfaces answering is benign; the server accepts
+      // the first and tells the second the request is no longer pending. What must never happen
+      // is zero responders.
+      server = new MockAppServer({ approvalMode: true });
+      url = await server.start();
+      const { core: injector } = await makeCore();
+      const { core: observer } = await makeCore();
+      await injector.start();
+      await observer.start();
 
-    expect(injector.ownershipSnapshot().owned).toEqual([myRun]);
-    const approvals = server.received.filter((m) => m.type === "approval_send");
-    expect(approvals).toHaveLength(1);
-    expect(approvals[0]?.decision).toBe("deny");
-  });
+      injector.send("do a risky thing");
+      await waitFor(() => {
+        const responses = server.received.filter(
+          (m) =>
+            m.type === "input" && (m.payload as { kind?: string }).kind === "approval_response",
+        );
+        return responses.length >= 2;
+      });
+      // Both answered; at least one was accepted.
+      expect(true).toBe(true);
+    });
 
-  it("approval: an observer with its own turn in flight still ignores a FOREIGN approval", async () => {
-    // The observer's send is QUEUED behind a peer's in-flight turn, so its claim is NOT armed
-    // — then the peer's turn hits an approval. A counter would be >0 here and wrongly answer
-    // for the peer. (Queued is the only realistic shape: the server serializes turns, so an
-    // "started" ack means our own run is the one running, not a peer's.)
-    server = new MockAppServer({ autoTurnOnInput: false, inputDisposition: "queued" });
-    url = await server.start();
-    const { core: observer } = await makeCore();
-    await observer.start();
-    observer.send("my own unrelated turn");
-    await waitFor(() => server.received.some((m) => m.type === "input"));
+    it("a redelivered approval does not produce a second response from the same client", async () => {
+      // Not for the server's benefit (it de-duplicates) but so a reconnect replay does not emit
+      // a redundant response that logs as an anomaly.
+      server = new MockAppServer({ approvalMode: true });
+      url = await server.start();
+      const { core } = await makeCore();
+      await core.start();
+      core.send("do a risky thing");
+      await waitFor(() =>
+        server.received.some(
+          (m) =>
+            m.type === "input" && (m.payload as { kind?: string }).kind === "approval_response",
+        ),
+      );
+      const first = server.received.filter(
+        (m) => m.type === "input" && (m.payload as { kind?: string }).kind === "approval_response",
+      ).length;
 
-    // A run that is demonstrably NOT ours: announced, then gated on approval.
-    server.broadcastForeignApproval({ agent_id: AGENT, conversation_id: CONV }, "local-run-peer");
-    await new Promise((r) => setTimeout(r, 150));
+      // Redeliver the SAME control_request the client already answered.
+      const answered = server.received.find(
+        (m) => m.type === "input" && (m.payload as { kind?: string }).kind === "approval_response",
+      )?.payload as { request_id: string };
+      server.sendRaw({
+        type: "control_request",
+        request_id: answered.request_id,
+        request: {
+          subtype: "can_use_tool",
+          tool_name: "Bash",
+          tool_call_id: answered.request_id.replace(/^perm-/, ""),
+        },
+      });
+      await new Promise((r) => setTimeout(r, 150));
+      const after = server.received.filter(
+        (m) => m.type === "input" && (m.payload as { kind?: string }).kind === "approval_response",
+      ).length;
+      expect(after).toBe(first);
+    });
 
-    expect(server.received.filter((m) => m.type === "approval_send")).toHaveLength(0);
+    it("every approval is surfaced to consumers, not silently swallowed", async () => {
+      // An auto-deny nobody sees is indistinguishable from the agent declining to use a tool.
+      server = new MockAppServer({ approvalMode: true });
+      url = await server.start();
+      const { core } = await makeCore();
+      const seen: Array<{ requestId: string; toolName: string | undefined }> = [];
+      core.onApproval((e) => seen.push(e));
+      await core.start();
+      core.send("do a risky thing");
+      await waitFor(() => seen.length > 0);
+      expect(seen[0]?.toolName).toBe("Bash");
+      expect(seen[0]?.requestId).toMatch(/^perm-/);
+    });
   });
 
   it("reconnect + message-id catch-up: no duplicate of a snapshot message, no loss of a new one", async () => {

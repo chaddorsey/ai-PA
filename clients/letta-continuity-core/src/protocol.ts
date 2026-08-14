@@ -72,7 +72,6 @@ export const Outbound = {
   conversationUpdate: "conversation_update",
   conversationFork: "conversation_fork",
   conversationMessagesList: "conversation_messages_list",
-  approvalSend: "approval_send",
 } as const;
 
 /** Inbound (server → client) message-type strings. */
@@ -86,7 +85,7 @@ export const Inbound = {
   updateSubagentState: "update_subagent_state",
   updateDeviceStatus: "update_device_status",
   turnFinished: "turn_finished",
-  approvalRequestMessage: "approval_request_message",
+  controlRequest: "control_request",
   conversationListResponse: "conversation_list_response",
   conversationCreateResponse: "conversation_create_response",
   conversationRetrieveResponse: "conversation_retrieve_response",
@@ -215,13 +214,29 @@ export interface SubagentStateFrame extends ServerFrame {
   event_seq: number;
 }
 
-export interface ApprovalRequestFrame extends ServerFrame {
-  type: "approval_request_message";
-  runtime: Runtime;
-  event_seq: number;
-  /** id used to answer via `approval_send`. Field name is inferred (no live sample); kept here so drift is localized. */
-  approval_request_id?: string;
-  run_id?: string;
+/**
+ * The ACTIONABLE approval request. Verified against the 0.30.20 bundle
+ * (`requestApprovalOverWS`): a top-level frame, **broadcast to every subscribed connection**,
+ * whose `request_id` is `"perm-" + tool_call_id`.
+ *
+ * Do not confuse it with the `approval_request_message` DELTA, which is the transcript
+ * projection of the same event. A client that watches only deltas can display an approval but
+ * can never answer one — which is precisely why approvals were invisible before this change.
+ */
+export interface ControlRequestFrame extends ServerFrame {
+  type: "control_request";
+  request_id: string;
+  request: {
+    subtype: string;
+    tool_name?: string;
+    tool_call_id: string;
+    input?: unknown;
+    permission_suggestions?: unknown[];
+    blocked_path?: string | null;
+    diffs?: unknown[];
+  };
+  agent_id?: string;
+  conversation_id?: string;
 }
 
 export interface RuntimeStartResponseFrame extends ServerFrame {
@@ -370,23 +385,32 @@ export function buildConversationMessagesList(requestId: string, runtime: Runtim
 }
 
 /**
- * Fail-CLOSED approval response (M1 policy). Only the injecting client sends this.
- * `decision` is "deny" for M1; "allow" is the rail/approval milestone. The exact wire
- * shape of approval_send is inferred (no live approval sample captured safely); it lives
- * here so a drift correction is one edit.
+ * The M1 approval response: always DENY.
+ *
+ * Deny-only is enforced by the SIGNATURE, not by a call-site argument. The previous builder took
+ * `decision: "deny" | "allow"` and relied on one call site passing the right literal — a one-word
+ * edit away from auto-approving tool calls on an agent holding shell, filesystem and messaging
+ * credentials. Reintroducing allow at the rail milestone now requires changing this signature,
+ * which is visible in review.
+ *
+ * Shape from the server's own validator (`isValidApprovalResponseBody`): the response rides an
+ * `input` with `kind: "approval_response"`, and a deny decision REQUIRES a string `message`.
  */
-export function buildApprovalSend(
+export function buildApprovalDeny(
   requestId: string,
   runtime: Runtime,
-  approvalRequestId: string,
-  decision: "deny" | "allow",
+  controlRequestId: string,
+  message: string,
 ): ServerFrame {
   return {
-    type: Outbound.approvalSend,
+    type: Outbound.input,
     request_id: requestId,
     runtime,
-    approval_request_id: approvalRequestId,
-    decision,
+    payload: {
+      kind: "approval_response",
+      request_id: controlRequestId,
+      decision: { behavior: "deny", message },
+    },
   };
 }
 
@@ -469,10 +493,14 @@ export function validateInboundFrame(frame: ServerFrame): void {
         throw new ProtocolError(`${frame.type}: missing numeric \`event_seq\``);
       return;
     }
-    case Inbound.approvalRequestMessage: {
-      if (!isRuntime(frame.runtime))
-        throw new ProtocolError("approval_request_message: missing `runtime`");
-      return;
+    case Inbound.controlRequest: {
+      if (typeof frame.request_id !== "string")
+        throw new ProtocolError("control_request: missing `request_id`");
+      if (!isObject(frame.request) || typeof frame.request.subtype !== "string")
+        throw new ProtocolError("control_request: missing `request.subtype`");
+      if (typeof frame.request.tool_call_id !== "string")
+        throw new ProtocolError("control_request: missing `request.tool_call_id`");
+      return; // no event_seq: this is a control-channel request, not an ordered broadcast
     }
     case Inbound.inputAccepted: {
       if (typeof frame.request_id !== "string")
@@ -546,8 +574,8 @@ export function frameRunId(f: ServerFrame): string | undefined {
 export function isSubagentState(f: ServerFrame): f is SubagentStateFrame {
   return f.type === Inbound.updateSubagentState;
 }
-export function isApprovalRequest(f: ServerFrame): f is ApprovalRequestFrame {
-  return f.type === Inbound.approvalRequestMessage;
+export function isControlRequest(f: ServerFrame): f is ControlRequestFrame {
+  return f.type === Inbound.controlRequest;
 }
 
 /** True if the frame is a broadcast that participates in the ordered `event_seq` stream. */
@@ -588,8 +616,9 @@ export function deltaText(f: StreamDeltaFrame): string {
   return "";
 }
 
-export function approvalRequestId(f: ApprovalRequestFrame): string | undefined {
-  return typeof f.approval_request_id === "string" ? f.approval_request_id : undefined;
+/** Tool name from an approval control request, for the notice shown to the user. */
+export function controlRequestToolName(f: ControlRequestFrame): string | undefined {
+  return typeof f.request.tool_name === "string" ? f.request.tool_name : undefined;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
