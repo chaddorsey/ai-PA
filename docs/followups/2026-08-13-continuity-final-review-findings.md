@@ -8,6 +8,16 @@ kieran-typescript, adversarial)
 
 **Verdict: NOT ready. M1 Unit 5 must stay open.**
 
+> **STATUS 2026-08-13 — all eight P1 items below are FIXED** (`741e638d`…`7d91749a`, see
+> `git log`). Every fix carries a test that was **verified to fail against the unfixed code** —
+> reverting each fix individually was confirmed to break its test, and the specific failure is
+> recorded per item. Suites after: **145 core + 4 skipped, 54 terminal, 4 live**, plus a live
+> terminal round-trip. The P2/P3 sections below are **not** addressed and remain open.
+>
+> Unit 5 stays open regardless: the P2 set still contains `reapIdle` being unreachable, `event_seq`
+> poisoning, the stale `index.ts:7` header that invites reintroducing the original bug, and the two
+> remaining vacuous tests.
+
 The remediation fixed the defect the previous review named. It also left, and in three places
 introduced, a comparable set — including a **new "nobody answers" path in the very approval code
 that was rewritten to eliminate that outcome**. Baseline was green throughout (134/4 skipped, 51,
