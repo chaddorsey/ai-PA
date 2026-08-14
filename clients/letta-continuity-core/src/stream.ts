@@ -13,6 +13,7 @@
  */
 
 import {
+  LoopStatuses,
   type ServerFrame,
   deltaMessageId,
   deltaMessageType,
@@ -50,8 +51,6 @@ export interface RenderEvent {
 }
 
 export type RenderListener = (event: RenderEvent) => void;
-
-const WAITING_ON_INPUT = "WAITING_ON_INPUT";
 
 export class StreamAssembler {
   /** Highest event_seq delivered on the current connection; drops late/duplicate frames. */
@@ -104,7 +103,7 @@ export class StreamAssembler {
     if (isLoopStatus(frame)) {
       const status = frame.loop_status.status;
       // Returning to WAITING_ON_INPUT closes any active turn (belt-and-suspenders with turn_finished).
-      if (status === WAITING_ON_INPUT) this.activeRunId = null;
+      if (status === LoopStatuses.waitingOnInput) this.activeRunId = null;
       return this.emit({ type: "loop_status", eventSeq: seq, status, frame });
     }
     if (isTurnFinished(frame)) {

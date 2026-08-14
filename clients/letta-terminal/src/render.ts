@@ -11,8 +11,10 @@
  * state (am I mid-stream? whose turn is this?) to insert newlines correctly.
  */
 
-import type { ConnectionState, RenderEvent } from "@ai-pa/letta-continuity-core";
+import { type ConnectionState, type RenderEvent, protocol } from "@ai-pa/letta-continuity-core";
 import { indentContinuation, sanitize } from "./sanitize.js";
+
+const { DeltaMessageTypes, StopReasons } = protocol;
 
 export interface RendererOptions {
   /** Emit ANSI colour. Callers should pass `stdout.isTTY`. */
@@ -40,9 +42,6 @@ const NOTICE_MAX_LENGTH = 512;
 
 /** Upper bound on remembered turn origins; see evictOldOrigins. */
 const MAX_TRACKED_ORIGINS = 512;
-
-const ASSISTANT = "assistant_message";
-const REASONING = "reasoning_message";
 
 /** Which surface started a turn. `unknown` means it began before we could attribute it. */
 export type TurnOrigin = "self" | "peer";
@@ -155,7 +154,7 @@ export class Renderer {
         const out = this.closeStream();
         if (event.runId) this.originByRun.delete(event.runId);
         this.evictOldOrigins();
-        if (event.stopReason && event.stopReason !== "end_turn") {
+        if (event.stopReason && event.stopReason !== StopReasons.endTurn) {
           return `${out}${this.renderNotice(`turn ended: ${event.stopReason}`, "warn")}`;
         }
         return out;
@@ -167,9 +166,9 @@ export class Renderer {
   }
 
   private renderDelta(event: RenderEvent): string {
-    const isReasoning = event.messageType === REASONING;
+    const isReasoning = event.messageType === DeltaMessageTypes.reasoning;
     if (isReasoning && !this.opts.showReasoning) return "";
-    if (event.messageType !== ASSISTANT && !isReasoning) return "";
+    if (event.messageType !== DeltaMessageTypes.assistant && !isReasoning) return "";
     const text = event.text ?? "";
     if (text === "") return "";
 
@@ -213,14 +212,17 @@ export class Renderer {
   }
 }
 
-/** `update_subagent_state.subagents` length, or null when the frame does not carry it. */
+/**
+ * Subagent count via the protocol accessor rather than a raw field read.
+ *
+ * Reading `event.frame.subagents` here compiled even if the server renamed the field, because
+ * ServerFrame has an index signature — so the indicator would silently stop appearing.
+ */
 function subagentCount(event: RenderEvent): number | null {
-  const subagents = event.frame.subagents;
-  return Array.isArray(subagents) ? subagents.length : null;
+  return protocol.isSubagentState(event.frame) ? protocol.subagentCount(event.frame) : null;
 }
 
-/** `update_queue.queue` length, or null when the frame does not carry it. */
+/** Queue depth via the protocol accessor — same reasoning as subagentCount. */
 function queueDepth(event: RenderEvent): number | null {
-  const queue = event.frame.queue;
-  return Array.isArray(queue) ? queue.length : null;
+  return protocol.isQueue(event.frame) ? protocol.queueDepth(event.frame) : null;
 }

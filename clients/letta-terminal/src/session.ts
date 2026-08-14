@@ -6,8 +6,20 @@
  * a stubbed core"). main.ts supplies the real ContinuityCore and process.stdout.
  */
 
-import type { ConnectionState, RenderEvent } from "@ai-pa/letta-continuity-core";
+import type { ConnectionState, ContinuityCore, RenderEvent } from "@ai-pa/letta-continuity-core";
 import { Renderer, type RendererOptions } from "./render.js";
+
+/**
+ * `ContinuityCore` must satisfy this seam. Without an explicit assertion the only check is the
+ * single `new TerminalSession(core, …)` call in main.ts — and because the members are declared
+ * with method syntax, TypeScript compares their parameters BIVARIANTLY, so a core that narrowed
+ * a parameter type would still assign cleanly and fail only at runtime. This makes the
+ * conformance a compile error at the point the seam is defined.
+ */
+type SessionCoreConformance = ContinuityCore extends SessionCore ? true : never;
+/** Use site: when the conditional above resolves to `never`, this assignment fails to compile. */
+const _coreSatisfiesSeam: SessionCoreConformance = true;
+void _coreSatisfiesSeam;
 
 /** Upper bound on cached turn origins, matching the renderer's own cap. */
 const MAX_TRACKED_ORIGINS = 512;

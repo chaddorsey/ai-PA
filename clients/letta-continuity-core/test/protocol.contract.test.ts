@@ -12,11 +12,14 @@
 import { describe, expect, it } from "vitest";
 import {
   CONTROL_DELTA_TYPES,
+  DeltaMessageTypes,
   Inbound,
+  LoopStatuses,
   Outbound,
   ProtocolError,
   RpcResponseFor,
   type ServerFrame,
+  StopReasons,
   VALIDATED_SERVER_VERSIONS,
   __resetRequestCounter,
   assertServerIdentity,
@@ -40,6 +43,8 @@ import {
   newClientNonce,
   nextRequestId,
   parseFrame,
+  queueDepth,
+  subagentCount,
   validateInboundFrame,
 } from "../src/protocol.js";
 
@@ -308,6 +313,39 @@ describe("contract: the approval control request", () => {
 
     const noTool = { ...CR, request: { ...CR.request, tool_call_id: undefined } };
     expect(() => validateInboundFrame(parseFrame(JSON.stringify(noTool)))).toThrow(/tool_call_id/);
+  });
+});
+
+describe("contract: the wire vocabulary lives here, so a rename fails the gate", () => {
+  // These strings used to be re-declared in the terminal's renderer, outside the reach of both
+  // validateInboundFrame and this test. A server-side rename would have passed every check and
+  // the terminal would simply have rendered nothing: connected, accepting input, no output, no
+  // error. Pinning them here is what converts that into a failing test.
+  it("delta message types match the shapes the fixtures carry", () => {
+    expect(DeltaMessageTypes.assistant).toBe(FIXTURES.stream_delta.delta.message_type);
+    expect(DeltaMessageTypes.reasoning).toBe(FIXTURES.stream_delta_reasoning.delta.message_type);
+    expect(DeltaMessageTypes.usage).toBe(FIXTURES.stream_delta_usage.delta.message_type);
+    expect(DeltaMessageTypes.stopReason).toBe(FIXTURES.stream_delta_stop_reason.delta.message_type);
+  });
+
+  it("stop reasons and loop statuses match the fixtures", () => {
+    expect(StopReasons.endTurn).toBe(FIXTURES.turn_finished.stop_reason);
+    expect(LoopStatuses.waitingOnInput).toBe(FIXTURES.update_loop_status.loop_status.status);
+  });
+
+  it("the control-delta allowlist is expressed in the same vocabulary", () => {
+    expect(CONTROL_DELTA_TYPES.has(DeltaMessageTypes.stopReason)).toBe(true);
+    expect(CONTROL_DELTA_TYPES.has(DeltaMessageTypes.assistant)).toBe(false);
+  });
+
+  it("typed accessors read the queue and subagent payloads", () => {
+    const q = parseFrame(JSON.stringify(FIXTURES.update_queue));
+    if (!isQueue(q)) throw new Error("guard");
+    expect(queueDepth(q)).toBe(1);
+
+    const sub = parseFrame(JSON.stringify(FIXTURES.update_subagent_state));
+    if (!isSubagentState(sub)) throw new Error("guard");
+    expect(subagentCount(sub)).toBe(0);
   });
 });
 

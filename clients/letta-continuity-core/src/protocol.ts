@@ -61,6 +61,35 @@ export const REQUIRED_CAPABILITIES = ["runtime_start", "conversation_management"
  */
 export const CONTROL_DELTA_TYPES: ReadonlySet<string> = new Set(["stop_reason"]);
 
+/**
+ * `stream_delta.delta.message_type` values consumers switch on.
+ *
+ * These are WIRE STRINGS and therefore belong here, not in the consumer. When `render.ts` kept
+ * its own copies, a server-side rename would pass `validateInboundFrame` (which only checks that
+ * message_type is a string), the contract test would stay green, and the terminal would silently
+ * render nothing at all — connected, accepting input, streaming no output, reporting no error.
+ * That is precisely the silent mis-parse this file exists to make impossible.
+ */
+export const DeltaMessageTypes = {
+  assistant: "assistant_message",
+  reasoning: "reasoning_message",
+  approvalRequest: "approval_request_message",
+  usage: "usage_statistics",
+  stopReason: "stop_reason",
+} as const;
+
+/** `turn_finished.stop_reason` values with behavioural meaning. */
+export const StopReasons = {
+  endTurn: "end_turn",
+  requiresApproval: "requires_approval",
+  error: "error",
+} as const;
+
+/** `update_loop_status.loop_status.status` values with behavioural meaning. */
+export const LoopStatuses = {
+  waitingOnInput: "WAITING_ON_INPUT",
+} as const;
+
 /** Outbound (client → server) message-type strings. */
 export const Outbound = {
   appServerInfo: "app_server_info",
@@ -114,6 +143,24 @@ export class ProtocolError extends Error {
 export interface Runtime {
   agent_id: string;
   conversation_id: string;
+}
+
+/**
+ * A string that came from the server and has NOT been made safe for any particular sink.
+ *
+ * The brand is a compile-time reminder, not a runtime wrapper: it costs nothing at runtime and
+ * forces a consumer to acknowledge the boundary before rendering. Sanitization deliberately lives
+ * in the CONSUMER, not here, because "safe" is sink-specific — the terminal strips ANSI and
+ * control characters, while the browser client (M1 Unit 6) faces an entirely different class:
+ * HTML injection, `javascript:` URLs in rendered markdown, and markdown image auto-loading, which
+ * exfiltrates conversation content to a remote host on render and has no terminal analogue.
+ * Sanitizing centrally would corrupt content for one sink while under-protecting the other.
+ */
+export type UntrustedText = string & { readonly __untrusted?: unique symbol };
+
+/** Mark a server-derived string as untrusted at the type level. Runtime no-op. */
+export function untrusted(text: string): UntrustedText {
+  return text as UntrustedText;
 }
 
 /** A generic parsed server frame — always has a string `type`. */
@@ -568,6 +615,16 @@ export function isInputAccepted(f: ServerFrame): f is InputAcceptedFrame {
   return f.type === Inbound.inputAccepted;
 }
 
+/** Number of messages waiting behind the active turn. */
+export function queueDepth(f: QueueFrame): number {
+  return Array.isArray(f.queue) ? f.queue.length : 0;
+}
+
+/** Number of active subagents reported by an `update_subagent_state` frame. */
+export function subagentCount(f: SubagentStateFrame): number {
+  return Array.isArray(f.subagents) ? f.subagents.length : 0;
+}
+
 /** Queue removals as a typed list (defensive: the arrays are server-shaped). */
 export function queueRemovals(f: QueueFrame): QueueRemoval[] {
   return (Array.isArray(f.removed) ? f.removed : []).filter(
@@ -617,8 +674,13 @@ export function deltaMessageType(f: StreamDeltaFrame): string {
   return f.delta.message_type;
 }
 
-/** Best-effort human-visible text from a delta (reasoning/assistant/tool message shapes). */
-export function deltaText(f: StreamDeltaFrame): string {
+/**
+ * Best-effort human-visible text from a delta.
+ *
+ * Returns UntrustedText: this is relayed third-party content (mail bodies, fetched pages) and
+ * every sink must make it safe for itself before rendering.
+ */
+export function deltaText(f: StreamDeltaFrame): UntrustedText {
   const d = f.delta;
   if (typeof d.reasoning === "string") return d.reasoning;
   for (const key of ["content", "text", "message"] as const) {
