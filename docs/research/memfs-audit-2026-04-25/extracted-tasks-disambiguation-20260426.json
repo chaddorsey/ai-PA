@@ -1,0 +1,158 @@
+{
+  "generated_at": "2026-04-26T16:06:55.189371+00:00",
+  "in_scope": {
+    "agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef": "MC",
+    "agent-dd15479e-6543-400e-8463-b2a48b13cd4a": "tasks-agent",
+    "agent-b4928949-8012-4436-a3c7-a9e510785147": "email-agent",
+    "agent-6eb765bf-7268-4f6d-a380-c527c9c53000": "pulse-monitor-agent",
+    "agent-66c4a151-7182-4cfc-9195-68b2e34d0847": "pulse-monitor-agent-sleeptime",
+    "agent-892a2d58-b9f6-4baf-84f3-c431fe46487d": "calendar-agent_copy",
+    "agent-a3f3940f-2dcb-4b73-a01c-132df63d5ae2": "daily-schedule-agent"
+  },
+  "findings": [
+    {
+      "block_id": "block-7bff4e45-3406-48e9-bc51-4fadaea61e57",
+      "label": "extracted_tasks",
+      "value_length": 13642,
+      "value_preview": "[extracted_time: 2026-03-18 14:00; ref_id: 2ceb85d9] Create a draft proposal to create an example for Savvas; Hold a meeting with Heidi, Andrew, Matt, Leslie, and Chad to present proposal and discuss;",
+      "agent_count": 11,
+      "in_scope_attached": [],
+      "out_of_scope_count": 11,
+      "all_agent_ids": [
+        "agent-374fd623-4a63-46c4-903d-e9ae235fc1d1",
+        "agent-89d31c34-de69-4f34-b388-9bd8d9b647fa",
+        "agent-30ff1be2-3922-42fb-b7ee-458cb5a3bb07",
+        "agent-a9f2c740-663c-4414-a553-47115180e49b",
+        "agent-2515f29d-b773-43c5-b9ce-b6237897391d",
+        "agent-f2248e19-72ba-4d2c-9ed3-793c3d358a20",
+        "agent-f33376c1-ef6a-4a52-add3-afddec3b6628",
+        "agent-e3b11ee6-bfba-437e-867e-657c4fbcec86",
+        "agent-1dbb936a-b452-4632-95b5-2e3a8f774df9",
+        "agent-63353ba0-65d7-4307-9d1d-68ed49702169",
+        "agent-53566e17-9755-46a5-8595-1a8a4e90145a"
+      ]
+    },
+    {
+      "block_id": "block-90300b77-6b72-42cb-8e67-c74fbb497cf6",
+      "label": "extracted_tasks",
+      "value_length": 19906,
+      "value_preview": "# Extracted Tasks\n\nThis is a shared memory block where agents can contribute tasks they've extracted\nfrom conversations, documents, or other sources.\n\nEach agent adds tasks under their own section hea",
+      "agent_count": 10,
+      "in_scope_attached": [
+        [
+          "agent-b4928949-8012-4436-a3c7-a9e510785147",
+          "email-agent"
+        ],
+        [
+          "agent-dd15479e-6543-400e-8463-b2a48b13cd4a",
+          "tasks-agent"
+        ],
+        [
+          "agent-66c4a151-7182-4cfc-9195-68b2e34d0847",
+          "pulse-monitor-agent-sleeptime"
+        ],
+        [
+          "agent-6eb765bf-7268-4f6d-a380-c527c9c53000",
+          "pulse-monitor-agent"
+        ],
+        [
+          "agent-a3f3940f-2dcb-4b73-a01c-132df63d5ae2",
+          "daily-schedule-agent"
+        ]
+      ],
+      "out_of_scope_count": 5,
+      "all_agent_ids": [
+        "agent-398b4f6c-6afa-493f-8063-897c6b171a0d",
+        "agent-fd0cd292-6a10-4b7f-abb3-d7732eae932c",
+        "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8",
+        "agent-feb2c0f7-4c70-4240-bc1d-21ad12319fc9",
+        "agent-b4928949-8012-4436-a3c7-a9e510785147",
+        "agent-62edcfac-2cc7-41a5-a3c2-d417da393397",
+        "agent-dd15479e-6543-400e-8463-b2a48b13cd4a",
+        "agent-66c4a151-7182-4cfc-9195-68b2e34d0847",
+        "agent-6eb765bf-7268-4f6d-a380-c527c9c53000",
+        "agent-a3f3940f-2dcb-4b73-a01c-132df63d5ae2"
+      ]
+    },
+    {
+      "block_id": "block-6cc4e0f0-6ce7-4261-82e2-487d6dcaef6c",
+      "label": "extracted_tasks",
+      "value_length": 315,
+      "value_preview": "# Extracted Tasks\n\nThis is a shared memory block where agents can contribute tasks they've extracted\nfrom conversations, documents, or other sources.\n\nEach agent adds tasks under their own section hea",
+      "agent_count": 0,
+      "in_scope_attached": [],
+      "out_of_scope_count": 0,
+      "all_agent_ids": []
+    },
+    {
+      "block_id": "block-615ba8fb-0940-4629-b077-9d68c98df63d",
+      "label": "extracted_tasks",
+      "value_length": 315,
+      "value_preview": "# Extracted Tasks\n\nThis is a shared memory block where agents can contribute tasks they've extracted\nfrom conversations, documents, or other sources.\n\nEach agent adds tasks under their own section hea",
+      "agent_count": 0,
+      "in_scope_attached": [],
+      "out_of_scope_count": 0,
+      "all_agent_ids": []
+    },
+    {
+      "block_id": "block-39eda184-54ce-498f-8ad3-a5b978fe94c2",
+      "label": "extracted_tasks",
+      "value_length": 315,
+      "value_preview": "# Extracted Tasks\n\nThis is a shared memory block where agents can contribute tasks they've extracted\nfrom conversations, documents, or other sources.\n\nEach agent adds tasks under their own section hea",
+      "agent_count": 0,
+      "in_scope_attached": [],
+      "out_of_scope_count": 0,
+      "all_agent_ids": []
+    },
+    {
+      "block_id": "block-2d45d311-900c-487c-84f6-6d031c2144d7",
+      "label": "extracted_tasks",
+      "value_length": 315,
+      "value_preview": "# Extracted Tasks\n\nThis is a shared memory block where agents can contribute tasks they've extracted\nfrom conversations, documents, or other sources.\n\nEach agent adds tasks under their own section hea",
+      "agent_count": 0,
+      "in_scope_attached": [],
+      "out_of_scope_count": 0,
+      "all_agent_ids": []
+    },
+    {
+      "block_id": "block-ecdd4886-8b15-47b2-ae1b-87666e237f09",
+      "label": "extracted_tasks",
+      "value_length": 315,
+      "value_preview": "# Extracted Tasks\n\nThis is a shared memory block where agents can contribute tasks they've extracted\nfrom conversations, documents, or other sources.\n\nEach agent adds tasks under their own section hea",
+      "agent_count": 0,
+      "in_scope_attached": [],
+      "out_of_scope_count": 0,
+      "all_agent_ids": []
+    },
+    {
+      "block_id": "block-62b0695f-3f09-43a3-aa48-eeb352ee83a2",
+      "label": "extracted_tasks",
+      "value_length": 315,
+      "value_preview": "# Extracted Tasks\n\nThis is a shared memory block where agents can contribute tasks they've extracted\nfrom conversations, documents, or other sources.\n\nEach agent adds tasks under their own section hea",
+      "agent_count": 0,
+      "in_scope_attached": [],
+      "out_of_scope_count": 0,
+      "all_agent_ids": []
+    },
+    {
+      "block_id": "block-7d249149-71e8-4a84-8040-be21b225cf35",
+      "label": "extracted_tasks",
+      "value_length": 315,
+      "value_preview": "# Extracted Tasks\n\nThis is a shared memory block where agents can contribute tasks they've extracted\nfrom conversations, documents, or other sources.\n\nEach agent adds tasks under their own section hea",
+      "agent_count": 0,
+      "in_scope_attached": [],
+      "out_of_scope_count": 0,
+      "all_agent_ids": []
+    },
+    {
+      "block_id": "block-80f3d50a-f31a-4783-b2a2-0b773ba3de17",
+      "label": "extracted_tasks",
+      "value_length": 315,
+      "value_preview": "# Extracted Tasks\n\nThis is a shared memory block where agents can contribute tasks they've extracted\nfrom conversations, documents, or other sources.\n\nEach agent adds tasks under their own section hea",
+      "agent_count": 0,
+      "in_scope_attached": [],
+      "out_of_scope_count": 0,
+      "all_agent_ids": []
+    }
+  ]
+}

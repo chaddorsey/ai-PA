@@ -2,7 +2,17 @@
 
 Date: 2026-08-13
 Origin: Unit 4 code review (`clients/letta-continuity-core/`, commit on `feat/msc-app-server-sole-owner`)
-Status: **finding 1 RESOLVED 2026-08-13** (probe + implementation); findings 2 and 3 still open
+Status: **findings 1 and 3 RESOLVED 2026-08-13**; finding 2 is now **ANSWERED but unfixed** (the
+fix belongs to M1 Unit 7). See the remediation plan
+`docs/plans/2026-08-13-001-fix-continuity-core-review-remediation-plan.md`.
+
+> **⚠️ Finding 1's stated root cause below was itself wrong.** It claimed `input` gets no
+> synchronous correlating response. It does — `input_accepted`, which the client simply never
+> requested because it sent no `request_id`. More importantly, the whole *premise* of finding 1
+> was wrong: attribution is not what makes the approval policy safe, because the server broadcasts
+> approvals to every subscriber and de-duplicates responses itself. The correlation work still
+> stands (it drives origin labelling), but it is no longer safety-critical. The real contract is in
+> `docs/plans/2026-08-13-approval-contract-findings.md`.
 
 Unit 4's `/code-review` surfaced four findings that were **not** auto-fixed because they
 require a protocol/design decision that risks regressing the passing tests. The one clearly-safe
@@ -46,17 +56,19 @@ Queue frames are broadcast to every subscriber, but each client only ever matche
 - `input_accepted` — `started`/`submitting` arm the claim; `queued` waits; `accepted:false` drops it.
 - `update_queue.removed` — our `dequeued` arms the claim; `cancelled` drops it.
 - the first sighting of a new `run_id` binds the oldest armed claim; `turn_finished` releases it.
-- approvals are answered **only** for owned runs.
+- ~~approvals are answered **only** for owned runs~~ — **SUPERSEDED.** Approvals are answered
+  unconditionally; see the header note. `attribute()` now serves origin labelling only.
 
 **Load-bearing assumption (documented in the module):** an armed claim takes the next new run id.
 That is sound only because the server serializes turns per `{agent, conversation}` (Unit 1) — a
 `started` ack means our run *is* the active one. If that guarantee ever changes, attribution must
 be rebuilt on an explicit run id in the ack.
 
-**Reconnect stays fail-CLOSED.** A gap may hide an ack, a dequeue, or a `turn_finished`, so
-`onReconnect()` marks the tracker `degraded` while work is outstanding; an unattributable
-approval is then denied (recoverable) rather than left to hang every surface (not recoverable).
-Owned runs are kept across the seam because their `turn_finished` arrives on the new connection.
+**Reconnect.** ~~fail-CLOSED on `degraded`~~ — **SUPERSEDED**, and it was wrong twice over: it
+tested `seenRuns` *before* the degraded fallback, so the very case it existed for (an ack lost in
+the gap) returned "not ours". With approvals decoupled, `degraded` is now a diagnostic only,
+armed claims are demoted at the seam rather than carried (across a gap the "next new run" may
+easily be a peer's), and claims expire on observed stream inactivity so nothing latches forever.
 
 **Verification:** 16 unit tests covering both counter-bug directions explicitly, plus two
 integration tests that exercise a real concurrent foreign turn (the gap the original review
@@ -77,6 +89,23 @@ On reconnect, if `conversation_messages_list` returns `success:false` (observed 
 null and `liveDedup` is left null → replayed messages render a **second** time (duplicates).
 A watchdog stall-restart drops all clients at once, which is exactly when the snapshot RPC is
 most stressed, so this is not a rare edge.
+
+**⚠️ ANSWERED 2026-08-13 — the dedup is not merely fail-open, it is entirely non-functional.**
+A single probe capturing one turn's live delta ids and then listing the same conversation:
+
+```
+LIVE delta ids:  letta-msg-27370, letta-msg-27371, letta-msg-27372  … (14)
+SNAPSHOT ids:    ui-msg-7457, ui-msg-7456:assistant:1, ui-msg-7456:reasoning:0
+OVERLAP:         0
+```
+
+`LiveDedup.admit()` compares `letta-msg-*` against a set of `ui-msg-*`. Disjoint namespaces, zero
+overlap, so it never matches and dedup does nothing on any real reconnect. The tests that appeared
+to prove otherwise passed only because the mock emitted one delta per message with a hand-matched
+snapshot id; they have been retired and replaced with honest, narrower claims, and the live gate
+now asserts the mismatch so the day it changes it is noticed. Note also that user messages persist
+our `client_message_id` as `otid` but carry **no `run_id`**, so an otid→run mapping is not
+available from the snapshot either.
 
 **Fix direction:** treat a failed snapshot as a recoverable error (retry the snapshot within the
 reconnect, bounded), or fail *closed* on dedup (suppress live render until a valid snapshot is

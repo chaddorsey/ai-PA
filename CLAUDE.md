@@ -397,6 +397,7 @@ Environment variables are defined in `.env` (gitignored). Key categories:
 | pa-routing-handler | 5201 | Agent conversation routing |
 | pa-web-ui | 5200 | Web interface (spawns its own letta-code subprocesses per conversation — see `pa-web-ui/README.md`) |
 | open-webui | 8080 | Chat UI for Letta |
+| letta-app-server | 4577 | Sole-owner Letta runtime (WS `/ws` + OpenAI shim). Clients in `clients/` |
 
 ### Sports & Media
 | Service | Port | Purpose |
@@ -600,6 +601,10 @@ Understanding these files helps navigate the codebase:
 - `auto-madden/game-state-service/game_state_service.py` - ESPN polling
 - `auto-madden/insight-engine/insight_engine.py` - LLM insight generation (~190KB)
 - `auto-madden/companion-ui/app.py` - Flask web UI
+
+**Multi-surface continuity clients (`clients/`):**
+- `clients/letta-continuity-core/` - raw-WS client-core for the sole-owner App Server; `src/protocol.ts` is the sole home of every wire frame string
+- `clients/letta-terminal/` - terminal surface built on the core; deploy wrapper installs to `~/bin/letta-continuity`
 
 **Letta Integration:**
 - `letta/configure_mcp_servers.py` - Register MCP servers with Letta

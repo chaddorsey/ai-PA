@@ -25,11 +25,16 @@
  *  - 0.30.20 — verified 2026-08-13 on a clone: protocol_version still 1, capabilities
  *    identical, all frames round-trip, real streamed turn completes without error.
  */
-export const VALIDATED_SERVER_VERSIONS = ["0.30.19", "0.30.20"] as const;
-
 /** The newest validated version — what a restart of the App Server brings up today. */
-export const PINNED_SERVER_VERSION =
-  VALIDATED_SERVER_VERSIONS[VALIDATED_SERVER_VERSIONS.length - 1];
+export const PINNED_SERVER_VERSION = "0.30.20";
+
+/**
+ * Derived FROM the pin rather than the other way round. Indexing a tuple under
+ * `noUncheckedIndexedAccess` made the pin `string | undefined`, which the mock then papered over
+ * with `??` — so a refactor of this list could have made the mock omit the version field entirely
+ * and silently downgrade the whole drift gate to a no-op.
+ */
+export const VALIDATED_SERVER_VERSIONS = ["0.30.19", PINNED_SERVER_VERSION] as const;
 
 /**
  * The pinned App Server protocol version (`app_server_info_response.protocol_version`).
@@ -651,11 +656,6 @@ export function isSubagentState(f: ServerFrame): f is SubagentStateFrame {
 }
 export function isControlRequest(f: ServerFrame): f is ControlRequestFrame {
   return f.type === Inbound.controlRequest;
-}
-
-/** True if the frame is a broadcast that participates in the ordered `event_seq` stream. */
-export function isOrderedBroadcast(f: ServerFrame): boolean {
-  return typeof (f as { event_seq?: unknown }).event_seq === "number";
 }
 
 /** Per-connection monotonic ordering key. */

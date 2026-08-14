@@ -33,14 +33,6 @@ export interface CatchupSnapshot {
   seenMessageIds: Set<string>;
 }
 
-/**
- * Build the `conversation_messages_list` request frame + its RPC request id lives with the
- * caller (ws.request assigns it). This helper just shapes the frame via protocol.ts.
- */
-export function messagesListRequest(requestId: string, runtime: Runtime): ServerFrame {
-  return buildConversationMessagesList(requestId, runtime);
-}
-
 /** Turn a `conversation_messages_list_response` into a dedup watermark. */
 export function snapshotFromResponse(resp: MessagesListResponseFrame): CatchupSnapshot {
   const seen = new Set<string>();
@@ -84,9 +76,5 @@ export class LiveDedup {
   /** True → render this delta (message not in snapshot); false → drop (snapshot replay). */
   admit(deltaId: string): boolean {
     return !this.snapshotIds.has(deltaId);
-  }
-
-  get watermarkSize(): number {
-    return this.snapshotIds.size;
   }
 }

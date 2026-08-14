@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LiveDedup, messagesListRequest, snapshotFromResponse } from "../src/catchup.js";
+import { LiveDedup, snapshotFromResponse } from "../src/catchup.js";
 import type { MessagesListResponseFrame } from "../src/protocol.js";
 
 function resp(ids: string[]): MessagesListResponseFrame {
@@ -44,14 +44,5 @@ describe("catchup snapshot + message-id watermark dedup", () => {
     const dedup = new LiveDedup(snapshotFromResponse(resp(["letta-msg-A"])));
     expect(dedup.admit("letta-msg-A")).toBe(false);
     expect(dedup.admit("letta-msg-A")).toBe(false);
-  });
-
-  it("messagesListRequest shapes the RPC frame from protocol.ts", () => {
-    const f = messagesListRequest("cml-9", { agent_id: "a", conversation_id: "c" }) as Record<
-      string,
-      unknown
-    >;
-    expect(f.type).toBe("conversation_messages_list");
-    expect(f.conversation_id).toBe("c");
   });
 });

@@ -42,6 +42,7 @@ letta-continuity                          # attach using the default pointer
 letta-continuity --pointer /path/p.json   # a specific {agent, conversation}
 letta-continuity --reasoning              # also stream the model's reasoning
 letta-continuity --strict-version         # refuse an unverified server build
+letta-continuity --allow-remote           # permit a non-loopback --url (see Safety notes)
 letta-continuity --help
 ```
 
@@ -71,6 +72,21 @@ Default path `~/.letta/continuity-pointer.json`, overridable with `--pointer` or
 second source of truth that silently drifts, so this client takes its target from the pointer
 instead. Multi-agent slug routing arrives with the rail, alongside multiple conversations.
 
+## Safety notes
+
+- **All server-derived text is sanitized** before it reaches the terminal (`src/sanitize.ts`). The
+  agent relays third-party content — mail bodies, Slack messages, fetched pages — so delta text is
+  untrusted input on a trusted surface. The filter is an allowlist and covers OSC 52 (clipboard),
+  OSC 8 (hyperlinks), DCS/APC/PM, the 8-bit C1 forms, and bidi/zero-width characters. Continuation
+  lines are indented so content can never occupy the origin-label column.
+- **The endpoint must be loopback.** `--url` / `$LETTA_CONTINUITY_WS_URL` are validated, because
+  loopback binding *is* this design's trust boundary — the App Server takes no client auth. Use
+  `--allow-remote` only if you understand that everything typed, and the conversation history, then
+  travels to that host in cleartext.
+- **Approvals are shown, never granted.** M1 auto-denies and surfaces both the request and the
+  deny. Tool arguments are deliberately not displayed; they routinely carry file contents or
+  credentials.
+
 ## Install
 
 ```bash
@@ -88,7 +104,8 @@ the App Server process, and duplicating them into a viewer would only widen the 
 |------|------|
 | `src/render.ts` | Pure event → text. No stdout handle, so it is testable without a TTY. |
 | `src/session.ts` | The render loop, against a `SessionCore` seam a stub can implement. |
-| `src/cli.ts` | Argument/env resolution. |
+| `src/sanitize.ts` | Makes server-derived text safe for a TTY. Pure, table-tested. |
+| `src/cli.ts` | Argument/env resolution, incl. loopback endpoint validation. |
 | `src/main.ts` | Wires the real `ContinuityCore` to readline and stdout. |
 
 ## Tests
@@ -99,7 +116,8 @@ npm run check   # typecheck + lint + tests
 
 The suite drives the whole render loop against a stubbed core: own vs peer turn labelling,
 attribution surviving the release of ownership at turn end, visible reconnect, queue-behind
-indicators, subagent activity, and stream/line-break correctness.
+indicators, subagent activity, stream/line-break correctness, output sanitization, and endpoint
+validation.
 
 Two behaviours here are regressions from bugs the live run caught, and the stub reproduces the
 real server's shape so they stay caught:

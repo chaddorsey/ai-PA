@@ -1,7 +1,7 @@
 ---
 title: "fix: Unit 5 review remediation — real approval contract, correct run attribution, falsifiable tests"
 type: fix
-status: active
+status: completed
 date: 2026-08-13
 deepened: 2026-08-13
 origin: docs/brainstorms/2026-08-12-agent-multi-surface-continuity-requirements.md
@@ -337,7 +337,7 @@ depends on. Produce a verdict Units 5 and 6 implement against.
 
 ---
 
-- [ ] **Unit 2: Remove the need for the backstop (tool-set precondition)**
+- [x] **Unit 2: Remove the need for the backstop (tool-set precondition)**
 
 **Goal:** Restore the parent policy's first leg — ensure the shared conversation's agent has no
 approval-requiring tools attached — so the safety property does not rest solely on a backstop that
@@ -367,7 +367,7 @@ every spike verdict.
 
 ---
 
-- [ ] **Unit 3: Connection and RPC error semantics**
+- [x] **Unit 3: Connection and RPC error semantics**
 
 **Goal:** Make drift and transport failure produce accurate, actionable outcomes instead of opaque
 timeouts, silent gate bypass, or process death.
@@ -404,7 +404,7 @@ semantics this unit changes; landing it later means writing assertions twice.
 
 ---
 
-- [ ] **Unit 4: Process-unique, replay-resistant correlation**
+- [x] **Unit 4: Process-unique, replay-resistant correlation**
 
 **Goal:** Make identifiers unique per client instance *and* make claim-state transitions immune to a
 replayed identifier.
@@ -449,7 +449,7 @@ replayed identifier.
 > and `~/bin/letta-continuity` execs from the repo tree, so an unbounded intermediate is immediately
 > live for the user.
 
-- [ ] **Unit 5: Rebuild the approval path on the real contract**
+- [x] **Unit 5: Rebuild the approval path on the real contract**
 
 **Goal:** Detect approval requests where the server emits them and respond (or surface them) per
 Unit 1's verdict, at most once, with deny-only enforced structurally.
@@ -502,7 +502,7 @@ touching the client.
 
 ---
 
-- [ ] **Unit 6: Attribution correctness, bounded**
+- [x] **Unit 6: Attribution correctness, bounded**
 
 **Goal:** Make attribution correct under a lost ack, a reconnect seam, and either dequeue ordering —
 and bounded in time so fail-closed cannot latch permanently.
@@ -570,7 +570,7 @@ inventoried before editing:
 
 ### Phase C — Make the tests able to fail
 
-- [ ] **Unit 7: Test-double fidelity, guards, and scenario capability**
+- [x] **Unit 7: Test-double fidelity, guards, and scenario capability**
 
 **Goal:** Make the doubles capable of *disproving* client assumptions, and give Units 5–6 the
 capabilities their scenarios require.
@@ -618,7 +618,7 @@ and the rejection counter.
 
 ---
 
-- [ ] **Unit 8: Contract fixtures, live gate, and an actually-run gate**
+- [x] **Unit 8: Contract fixtures, live gate, and an actually-run gate**
 
 **Goal:** Bring the frames this milestone depends on under a committed gate that is genuinely
 executed.
@@ -658,7 +658,7 @@ approval can be provoked), Unit 5.
 
 ### Phase D — Surface hardening
 
-- [ ] **Unit 9: Terminal robustness, output safety, and endpoint validation**
+- [x] **Unit 9: Terminal robustness, output safety, and endpoint validation**
 
 **Goal:** The terminal survives input during a disconnect, cannot be driven or spoofed by relayed
 content, and cannot be silently pointed off the loopback trust boundary.
@@ -712,7 +712,7 @@ enough to justify the second entry point.
 
 ---
 
-- [ ] **Unit 10: Reconnect policy and bounded state**
+- [x] **Unit 10: Reconnect policy and bounded state**
 
 **Goal:** Survive a real App Server restart; bound the remaining unbounded state.
 
@@ -746,7 +746,7 @@ enough to justify the second entry point.
 
 ### Phase E — Consistency
 
-- [ ] **Unit 11: Centralize protocol vocabulary**
+- [x] **Unit 11: Centralize protocol vocabulary**
 
 **Goal:** Restore `protocol.ts`'s single-source-of-truth invariant so a server rename fails the gate
 instead of silently blanking the UI.
@@ -786,7 +786,7 @@ instead of silently blanking the UI.
 
 ---
 
-- [ ] **Unit 12: Surface tidy and documentation truth-up**
+- [x] **Unit 12: Surface tidy and documentation truth-up**
 
 **Goal:** Remove dead and misleading surface, and make the written record match the code — including
 where it must record an unresolved question.
