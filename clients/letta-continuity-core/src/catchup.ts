@@ -62,11 +62,17 @@ export function snapshotFromResponse(resp: MessagesListResponseFrame): CatchupSn
  * `stream_delta` after a reconnect. Returns true if it should be RENDERED (a message NOT in
  * the snapshot), false if it's a replay of a message already in the snapshot (drop).
  *
- * The watermark is the IMMUTABLE snapshot id set. A single new message streams many deltas
- * that all share one `delta.id` (only `seq_id`/`event_seq` advance), so we must NOT add
- * newly-seen live ids to the drop-set — that would drop every delta after the first of a
- * genuinely new message. Intra-connection duplicate frames are already dropped by the
- * StreamAssembler's monotonic `event_seq` watermark, so this gate only rejects snapshot replays.
+ * The watermark is the IMMUTABLE snapshot id set: newly-seen live ids are never added to the
+ * drop-set, so this gate only ever rejects snapshot replays. Intra-connection duplicates are
+ * already dropped by the StreamAssembler's monotonic `event_seq` watermark.
+ *
+ * ⚠️ UNVERIFIED PREMISE (Unit 5 live capture, 2026-08-13). This was written believing that all
+ * deltas of one message share a single `delta.id`. They do NOT — every chunk carries its own
+ * (`letta-msg-26735`, `-26736`, …); `otid` is what stays constant per message. So whether a
+ * replayed chunk's id is ever present in a snapshot of *messages* is an open question: if the
+ * snapshot returns different ids, this gate silently matches nothing. Unit 7 must settle it
+ * before the "no duplicated messages" criterion can be trusted — see
+ * docs/followups/2026-08-13-continuity-core-approval-correlation.md finding #2.
  */
 export class LiveDedup {
   private readonly snapshotIds: ReadonlySet<string>;

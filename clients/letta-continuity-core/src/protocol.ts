@@ -46,6 +46,21 @@ export const PINNED_PROTOCOL_VERSION = 1;
  */
 export const REQUIRED_CAPABILITIES = ["runtime_start", "conversation_management"] as const;
 
+/**
+ * `stream_delta` message types that carry no `delta.id`.
+ *
+ * A turn's stream is not only content: it ends with control deltas. Verified live on 0.30.19,
+ * one turn emits `reasoning_message` + `assistant_message` (both id-bearing) and then
+ * `usage_statistics` (id-bearing) and `stop_reason` (NO id). Requiring `delta.id` on every
+ * stream_delta therefore rejected one legitimate frame on EVERY turn.
+ *
+ * This is an allowlist rather than "id is optional everywhere" on purpose: the id is the
+ * catch-up watermark, so a content delta that lost its id is real drift and must still fail
+ * loudly. A future control type not listed here will fail too — which is the intended
+ * upgrade-gate behaviour, not an oversight.
+ */
+export const CONTROL_DELTA_TYPES: ReadonlySet<string> = new Set(["stop_reason"]);
+
 /** Outbound (client → server) message-type strings. */
 export const Outbound = {
   appServerInfo: "app_server_info",
@@ -110,11 +125,12 @@ export interface ServerFrame {
 
 /**
  * The message object embedded in a `stream_delta.delta`. `delta.id` (`letta-msg-NNN`)
- * is the CONVERSATION-STABLE message id used for reconnect catch-up dedup (NOT `event_seq`,
+ * is the per-chunk id used for reconnect catch-up dedup (NOT `event_seq`,
  * which is per-connection and resets on reconnect).
  */
 export interface DeltaMessage {
-  id: string;
+  /** Absent on CONTROL deltas (see CONTROL_DELTA_TYPES); present on content-bearing ones. */
+  id?: string;
   message_type: string;
   run_id?: string;
   seq_id?: number;
@@ -408,10 +424,14 @@ export function validateInboundFrame(frame: ServerFrame): void {
         throw new ProtocolError("stream_delta: missing numeric `event_seq`");
       if (!isRuntime(frame.runtime)) throw new ProtocolError("stream_delta: missing `runtime`");
       const delta = frame.delta;
-      if (!isObject(delta) || typeof delta.id !== "string")
-        throw new ProtocolError("stream_delta: missing `delta.id` (message-id watermark)");
+      if (!isObject(delta)) throw new ProtocolError("stream_delta: missing `delta`");
       if (typeof delta.message_type !== "string")
         throw new ProtocolError("stream_delta: missing `delta.message_type`");
+      // Control deltas legitimately carry no id; content deltas must (it is the watermark).
+      if (!CONTROL_DELTA_TYPES.has(delta.message_type) && typeof delta.id !== "string")
+        throw new ProtocolError(
+          `stream_delta (${delta.message_type}): missing \`delta.id\` (message-id watermark)`,
+        );
       return;
     }
     case Inbound.turnFinished: {
@@ -531,7 +551,8 @@ export function frameEventSeq(f: ServerFrame): number | undefined {
 }
 
 /** The conversation-stable message id from a stream_delta (`letta-msg-NNN`). */
-export function deltaMessageId(f: StreamDeltaFrame): string {
+/** The catch-up watermark id, or undefined on a control delta (see CONTROL_DELTA_TYPES). */
+export function deltaMessageId(f: StreamDeltaFrame): string | undefined {
   return f.delta.id;
 }
 

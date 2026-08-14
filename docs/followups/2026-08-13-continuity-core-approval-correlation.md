@@ -83,6 +83,21 @@ reconnect, bounded), or fail *closed* on dedup (suppress live render until a val
 obtained) rather than silently doubling the transcript. Decide with Unit 7 acceptance (the
 "no vanishing / no duplicated messages" criterion).
 
+**⚠️ Added 2026-08-13 (Unit 5 live run) — the dedup design rests on a FALSE premise.**
+`catchup.ts` documents: *"A single new message streams many deltas that all share one
+`delta.id` (only `seq_id`/`event_seq` advance), so we must NOT add newly-seen live ids to the
+drop-set."* Live capture on 0.30.19 shows the opposite — **every delta chunk carries a distinct
+`delta.id`**: one assistant message streamed as `letta-msg-26735`, `-26736`, `-26737`, … (what
+actually stays constant per message is `otid`, e.g. `provider-assistant-1-<uuid>`).
+
+Consequence to settle in Unit 7, **before** trusting the "no duplicates" criterion: the snapshot
+from `conversation_messages_list` returns *messages*, whose ids may not be the same values as the
+per-chunk delta ids that `LiveDedup.admit()` tests against. If they differ, the watermark never
+matches on replay and dedup silently does nothing. Verify what `conversation_messages_list`
+actually returns for a streamed message, and consider keying the seam on `otid` (stable per
+message) rather than `delta.id`. Also note control deltas (`stop_reason`) carry no id at all and
+are now skipped by the dedup gate.
+
 ## 3. Post-reconnect boundary frames not message-keyed (LOW/PLAUSIBLE) — still open
 
 Dedup drops a replayed `stream_delta` (message-keyed) but the accompanying `turn_finished`/

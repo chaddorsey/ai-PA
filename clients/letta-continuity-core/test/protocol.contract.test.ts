@@ -113,6 +113,30 @@ const FIXTURES = {
     ...meta,
     event_seq: 20,
   },
+  stream_delta_stop_reason: {
+    type: "stream_delta",
+    delta: {
+      message_type: "stop_reason",
+      stop_reason: "end_turn",
+      run_id: "local-run-125",
+      seq_id: 21,
+      type: "message",
+    },
+    ...meta,
+    event_seq: 31,
+  },
+  stream_delta_usage: {
+    type: "stream_delta",
+    delta: {
+      id: "letta-msg-14520",
+      message_type: "usage_statistics",
+      run_id: "local-run-125",
+      seq_id: 20,
+      type: "message",
+    },
+    ...meta,
+    event_seq: 30,
+  },
   conversation_list_response: {
     type: "conversation_list_response",
     request_id: "cl-1",
@@ -212,6 +236,22 @@ describe("contract: DRIFT fails loudly (the upgrade gate)", () => {
     expect(() =>
       validateInboundFrame(parseFrame(JSON.stringify({ ...FIXTURES.stream_delta, delta }))),
     ).toThrow(/delta\.id/);
+  });
+
+  it("a CONTENT delta missing delta.id is still rejected (the watermark guard holds)", () => {
+    const delta = { ...(FIXTURES.stream_delta.delta as Record<string, unknown>) };
+    delta.id = undefined;
+    expect(() =>
+      validateInboundFrame(parseFrame(JSON.stringify({ ...FIXTURES.stream_delta, delta }))),
+    ).toThrow(/delta\.id/);
+  });
+
+  it("an UNKNOWN delta type with no id fails loudly (not silently allowed)", () => {
+    const frame = {
+      ...FIXTURES.stream_delta,
+      delta: { message_type: "some_future_control_type", type: "message" },
+    };
+    expect(() => validateInboundFrame(parseFrame(JSON.stringify(frame)))).toThrow(/delta\.id/);
   });
 
   it("renamed conversations → conversation_list_response rejected", () => {

@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# letta-continuity — terminal client for the sole-owner Letta App Server.
+#
+# TRACKED REFERENCE COPY. The deploy artifact is ~/bin/letta-continuity (not git-tracked,
+# like the launchd plists); install with:
+#     install -m 0755 clients/letta-terminal/bin/letta-continuity ~/bin/letta-continuity
+#
+# Replaces the ~/bin/letta-<slug> wrappers for the App-Server-owned backend. THE DIFFERENCE
+# THAT MATTERS: those wrappers run `letta --backend local`, which opens
+# ~/.letta/lc-local-backend directly — a SECOND WRITER alongside the App Server, which is the
+# projection-divergence race R1/R4 exist to prevent. This wrapper starts a pure WS client; it
+# never opens the backend. The old wrappers stay usable only against backends the App Server
+# does not own (scratch, or Docker Letta).
+#
+# Plan: docs/plans/2026-08-12-multi-surface-continuity-m1-web-terminal-plan.md (Unit 5).
+
+set -euo pipefail
+
+export LANG="${LANG:-en_US.UTF-8}"
+export LC_ALL="${LC_ALL:-en_US.UTF-8}"
+
+REPO_ROOT="${PA_AI_REPO_ROOT:-/Volumes/main-drive/ai-PA}"
+CLIENT_DIR="$REPO_ROOT/clients/letta-terminal"
+
+# cwd convention shared with the fleet wrappers: keep the agent's working directory off the
+# huge repo tree (letta walks cwd for skills/permissions).
+LETTA_LAUNCH_DIR="${LETTA_LAUNCH_DIR:-/Volumes/main-drive/letta-launchpad}"
+
+if [[ ! -d "$CLIENT_DIR/node_modules" ]]; then
+  echo "ERROR: dependencies not installed. Run: (cd $CLIENT_DIR && npm install)" >&2
+  exit 1
+fi
+
+cd "$LETTA_LAUNCH_DIR" || {
+  echo "ERROR: launch dir $LETTA_LAUNCH_DIR not found" >&2
+  exit 1
+}
+
+# No credentials are sourced here on purpose: this is a WS client, not an agent runtime. Tool
+# credentials belong to the App Server process (which gets them from build_runtime_env), so
+# duplicating them here would only widen the blast radius.
+exec "$CLIENT_DIR/node_modules/.bin/tsx" "$CLIENT_DIR/src/main.ts" "$@"

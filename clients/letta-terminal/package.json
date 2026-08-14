@@ -1,0 +1,28 @@
+{
+  "name": "@ai-pa/letta-terminal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Text-first terminal client for the sole-owner Letta App Server (multi-surface continuity M1, Unit 5). A pure WS client of the App Server — it never opens the local backend.",
+  "bin": {
+    "letta-continuity": "./src/main.ts"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src test",
+    "lint:fix": "biome check --write src test",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run lint && npm run test"
+  },
+  "dependencies": {
+    "@ai-pa/letta-continuity-core": "file:../letta-continuity-core",
+    "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

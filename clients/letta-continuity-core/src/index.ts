@@ -134,6 +134,15 @@ export class ContinuityCore {
     return this.ownership.snapshot();
   }
 
+  /**
+   * Did THIS client start `runId`? Surfaces run attribution so a UI can distinguish its own
+   * turns from a peer's. Note ownership is RELEASED at turn_finished, so ask while the turn
+   * is live (e.g. at turn_start) and remember the answer.
+   */
+  ownsRun(runId: string | undefined): boolean {
+    return runId !== undefined && this.ownership.owns(runId);
+  }
+
   /** List conversations for the pointer's agent (rail primitive). */
   async conversationList(): Promise<ConversationSummary[]> {
     const agentId = this.getRuntime().agent_id;
@@ -234,7 +243,13 @@ export class ContinuityCore {
     }
 
     // Reconnect replay↔live dedup on message id (never on event_seq).
-    if (this.liveDedup && isStreamDelta(frame) && !this.liveDedup.admit(frame.delta.id)) {
+    // Control deltas carry no id and so cannot be deduped — they are not message content.
+    if (
+      this.liveDedup &&
+      isStreamDelta(frame) &&
+      frame.delta.id !== undefined &&
+      !this.liveDedup.admit(frame.delta.id)
+    ) {
       return; // snapshot replay of an already-rendered message — drop
     }
 
@@ -320,4 +335,5 @@ export class ContinuityCore {
 export type { RenderEvent, RenderListener } from "./stream.js";
 export type { ConnectionState } from "./connection.js";
 export type { ContinuityPointer } from "./pointer.js";
+export type { OwnershipSnapshot } from "./ownership.js";
 export * as protocol from "./protocol.js";

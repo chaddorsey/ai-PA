@@ -317,7 +317,13 @@ Grouped into three phases. Phase A de-risks and builds the runtime foundation; P
 
 ---
 
-- [ ] **Unit 5: Terminal client (greenfield, text-first)**
+- [x] **Unit 5: Terminal client (greenfield, text-first)** — DONE 2026-08-13 (branch `feat/msc-app-server-sole-owner`). Built `clients/letta-terminal/`: `render.ts` (PURE event→text, so the loop is testable with no TTY), `session.ts` (render loop against a `SessionCore` seam), `cli.ts`, `main.ts` (readline + real `ContinuityCore`), plus a tracked `bin/letta-continuity` wrapper installed to `~/bin/letta-continuity`. **26 tests** (own-vs-peer labelling, attribution surviving ownership release at turn end, visible reconnect, queue-behind indicator, subagent activity, stream/line-break correctness, CLI parsing + exit codes). **Live verified** against `:4577`: a typed turn renders as `agent ›` and a turn injected from another surface renders live as `peer ›` — the terminal half of R5. Live run also caught two real bugs, both fixed with regressions (below). Reconnect visibility is covered offline; live disruption belongs to Unit 7, which owns the reconnect/catch-up proof.
+>
+> **Two bugs the live run caught that unit tests could not:**
+> - **Every delta chunk carries a DISTINCT `delta.id`** (`letta-msg-26735`, `-26736`, …), so keying the output line on message id printed `agent › HE` / `agent › LL` / `agent › O`. Lines are now keyed on run + message type. The stub server was corrected to assign per-chunk ids so the offline suite reproduces the real shape. *(This also contradicts a documented assumption in `catchup.ts` — "many deltas share one `delta.id`" — which matters for finding #2; recorded there for Unit 7.)*
+> - **A turn's stream ends with CONTROL deltas** — `usage_statistics` and `stop_reason` — and `stop_reason` carries **no `delta.id`**. The validator required an id on every `stream_delta`, so it rejected one legitimate frame on *every* turn. Now allowlisted via `CONTROL_DELTA_TYPES`; content deltas still fail loudly without an id, and an unknown control type fails too (intended upgrade-gate behaviour).
+>
+> **Scope note:** the plan's "reuse `DEFAULT_AGENTS` for slug→`agent-local-*`" is deliberately NOT implemented as a copied table — duplicating the Python registry into TypeScript would create a second source of truth that drifts silently. The client takes its target from the durable pointer instead (which is what M1's single fixed conversation actually needs); slug routing lands with the rail and multiple conversations.
 
 > **Gate resolved 2026-08-13 — stock-TUI-attach is NOT available; build the greenfield REPL.**
 > The stock letta-code TUI has no App-Server-client mode: `--backend` accepts only `cloud`/`local`
