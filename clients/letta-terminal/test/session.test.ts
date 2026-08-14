@@ -5,6 +5,7 @@
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
+import { MAX_TRACKED_ORIGINS } from "../src/render.js";
 import { TerminalSession } from "../src/session.js";
 import { StubCore } from "./helpers/stubCore.js";
 
@@ -176,6 +177,17 @@ describe("TerminalSession", () => {
       expect(text()).not.toContain(ESC);
     });
 
+    it("neutralises control sequences in the LOCAL echo too", () => {
+      // Readline swallows escapes as key events only in terminal mode, and main.ts ties that mode
+      // to the colour setting — so under NO_COLOR, a non-TTY stdout, or a piped session, a pasted
+      // OSC 52 reaches the echo verbatim. The user's own line is still attacker-influenced when
+      // the user is pasting something an attacker wrote.
+      session.handleInput(`${ESC}]52;c;cHduZWQ=${BEL}hi`);
+      expect(text()).toContain("hi");
+      expect(text()).not.toContain(ESC);
+      expect(text()).not.toContain("52;c;");
+    });
+
     it("content cannot forge an origin label on a continuation line", () => {
       // Newline is legitimate content and survives sanitization, so this is the second half of
       // the defence: continuation lines are indented, and the label column belongs to us.
@@ -294,6 +306,12 @@ describe("TerminalSession", () => {
     core.turn("run-final", ["done"], { own: true });
     session.finish();
     expect(text()).toContain("agent › done");
+
+    // The assertion that was missing. Without it this test passed with BOTH eviction loops
+    // disabled — it only ever checked that a string appeared, which is true either way.
+    const tracked = session.trackedOriginCount;
+    expect(tracked.session).toBeLessThanOrEqual(MAX_TRACKED_ORIGINS);
+    expect(tracked.renderer).toBeLessThanOrEqual(MAX_TRACKED_ORIGINS);
   });
 
   it("detaching stops all rendering", () => {

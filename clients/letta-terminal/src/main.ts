@@ -70,7 +70,14 @@ async function main(): Promise<number> {
 `,
   );
 
-  const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: color });
+  // Line-editing mode is a TTY question, not a colour question. Tying it to `color` meant that
+  // NO_COLOR silently turned raw mode OFF, which is what lets pasted escape sequences reach the
+  // echo path verbatim (render.renderLocalInput now sanitizes, but the coupling was still wrong).
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: Boolean(process.stdout.isTTY),
+  });
   const done = new Promise<void>((resolve) => {
     rl.on("line", (line) => {
       if (session.handleInput(line) === "exit") rl.close();

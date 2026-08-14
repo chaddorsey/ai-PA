@@ -60,6 +60,17 @@ describe("sanitize", () => {
     expect(sanitize("\ufeffbom")).toBe("bom");
   });
 
+  it("strips invisible characters that are not bidi or zero-width SPACE", () => {
+    // The original class named the familiar members and missed siblings doing the same job.
+    // Everything here renders as nothing, so it survives a copy out of the terminal and into a
+    // shell or another agent's prompt without the user ever seeing it.
+    expect(sanitize("a\u061cb")).toBe("ab"); // Arabic letter mark — a Bidi_Control
+    expect(sanitize("a\u{e0041}\u{e0042}b")).toBe("ab"); // TAG block: invisible text smuggling
+    expect(sanitize("a\u00adb")).toBe("ab"); // soft hyphen
+    expect(sanitize("a\u3164b")).toBe("ab"); // Hangul filler: a blank glyph
+    expect(sanitize("a\ufe0fb")).toBe("ab"); // variation selector
+  });
+
   // The bound below is a SECURITY property, not a nicety. The agent relays third-party content,
   // so a mail body full of unterminated introducers is attacker-reachable. Cost must not depend on
   // how many introducers the attacker packs in: with an unbounded lazy payload the engine restarts

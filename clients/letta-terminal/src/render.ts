@@ -40,8 +40,15 @@ const ANSI = {
 /** Notices are status lines, not content, so they are bounded harder than delta text. */
 const NOTICE_MAX_LENGTH = 512;
 
-/** Upper bound on remembered turn origins; see evictOldOrigins. */
-const MAX_TRACKED_ORIGINS = 512;
+/**
+ * Upper bound on remembered turn origins; see evictOldOrigins.
+ *
+ * Exported because session.ts used to declare its own copy with a comment saying it must match
+ * this one — a constraint enforced by nothing. If the two drifted, the caches would evict at
+ * different rates and the same run could render under two different origin labels depending on
+ * which lookup path a delta took, and that label is a security signal on a shared conversation.
+ */
+export const MAX_TRACKED_ORIGINS = 512;
 
 /** Which surface started a turn. `unknown` means it began before we could attribute it. */
 export type TurnOrigin = "self" | "peer";
@@ -91,7 +98,12 @@ export class Renderer {
 
   /** A locally-typed line, echoed so the transcript reads as a conversation. */
   renderLocalInput(text: string): string {
-    return `${this.closeStream()}${this.paint("you ›", ANSI.bold, ANSI.cyan)} ${text}\n`;
+    // Sanitized even though this is the user's OWN line. Readline consumes escapes as key events
+    // only in terminal mode, and main.ts ties that mode to the colour setting — so under NO_COLOR,
+    // a non-TTY stdout, or a piped session, pasted escape sequences reach this echo verbatim and
+    // are written straight to the TTY (or into a session log that detonates when someone cats it).
+    const safe = indentContinuation(sanitize(text, { maxLength: NOTICE_MAX_LENGTH }));
+    return `${this.closeStream()}${this.paint("you ›", ANSI.bold, ANSI.cyan)} ${safe}\n`;
   }
 
   /** A status/system line (connection changes, errors, notices). */
@@ -198,6 +210,11 @@ export class Renderer {
    * a reconnect — the ordinary watchdog path — leaks one. On a client meant to stay attached for
    * days that is unbounded growth, and a recycled run id would render with a stale label.
    */
+  /** Number of remembered turn origins. Exposed so the bound is assertable, not merely intended. */
+  get trackedOriginCount(): number {
+    return this.originByRun.size;
+  }
+
   private evictOldOrigins(): void {
     while (this.originByRun.size > MAX_TRACKED_ORIGINS) {
       const oldest = this.originByRun.keys().next().value;

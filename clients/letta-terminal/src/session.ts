@@ -7,7 +7,7 @@
  */
 
 import type { ConnectionState, ContinuityCore, RenderEvent } from "@ai-pa/letta-continuity-core";
-import { Renderer, type RendererOptions } from "./render.js";
+import { MAX_TRACKED_ORIGINS, Renderer, type RendererOptions } from "./render.js";
 
 /**
  * `ContinuityCore` must satisfy this seam. Without an explicit assertion the only check is the
@@ -20,9 +20,6 @@ type SessionCoreConformance = ContinuityCore extends SessionCore ? true : never;
 /** Use site: when the conditional above resolves to `never`, this assignment fails to compile. */
 const _coreSatisfiesSeam: SessionCoreConformance = true;
 void _coreSatisfiesSeam;
-
-/** Upper bound on cached turn origins, matching the renderer's own cap. */
-const MAX_TRACKED_ORIGINS = 512;
 
 /** The slice of ContinuityCore this session needs — the seam a test stub implements. */
 export interface SessionCore {
@@ -140,6 +137,15 @@ export class TerminalSession {
     }
     this.write(this.renderer.renderLocalInput(trimmed));
     return "sent";
+  }
+
+  /**
+   * Remembered turn origins, across BOTH caches. The test that was supposed to cover the bound
+   * asserted only that a string appeared, which held whether or not eviction ran — disabling both
+   * eviction loops left the suite green.
+   */
+  get trackedOriginCount(): { session: number; renderer: number } {
+    return { session: this.originCache.size, renderer: this.renderer.trackedOriginCount };
   }
 
   /** Flush any open streamed line. */

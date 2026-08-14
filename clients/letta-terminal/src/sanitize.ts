@@ -63,8 +63,34 @@ const SEQUENCES: RegExp[] = [
   new RegExp(`${ESC}[@-Z\\\\-_]`, "g"),
 ];
 
-/** Bidi overrides/isolates and zero-width characters — see the module note. */
-const INVISIBLE = /[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
+/**
+ * Bidi controls and characters that render as nothing — see the module note.
+ *
+ * The earlier class named the familiar members and missed siblings that do the same job:
+ * U+061C ARABIC LETTER MARK is a Bidi_Control exactly like the U+200F already listed; the
+ * U+E0000-E007F TAG block is the canonical invisible-text smuggling range; soft hyphen, Hangul
+ * fillers, the combining grapheme joiner and variation selectors all have no visible glyph. Text
+ * copied out of this terminal and pasted into a shell or another agent prompt carries whatever
+ * survives here, so "renders as nothing" is the property that matters, not "is a control code".
+ */
+const INVISIBLE = new RegExp(
+  [
+    "\\u00ad", // soft hyphen
+    "\\u034f", // combining grapheme joiner (its own branch: a class would fold it into a neighbour)
+    "\\u061c", // Arabic letter mark — a Bidi_Control, like the U+200F below
+    "[\\u115f\\u1160\\u3164\\uffa0]", // Hangul fillers: blank glyphs
+    "[\\u17b4\\u17b5]", // Khmer inherent vowels: blank
+    "[\\u180b-\\u180e]", // Mongolian variation selectors + vowel separator
+    "[\\u200b-\\u200f]", // zero-width space/joiners, LRM/RLM
+    "[\\u202a-\\u202e]", // bidi embedding/override
+    "[\\u2060-\\u2064]", // word joiner + invisible operators
+    "[\\u2066-\\u2069]", // bidi isolates
+    "[\\ufe00-\\ufe0f]", // variation selectors
+    "\\ufeff", // BOM / zero-width no-break space
+    "[\\u{e0000}-\\u{e007f}]", // TAG block: the canonical invisible-text smuggling range
+  ].join("|"),
+  "gu",
+);
 
 export interface SanitizeOptions {
   /** Truncate beyond this many characters. One huge delta can lock a terminal on its own. */
