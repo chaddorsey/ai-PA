@@ -17,6 +17,7 @@ import {
   type ConnectionState,
   ConnectionStateMachine,
 } from "./connection.js";
+import { fanOut } from "./fanout.js";
 import { type Attribution, type OwnershipSnapshot, RunOwnership } from "./ownership.js";
 import { type ContinuityPointer, readPointer } from "./pointer.js";
 import {
@@ -283,7 +284,7 @@ export class ContinuityCore {
     });
     ws.onFrame((f) => this.routeFrame(f));
     ws.onError((e) => this.emitError(e));
-    ws.onClose(() => this.handleClose());
+    ws.onClose(() => this.handleClose(ws));
     return ws;
   }
 
@@ -381,8 +382,16 @@ export class ContinuityCore {
     this.assembler.ingest(frame);
   }
 
-  private handleClose(): void {
-    if (this.stopped || this.ws?.isClosedByUs) return;
+  /**
+   * `source` is load-bearing. The guard used to read `this.ws`, i.e. whatever connection is
+   * CURRENT — but a superseded socket can emit `close` long after it was replaced (the ws package
+   * waits for a close handshake, up to 30s). The guard then consulted the healthy connection, saw
+   * it was not closed by us, and scheduled a reconnect against a live socket. That reconnect
+   * replaced `this.ws` WITHOUT closing it, leaving two sockets wired to routeFrame and every
+   * broadcast rendered twice on two independent event_seq sequences.
+   */
+  private handleClose(source: WsConnection): void {
+    if (this.stopped || source !== this.ws || source.isClosedByUs) return;
     this.scheduleReconnect();
   }
 
@@ -421,10 +430,22 @@ export class ContinuityCore {
       // an ack for it can no longer arrive. Both sets must not outlive the connection.
       this.answeredApprovals = new Set();
       this.sentApprovalResponses = new Set();
+      // Tear down the outgoing connection explicitly; overwriting the field alone leaks it.
+      const previous = this.ws;
       this.ws = ws;
+      if (previous && previous !== ws) previous.close();
       await ws.connect();
       // Snapshot BEFORE resuming live so the message-id watermark bridges the seam.
       const snapshot = await this.fetchSnapshot(ws);
+      // Re-check identity after BOTH awaits. connected() does not merely report a state — it also
+      // resets the attempt counter. Calling it for a connection that has since died (or after
+      // stop()) rearms the reconnect budget every cycle, so backoff never grows and the cap is
+      // never reached: a crash-looping App Server gets hammered by every attached surface while
+      // the user is shown "connected" and types into a dead socket.
+      if (this.stopped || this.ws !== ws || ws.isClosedByUs) {
+        ws.close();
+        return;
+      }
       this.liveDedup = snapshot ? new LiveDedup(snapshot) : null;
       this.connectionState.connected();
     } catch (e) {
@@ -452,6 +473,9 @@ export class ContinuityCore {
       }
       return snapshotFromResponse(resp);
     } catch (e) {
+      // A snapshot RPC that failed because the SOCKET died is not "resume without dedup" — it is
+      // a failed reconnect attempt. Swallowing it let the caller fall through to connected().
+      if (ws.isClosed) throw e;
       this.config.onWarn?.(
         `catch-up snapshot error: ${(e as Error).message} — resuming without dedup`,
       );
@@ -465,11 +489,15 @@ export class ContinuityCore {
       toolName: controlRequestToolName(frame),
       outcome,
     };
-    for (const l of this.approvalListeners) l(event);
+    fanOut(this.approvalListeners, [event], (e) =>
+      this.config.onWarn?.(`approval listener threw: ${e.message}`),
+    );
   }
 
   private emitError(err: Error): void {
-    for (const l of this.errorListeners) l(err);
+    fanOut(this.errorListeners, [err], (e) =>
+      this.config.onWarn?.(`error listener threw: ${e.message}`),
+    );
   }
 }
 

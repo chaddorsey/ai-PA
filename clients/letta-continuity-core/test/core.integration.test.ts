@@ -359,6 +359,61 @@ describe("ContinuityCore integration", () => {
     await waitFor(() => core.state === "connected", 5000);
   });
 
+  it("a consumer listener that throws does not take the connection (or the process) down", async () => {
+    // Every fan-out runs synchronously inside the ws socket's `message` handler, so a throwing
+    // listener escaped into an EventEmitter and became an uncaughtException — process exit under
+    // Node's default policy. The terminal's listeners all end in process.stdout.write, so
+    // `letta-continuity | head -40` KILLED the client on EPIPE rather than degrading. A
+    // misbehaving consumer must not be a connection problem.
+    server = new MockAppServer();
+    url = await server.start();
+    const warnings: string[] = [];
+    const { core } = await makeCore({ onWarn: (m: string) => warnings.push(m) });
+    const survived: RenderEvent[] = [];
+    core.onRender(() => {
+      throw new Error("EPIPE from the render sink");
+    });
+    core.onRender((e) => survived.push(e));
+    await core.start();
+
+    core.send("hello");
+    // The listener registered AFTER the thrower still receives events, and the stream keeps
+    // flowing afterwards — neither is true if the throw escapes the loop.
+    await waitFor(() => survived.length > 0, 3_000);
+    await waitFor(() => survived.some((e) => e.type === "turn_finished"), 3_000);
+    expect(core.state).toBe("connected");
+  });
+
+  it("a server that FLAPS cannot rearm the reconnect budget", async () => {
+    // The existing bounded-reconnect tests only cover a server that is fully DOWN, so connect()
+    // itself fails and the attempt counts. They never reach the path that mattered: a server that
+    // accepts the handshake and then dies. There, the catch-up snapshot rejected, fetchSnapshot
+    // swallowed it, and reconnect() fell through to connected() — which resets the attempt counter.
+    // Backoff never grew, the cap was never reached, and every attached surface hammered a
+    // crash-looping App Server while showing the user "connected". Measured at 68 connect-and-die
+    // cycles in 2s against a budget of 2.
+    server = new MockAppServer({ suppressResponsesFor: ["conversation_messages_list"] });
+    url = await server.start();
+    const MAX_ATTEMPTS = 2;
+    const { core } = await makeCore({
+      reconnectDelayMs: 20,
+      maxReconnectAttempts: MAX_ATTEMPTS,
+      rpcTimeoutMs: 5_000, // long enough that the drop, not the timeout, ends the snapshot
+    });
+    core.onError(() => {}); // exhaustion is expected here; don't let it surface as unhandled
+    await core.start();
+
+    // Kill every connection the moment it appears — the crash-loop shape.
+    const killer = setInterval(() => server.dropAllConnections(), 40);
+    await new Promise((r) => setTimeout(r, 1_500));
+    clearInterval(killer);
+
+    const handshakes = server.received.filter((m) => m.type === "runtime_start").length;
+    // One initial attach plus at most the budget. Without the fix this ran into the dozens.
+    expect(handshakes).toBeLessThanOrEqual(MAX_ATTEMPTS + 1);
+    expect(core.state).not.toBe("connected");
+  });
+
   it("exhausting the budget surfaces an actionable error, not just a quiet state change", async () => {
     server = new MockAppServer();
     url = await server.start();

@@ -12,6 +12,7 @@
  * catchup.ts, not here. Call `reset()` when a new connection is established.
  */
 
+import { fanOut } from "./fanout.js";
 import {
   LoopStatuses,
   type ServerFrame,
@@ -129,7 +130,7 @@ export class StreamAssembler {
   }
 
   private emit(event: RenderEvent): RenderEvent {
-    for (const l of this.listeners) l(event);
+    fanOut(this.listeners, [event]);
     return event;
   }
 }

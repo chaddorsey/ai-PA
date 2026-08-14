@@ -10,6 +10,7 @@
  */
 
 import { type RawData, WebSocket } from "ws";
+import { fanOut } from "./fanout.js";
 import {
   type AppServerInfoResponseFrame,
   Outbound,
@@ -246,6 +247,15 @@ export class WsConnection {
   }
 
   /**
+   * Whether the socket can still carry traffic. Distinct from `isClosedByUs`, which records
+   * INTENT: a socket the peer dropped is closed without us having closed it. Callers awaiting an
+   * RPC need to tell "the request failed" from "the connection is gone".
+   */
+  get isClosed(): boolean {
+    return this.socket === null || this.socket.readyState !== WebSocket.OPEN;
+  }
+
+  /**
    * Send a frame and register its waiter — in that order, and atomically from the caller's view.
    *
    * The ordering is load-bearing. Registering first and sending second leaks a pending entry
@@ -325,7 +335,9 @@ export class WsConnection {
       }
       return;
     }
-    for (const l of this.frameListeners) l(frame);
+    fanOut(this.frameListeners, [frame], (e) =>
+      this.opts.onWarn(`frame listener threw: ${e.message}`),
+    );
   }
 
   /** Reject the pending RPC this frame was answering, if any. No-op for broadcasts. */
@@ -345,10 +357,12 @@ export class WsConnection {
       pend.reject(new Error(`connection closed (code=${code})`));
     }
     this.pending.clear();
-    for (const l of this.closeListeners) l(code, reason);
+    fanOut(this.closeListeners, [code, reason], (e) =>
+      this.opts.onWarn(`close listener threw: ${e.message}`),
+    );
   }
 
   private emitError(err: Error): void {
-    for (const l of this.errorListeners) l(err);
+    fanOut(this.errorListeners, [err], () => {});
   }
 }

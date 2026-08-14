@@ -12,6 +12,8 @@
  * all of them in lockstep against a cold-starting server.
  */
 
+import { fanOut } from "./fanout.js";
+
 export type ConnectionState = "disconnected" | "connecting" | "connected" | "reconnecting";
 
 export type ConnectionListener = (state: ConnectionState, prev: ConnectionState) => void;
@@ -83,7 +85,7 @@ export class ConnectionStateMachine {
     if (next === this.state) return;
     const prev = this.state;
     this.state = next;
-    for (const l of this.listeners) l(next, prev);
+    fanOut(this.listeners, [next, prev]);
   }
 
   /** Initial connect attempt starting from disconnected. */
