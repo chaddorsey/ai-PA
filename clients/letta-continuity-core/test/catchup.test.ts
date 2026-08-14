@@ -27,9 +27,14 @@ describe("catchup snapshot + message-id watermark dedup", () => {
     expect(dedup.admit("letta-msg-B")).toBe(true); // new → render (no loss)
   });
 
-  it("admits EVERY delta of a new message (deltas share one delta.id)", () => {
+  it("admits a repeated id every time (never adds live ids to the drop-set)", () => {
+    // RETITLED, deliberately. This used to be called "admits EVERY delta of a new message
+    // (deltas share one delta.id)" and its comment asserted that premise as fact. Live capture
+    // disproves it: every chunk of one message carries a DISTINCT delta.id (letta-msg-27370,
+    // -27371, …); `otid` is what stays constant per message. The behaviour under test is still
+    // correct and still worth pinning — newly-seen ids are never added to the drop-set — but it
+    // must not be justified by a premise the code's own ⚠️ block records as false.
     const dedup = new LiveDedup(snapshotFromResponse(resp(["letta-msg-A"])));
-    // A new message streams many deltas sharing one id — all must render.
     expect(dedup.admit("letta-msg-NEW")).toBe(true);
     expect(dedup.admit("letta-msg-NEW")).toBe(true);
     expect(dedup.admit("letta-msg-NEW")).toBe(true);

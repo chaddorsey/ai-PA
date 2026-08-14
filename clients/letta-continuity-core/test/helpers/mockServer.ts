@@ -63,6 +63,13 @@ export interface MockServerOptions {
   inputDisposition?: "started" | "queued";
 }
 
+/** Split a message body into per-chunk deltas the way a streaming provider does. */
+function splitIntoChunks(text: string): string[] {
+  if (text.length <= 1) return [text];
+  const mid = Math.ceil(text.length / 2);
+  return [text.slice(0, mid), text.slice(mid)];
+}
+
 function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
@@ -151,9 +158,27 @@ export class MockAppServer {
     const type = msg.type as string;
     if (this.options.suppressResponsesFor?.includes(type)) return;
     if (type === "app_server_info") this.handleAppServerInfo(conn, msg);
-    else if (type === "runtime_start") this.handleRuntimeStart(conn, msg);
-    else if (type === "input") this.handleInput(conn, msg);
-    else if (type === "conversation_list") {
+    else if (type === "runtime_start") {
+      // isRuntimeStartCommand: both ids must be present strings. Previously this was the one
+      // command with no guard, and it cast them instead — so a builder that nested the runtime
+      // would produce {agent_id: undefined} and fail downstream on `missing runtime`, pointing
+      // the blame anywhere but at the builder that regressed.
+      if (this.guard(typeof msg.agent_id === "string" && typeof msg.conversation_id === "string")) {
+        this.handleRuntimeStart(conn, msg);
+      }
+    } else if (type === "input") {
+      // isInputCommand: payload object, and for create_message a messages ARRAY. For
+      // approval_response the server additionally requires payload.request_id and a decision.
+      const p = isObj(msg.payload) ? msg.payload : null;
+      const okCreate =
+        p?.kind === "create_message" && Array.isArray((p as { messages?: unknown }).messages);
+      const okApproval =
+        p?.kind === "approval_response" &&
+        typeof (p as { request_id?: unknown }).request_id === "string" &&
+        (isObj((p as { decision?: unknown }).decision) ||
+          typeof (p as { error?: unknown }).error === "string");
+      if (this.guard(Boolean(okCreate || okApproval))) this.handleInput(conn, msg);
+    } else if (type === "conversation_list") {
       if (this.guard(isObj(msg.query) || msg.query === undefined)) {
         this.handleConversationList(conn, msg);
       }
@@ -361,25 +386,6 @@ export class MockAppServer {
     setImmediate(() => this.drain(key));
   }
 
-  /**
-   * Announce a run that belongs to NOBODY on this test's clients, then gate it on approval.
-   * Used to prove an observer stays silent even while it has its own turn outstanding.
-   */
-  broadcastForeignApproval(runtime: ConnState["runtime"], runId: string): void {
-    if (!runtime) return;
-    this.sendBroadcastAll(runtime, "update_loop_status", {
-      loop_status: {
-        status: "SENDING_API_REQUEST",
-        active_run_ids: [runId],
-        executing_tool_call_ids: [],
-      },
-    });
-    this.sendBroadcastAll(runtime, "approval_request_message", {
-      approval_request_id: `appr-${runId}`,
-      run_id: runId,
-    });
-  }
-
   /** Broadcast a full turn (own or FOREIGN) to every socket subscribed to the runtime. */
   broadcastTurn(
     runtime: ConnState["runtime"],
@@ -397,21 +403,48 @@ export class MockAppServer {
         },
       });
       for (const m of messages) {
-        this.sendBroadcast(conn, "stream_delta", {
-          delta: {
-            id: m.id,
-            date: "2026-08-13T00:00:00.000Z",
-            agent_id: runtime.agent_id,
-            conversation_id: runtime.conversation_id,
-            message_type: m.messageType,
-            otid: `otid-${m.id}`,
-            content: m.text,
-            run_id: runId,
-            seq_id: 1,
-            type: "message",
-          },
-        });
+        // The live server splits one message across MANY deltas, each with its OWN delta.id
+        // (letta-msg-26735, -26736, …) while `otid` stays constant for the message. A double that
+        // emits one delta per message hides both the per-chunk id reality AND any line-breaking
+        // bug that depends on it — which is exactly how the "agent › HE / LL / O" defect shipped.
+        const chunks = splitIntoChunks(m.text);
+        for (const [i, chunk] of chunks.entries()) {
+          this.sendBroadcast(conn, "stream_delta", {
+            delta: {
+              id: `${m.id}-${i}`,
+              date: "2026-08-13T00:00:00.000Z",
+              agent_id: runtime.agent_id,
+              conversation_id: runtime.conversation_id,
+              message_type: m.messageType,
+              otid: `otid-${m.id}`,
+              content: chunk,
+              run_id: runId,
+              seq_id: i + 1,
+              type: "message",
+            },
+          });
+        }
       }
+      // Every real turn ends with these two control deltas. `stop_reason` carries NO delta.id —
+      // the frame that used to be rejected by the watermark guard on every single turn.
+      this.sendBroadcast(conn, "stream_delta", {
+        delta: {
+          id: `${runId}-usage`,
+          message_type: "usage_statistics",
+          run_id: runId,
+          seq_id: 900,
+          type: "message",
+        },
+      });
+      this.sendBroadcast(conn, "stream_delta", {
+        delta: {
+          message_type: "stop_reason",
+          stop_reason: stopReason,
+          run_id: runId,
+          seq_id: 901,
+          type: "message",
+        },
+      });
       this.sendBroadcast(conn, "turn_finished", {
         turn_id: `batch-${runId}`,
         stop_reason: stopReason,

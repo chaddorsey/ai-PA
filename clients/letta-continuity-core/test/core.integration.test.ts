@@ -7,6 +7,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { WebSocket } from "ws";
 import { ContinuityCore } from "../src/index.js";
 import { writePointer } from "../src/pointer.js";
 import { __resetRequestCounter } from "../src/protocol.js";
@@ -257,6 +258,85 @@ describe("ContinuityCore integration", () => {
     expect(core.ownershipSnapshot().pending).toBe(0);
   });
 
+  describe("the mock enforces the server's command guards", () => {
+    // A double that answers any shape rubber-stamps a malformed builder — that is how
+    // conversation_create shipped with an envelope the real server silently dropped. These drive
+    // a raw socket rather than the core, because the point is that a MALFORMED frame (which the
+    // builders can no longer produce) is rejected the way the server rejects it: silently.
+    async function rawClient(): Promise<WebSocket> {
+      const sock = new WebSocket(url);
+      await new Promise((resolve) => sock.once("open", resolve));
+      return sock;
+    }
+
+    it("drops a create_message input with no messages array, and starts no turn", async () => {
+      server = new MockAppServer();
+      url = await server.start();
+      const sock = await rawClient();
+      try {
+        const before = server.rejected;
+        sock.send(
+          JSON.stringify({
+            type: "input",
+            request_id: "r1",
+            runtime: { agent_id: AGENT, conversation_id: CONV },
+            payload: { kind: "create_message", client_message_id: "cm-x" },
+          }),
+        );
+        await new Promise((r) => setTimeout(r, 150));
+        expect(server.rejected).toBe(before + 1);
+        // Silently: no ack, no error frame — the failure mode that makes this class of bug hard.
+        expect(server.received.some((m) => m.type === "input")).toBe(true);
+      } finally {
+        sock.close();
+      }
+    });
+
+    it("drops an approval_response with no request_id", async () => {
+      server = new MockAppServer();
+      url = await server.start();
+      const sock = await rawClient();
+      try {
+        const before = server.rejected;
+        sock.send(
+          JSON.stringify({
+            type: "input",
+            request_id: "r2",
+            runtime: { agent_id: AGENT, conversation_id: CONV },
+            payload: { kind: "approval_response", decision: { behavior: "deny", message: "m" } },
+          }),
+        );
+        await new Promise((r) => setTimeout(r, 150));
+        expect(server.rejected).toBe(before + 1);
+      } finally {
+        sock.close();
+      }
+    });
+
+    it("drops a runtime_start whose ids are not strings", async () => {
+      // Previously the only command with no guard: it cast the ids instead, so a builder that
+      // nested the runtime produced {agent_id: undefined} and the suite failed downstream on
+      // "missing runtime" — pointing anywhere but at the builder that regressed.
+      server = new MockAppServer();
+      url = await server.start();
+      const sock = await rawClient();
+      try {
+        const before = server.rejected;
+        sock.send(
+          JSON.stringify({
+            type: "runtime_start",
+            request_id: "r3",
+            runtime: { agent_id: AGENT, conversation_id: CONV },
+          }),
+        );
+        await new Promise((r) => setTimeout(r, 150));
+        expect(server.rejected).toBe(before + 1);
+      } finally {
+        sock.close();
+      }
+    });
+  });
+
   it("happy path: send a turn, render stream_delta → turn_finished", async () => {
     server = new MockAppServer();
     url = await server.start();
@@ -264,8 +344,12 @@ describe("ContinuityCore integration", () => {
     await core.start();
     core.send("hello");
     await waitFor(() => events.some((e) => e.type === "turn_finished"));
-    const delta = events.find((e) => e.type === "delta");
-    expect(delta?.text).toBe("OK");
+    // A message arrives as several deltas with distinct ids, so assert the assembled text.
+    const text = events
+      .filter((e) => e.type === "delta")
+      .map((e) => e.text ?? "")
+      .join("");
+    expect(text).toBe("OK");
     expect(events.some((e) => e.type === "turn_start")).toBe(true);
   });
 
@@ -279,9 +363,9 @@ describe("ContinuityCore integration", () => {
       { id: "letta-msg-F", messageType: "assistant_message", text: "from elsewhere" },
     ]);
     await waitFor(() => events.some((e) => e.type === "turn_finished"));
-    const delta = events.find((e) => e.type === "delta");
-    expect(delta?.text).toBe("from elsewhere");
-    expect(delta?.runId).toBe("run-foreign");
+    const deltas = events.filter((e) => e.type === "delta");
+    expect(deltas.map((e) => e.text ?? "").join("")).toBe("from elsewhere");
+    expect(deltas[0]?.runId).toBe("run-foreign");
   });
 
   it("conversation_list / conversation_create RPCs round-trip (request_id-keyed)", async () => {
@@ -444,43 +528,55 @@ describe("ContinuityCore integration", () => {
     });
   });
 
-  it("reconnect + message-id catch-up: no duplicate of a snapshot message, no loss of a new one", async () => {
-    // Snapshot (what the server returns on conversation_messages_list after reconnect)
-    // contains the already-rendered message A.
-    server = new MockAppServer({ messagesSnapshot: [{ id: "letta-msg-A" }] });
+  /**
+   * REPLACED, and deliberately weaker than what it replaced.
+   *
+   * The old test claimed "no duplicate of a snapshot message, no loss of a new one" and passed —
+   * but only because the mock emitted ONE delta per message whose id was hand-matched to the
+   * snapshot. Live capture disproves both halves of that setup: a message streams as many deltas
+   * with DISTINCT ids (letta-msg-27370, -27371, …), and `conversation_messages_list` returns a
+   * completely different id space (ui-msg-7457, ui-msg-7456:assistant:1). Zero overlap over a
+   * full turn — so on a real server LiveDedup.admit() never matches and the dedup does nothing.
+   *
+   * The honest offline claim is therefore narrow: given ids that DO share a namespace, the gate
+   * drops a replay and admits a new message. Whether the real namespaces can ever line up is
+   * M1 Unit 7's open question (docs/followups/2026-08-13-continuity-core-approval-correlation.md
+   * finding #2). Do not "fix" this by re-tuning the mock until the original assertion goes green
+   * again — that reinstates precisely the false signal this remediation exists to remove.
+   */
+  it("catch-up dedup drops a replay and admits a new message — GIVEN a shared id namespace", async () => {
+    // The snapshot id is the mock's per-chunk id, which only matches because the mock is a mock.
+    server = new MockAppServer({ messagesSnapshot: [{ id: "letta-msg-A-0" }] });
     url = await server.start();
     const { core, events } = await makeCore();
     await core.start();
     await waitFor(() => core.state === "connected");
 
-    // Render message A live (pre-disconnect).
     server.injectForeignTurn({ agent_id: AGENT, conversation_id: CONV }, "run-A", [
       { id: "letta-msg-A", messageType: "assistant_message", text: "A" },
     ]);
-    await waitFor(() => events.some((e) => e.type === "delta" && e.messageId === "letta-msg-A"));
+    await waitFor(() => events.some((e) => e.type === "delta" && e.messageId === "letta-msg-A-0"));
 
-    // Watchdog stall-restart drops all sockets at once → core reconnects + catches up.
     server.dropAllConnections();
-    // wait until we've cycled back to connected (post-reconnect, liveDedup seeded from snapshot)
     let reconnected = false;
-    core.onConnectionState((s, prev) => {
-      if (s === "connected" && prev === "reconnecting") reconnected = true;
+    core.onConnectionState((st, prev) => {
+      if (st === "connected" && prev === "reconnecting") reconnected = true;
     });
     await waitFor(() => reconnected, 5000);
 
-    // After reconnect: server replays A (same id) AND streams a genuinely new message B.
+    // Replay of the snapshot message, then a genuinely new one.
     server.injectForeignTurn({ agent_id: AGENT, conversation_id: CONV }, "run-A2", [
-      { id: "letta-msg-A", messageType: "assistant_message", text: "A-replay" },
+      { id: "letta-msg-A", messageType: "assistant_message", text: "A" },
     ]);
     server.injectForeignTurn({ agent_id: AGENT, conversation_id: CONV }, "run-B", [
       { id: "letta-msg-B", messageType: "assistant_message", text: "B" },
     ]);
-    await waitFor(() => events.some((e) => e.type === "delta" && e.messageId === "letta-msg-B"));
+    await waitFor(() => events.some((e) => e.type === "delta" && e.messageId === "letta-msg-B-0"));
 
-    const aRenders = events.filter((e) => e.type === "delta" && e.messageId === "letta-msg-A");
-    const bRenders = events.filter((e) => e.type === "delta" && e.messageId === "letta-msg-B");
-    expect(aRenders).toHaveLength(1); // A rendered exactly once (replay deduped) — NO duplicate
-    expect(bRenders.length).toBeGreaterThanOrEqual(1); // B rendered — NO loss
+    const replayed = events.filter((e) => e.type === "delta" && e.messageId === "letta-msg-A-0");
+    const fresh = events.filter((e) => e.type === "delta" && e.messageId === "letta-msg-B-0");
+    expect(replayed).toHaveLength(1); // the post-reconnect replay was dropped
+    expect(fresh).toHaveLength(1); // exact, not >=1: a duplicated live frame must fail this
   });
 
   it("surfaces reconnecting state on a mid-session disconnect", async () => {
