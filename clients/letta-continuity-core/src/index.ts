@@ -40,6 +40,7 @@ import {
   isQueue,
   isStreamDelta,
   isTurnFinished,
+  newClientNonce,
   nextRequestId,
   queueRemovals,
 } from "./protocol.js";
@@ -60,6 +61,8 @@ export interface ContinuityCoreConfig {
   helloTimeoutMs?: number;
   rpcTimeoutMs?: number;
   serverInfoTimeoutMs?: number;
+  /** Override the per-instance correlation nonce (tests, or a bridge fanning out to N browsers). */
+  clientNonce?: string;
   onWarn?: (msg: string) => void;
 }
 
@@ -73,12 +76,18 @@ export class ContinuityCore {
   private liveDedup: LiveDedup | null = null;
   /** Which runs on the shared conversation are ours (drives approval fail-closed). */
   private readonly ownership = new RunOwnership();
+  /**
+   * Makes this instance's correlation ids distinct from any other client PROCESS on the same
+   * conversation. See protocol.newClientNonce for why a module-global counter is not enough.
+   */
+  private readonly clientNonce: string;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
   private readonly errorListeners = new Set<(err: Error) => void>();
 
   constructor(config: ContinuityCoreConfig) {
     this.config = config;
+    this.clientNonce = config.clientNonce ?? newClientNonce();
     this.connectionState = new ConnectionStateMachine(
       config.maxReconnectAttempts !== undefined
         ? { maxReconnectAttempts: config.maxReconnectAttempts }
@@ -123,8 +132,8 @@ export class ContinuityCore {
    */
   send(text: string): void {
     if (!this.ws || !this.runtime) throw new Error("ContinuityCore not started");
-    const requestId = nextRequestId("input");
-    const clientMessageId = nextRequestId("cm");
+    const requestId = nextRequestId("input", this.clientNonce);
+    const clientMessageId = nextRequestId("cm", this.clientNonce);
     this.ownership.beginSend(requestId, clientMessageId);
     this.ws.send(buildInput(this.runtime, text, { requestId, clientMessageId }));
   }
@@ -199,6 +208,7 @@ export class ContinuityCore {
       helloTimeoutMs: this.config.helloTimeoutMs,
       rpcTimeoutMs: this.config.rpcTimeoutMs,
       serverInfoTimeoutMs: this.config.serverInfoTimeoutMs,
+      clientNonce: this.clientNonce,
       onWarn: this.config.onWarn,
     });
     ws.onFrame((f) => this.routeFrame(f));
@@ -225,7 +235,9 @@ export class ContinuityCore {
       return; // control-channel ack: never rendered
     }
     if (isQueue(frame)) {
-      this.ownership.onQueueRemovals(queueRemovals(frame));
+      this.ownership.onQueueRemovals(queueRemovals(frame), (msg) =>
+        this.config.onWarn?.(`queue anomaly: ${msg}`),
+      );
       // fall through: the assembler may surface a "queued…" indicator
     }
 
@@ -235,7 +247,7 @@ export class ContinuityCore {
     // answer a peer's approval.
     if (isApprovalRequest(frame)) {
       if (this.ownership.shouldRespondToApproval(frame.run_id) && this.ws && this.runtime) {
-        const rid = nextRequestId("appr");
+        const rid = nextRequestId("appr", this.clientNonce);
         const approvalId = approvalRequestId(frame) ?? "";
         this.ws.send(buildApprovalSend(rid, this.runtime, approvalId, "deny"));
       }

@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ContinuityCore } from "../src/index.js";
 import { writePointer } from "../src/pointer.js";
+import { __resetRequestCounter } from "../src/protocol.js";
 import type { RenderEvent } from "../src/stream.js";
 import { MockAppServer } from "./helpers/mockServer.js";
 
@@ -216,6 +217,30 @@ describe("ContinuityCore integration", () => {
       await core.start();
       expect(warns.some((w) => /app_server_info unavailable/.test(w))).toBe(true);
     });
+  });
+
+  it("two cores emit disjoint correlation ids even with the counter reset between them", async () => {
+    // Simulates two client PROCESSES: each starts its counter at zero. Before per-instance
+    // nonces this produced byte-identical client_message_ids, so each core recognised the
+    // other's broadcast dequeue notice as its own.
+    server = new MockAppServer();
+    url = await server.start();
+    const { core: a } = await makeCore();
+    await a.start();
+    a.send("from A");
+    await waitFor(() => server.received.some((m) => m.type === "input"));
+
+    __resetRequestCounter();
+    const { core: b } = await makeCore();
+    await b.start();
+    b.send("from B");
+    await waitFor(() => server.received.filter((m) => m.type === "input").length >= 2);
+
+    const cms = server.received
+      .filter((m) => m.type === "input")
+      .map((m) => (m.payload as { client_message_id: string }).client_message_id);
+    expect(cms).toHaveLength(2);
+    expect(new Set(cms).size).toBe(2); // disjoint — the whole point
   });
 
   it("happy path: send a turn, render stream_delta → turn_finished", async () => {

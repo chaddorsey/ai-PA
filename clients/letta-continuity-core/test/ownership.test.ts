@@ -101,6 +101,69 @@ describe("RunOwnership", () => {
     expect(o.hasOutstanding()).toBe(false);
   });
 
+  describe("replay resistance (ids are broadcast, so unpredictability is not a defense)", () => {
+    it("a replayed `cancelled` does NOT drop an already-armed claim", () => {
+      // The dangerous replay: previously this deleted the claim, so we never owned our run,
+      // never answered its approval, and hung the turn — the non-recoverable failure.
+      const o = new RunOwnership();
+      o.beginSend("REQ-A", "CM-A");
+      o.onInputAccepted("REQ-A", true, "queued");
+      o.onQueueRemovals([{ client_message_id: "CM-A", disposition: "dequeued" }]);
+
+      const anomalies: string[] = [];
+      o.onQueueRemovals([{ client_message_id: "CM-A", disposition: "cancelled" }], (m) =>
+        anomalies.push(m),
+      );
+
+      o.onRunObserved("local-run-1");
+      expect(o.owns("local-run-1")).toBe(true);
+      expect(anomalies).toHaveLength(1);
+    });
+
+    it("a replayed `dequeued` after the claim is bound is a no-op anomaly, not a re-arm", () => {
+      const o = new RunOwnership();
+      o.beginSend("REQ-A", "CM-A");
+      o.onInputAccepted("REQ-A", true, "queued");
+      o.onQueueRemovals([{ client_message_id: "CM-A", disposition: "dequeued" }]);
+      o.onRunObserved("local-run-1");
+
+      const anomalies: string[] = [];
+      o.onQueueRemovals([{ client_message_id: "CM-A", disposition: "dequeued" }], (m) =>
+        anomalies.push(m),
+      );
+
+      // Without single-shot transitions this would arm a phantom claim that then steals a peer.
+      o.onRunObserved("local-run-peer");
+      expect(o.owns("local-run-peer")).toBe(false);
+      expect(anomalies).toHaveLength(1);
+    });
+
+    it("a removal for an id we never minted is silent (that is just a peer's message)", () => {
+      const o = new RunOwnership();
+      o.beginSend("REQ-A", "CM-A");
+      o.onInputAccepted("REQ-A", true, "queued");
+      const anomalies: string[] = [];
+      o.onQueueRemovals([{ client_message_id: "CM-PEER", disposition: "dequeued" }], (m) =>
+        anomalies.push(m),
+      );
+      expect(anomalies).toEqual([]);
+      o.onRunObserved("local-run-peer");
+      expect(o.owns("local-run-peer")).toBe(false);
+    });
+
+    it("a removal arriving before the ack (claim still awaiting-ack) is ignored, not applied", () => {
+      const o = new RunOwnership();
+      o.beginSend("REQ-A", "CM-A");
+      const anomalies: string[] = [];
+      o.onQueueRemovals([{ client_message_id: "CM-A", disposition: "dequeued" }], (m) =>
+        anomalies.push(m),
+      );
+      expect(anomalies).toHaveLength(1);
+      o.onRunObserved("local-run-1");
+      expect(o.owns("local-run-1")).toBe(false); // still awaiting its own ack
+    });
+  });
+
   it("acks and dequeues for other clients' ids are ignored", () => {
     const o = new RunOwnership();
     o.beginSend("REQ-A", "CM-A");

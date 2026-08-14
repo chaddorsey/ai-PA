@@ -17,6 +17,7 @@ import {
   RpcResponseFor,
   type ServerFrame,
   VALIDATED_SERVER_VERSIONS,
+  __resetRequestCounter,
   approvalRequestId,
   assertServerIdentity,
   buildApprovalSend,
@@ -35,6 +36,8 @@ import {
   isStreamDelta,
   isSubagentState,
   isTurnFinished,
+  newClientNonce,
+  nextRequestId,
   parseFrame,
   validateInboundFrame,
 } from "../src/protocol.js";
@@ -361,6 +364,40 @@ describe("contract: outbound builders shape the pinned frames", () => {
     expect(f.type).toBe(Outbound.approvalSend);
     expect(f.decision).toBe("deny");
     expect(f.approval_request_id).toBe("appr-1");
+  });
+});
+
+describe("contract: correlation ids are unique across client PROCESSES", () => {
+  it("the same counter position yields different ids under different nonces", () => {
+    // The shipped generator was a module-global counter, so every process emitted the identical
+    // sequence rpc-1, rt-2, input-3, cm-4. Two surfaces on one conversation therefore minted the
+    // same client_message_id — observed in the server's persisted state, where otid "cm-4"
+    // appears twice from two independent client processes. Since update_queue is broadcast, each
+    // client then recognised the other's dequeue notice as its own.
+    __resetRequestCounter();
+    const a = [nextRequestId("input", "aaaaaa"), nextRequestId("cm", "aaaaaa")];
+    __resetRequestCounter();
+    const b = [nextRequestId("input", "bbbbbb"), nextRequestId("cm", "bbbbbb")];
+
+    expect(a).not.toEqual(b);
+    expect(a.filter((id) => b.includes(id))).toEqual([]);
+  });
+
+  it("ids stay monotonic and greppable within one instance", () => {
+    __resetRequestCounter();
+    expect(nextRequestId("input", "abc123")).toBe("input-abc123-1");
+    expect(nextRequestId("cm", "abc123")).toBe("cm-abc123-2");
+  });
+
+  it("omitting the nonce keeps the legacy shape (used where uniqueness is not needed)", () => {
+    __resetRequestCounter();
+    expect(nextRequestId("req")).toBe("req-1");
+  });
+
+  it("newClientNonce yields distinct values across calls", () => {
+    const nonces = new Set(Array.from({ length: 50 }, () => newClientNonce()));
+    // Collisions are possible in principle; a run of 50 landing on one value is not.
+    expect(nonces.size).toBeGreaterThan(40);
   });
 });
 

@@ -701,10 +701,37 @@ export function assertServerIdentity(
 
 let requestCounter = 0;
 
-/** Monotonic, prefix-scoped request id for RPC correlation. Deterministic across a process. */
-export function nextRequestId(prefix = "req"): string {
+/**
+ * A per-instance nonce that makes correlation ids unique across PROCESSES.
+ *
+ * Without it every client emits the identical sequence — `rpc-1`, `rt-2`, `input-3`, `cm-4` —
+ * because the counter is module-global and starts at zero in each process. Two surfaces on one
+ * conversation (the entire point of this milestone) then mint the same `client_message_id`, and
+ * since `update_queue` is broadcast, each recognises the other's dequeue notice as its own. This
+ * was observed in the server's persisted state, where `otid: "cm-4"` appears twice from two
+ * independent client processes.
+ *
+ * Injectable so tests stay deterministic.
+ */
+export function newClientNonce(): string {
+  // 6 hex chars is ample: this disambiguates a handful of concurrent local surfaces, not a
+  // distributed namespace, and short ids keep frames greppable.
+  return Math.floor(Math.random() * 0xffffff)
+    .toString(16)
+    .padStart(6, "0");
+}
+
+/**
+ * Monotonic, prefix-scoped correlation id. Monotonic *within* an instance for readability;
+ * unique *across* instances via `nonce`.
+ *
+ * `nonce` is a parameter rather than module state because the web client is ONE core fanning out
+ * to N browsers — it must be able to vary the nonce per send so each browser's turn is
+ * distinguishable, which a per-process value could not express.
+ */
+export function nextRequestId(prefix = "req", nonce?: string): string {
   requestCounter += 1;
-  return `${prefix}-${requestCounter}`;
+  return nonce ? `${prefix}-${nonce}-${requestCounter}` : `${prefix}-${requestCounter}`;
 }
 
 /** Test-only: reset the request-id counter for deterministic assertions. */

@@ -42,6 +42,8 @@ export interface WsConnectionOptions {
    * degrade to a warning quickly rather than stalling every connect by the hello budget.
    */
   serverInfoTimeoutMs?: number;
+  /** Per-instance nonce making this connection's correlation ids unique across processes. */
+  clientNonce?: string;
   onWarn?: (msg: string) => void;
 }
 
@@ -72,8 +74,10 @@ export class WsConnection {
   private readonly frameListeners = new Set<(frame: ServerFrame) => void>();
   private readonly errorListeners = new Set<(err: Error) => void>();
   private readonly closeListeners = new Set<(code: number, reason: string) => void>();
-  private readonly opts: Required<Omit<WsConnectionOptions, "pinnedVersion" | "versionPolicy">> &
-    Pick<WsConnectionOptions, "pinnedVersion" | "versionPolicy">;
+  private readonly opts: Required<
+    Omit<WsConnectionOptions, "pinnedVersion" | "versionPolicy" | "clientNonce">
+  > &
+    Pick<WsConnectionOptions, "pinnedVersion" | "versionPolicy" | "clientNonce">;
   private closedByUs = false;
   private lastIdentity: ServerIdentityCheck | null = null;
 
@@ -87,6 +91,7 @@ export class WsConnection {
       runtime: options.runtime,
       pinnedVersion: options.pinnedVersion,
       versionPolicy: options.versionPolicy,
+      clientNonce: options.clientNonce,
       onWarn: options.onWarn ?? (() => {}),
       openTimeoutMs: options.openTimeoutMs ?? DEFAULTS.openTimeoutMs,
       helloTimeoutMs: options.helloTimeoutMs ?? DEFAULTS.helloTimeoutMs,
@@ -193,7 +198,7 @@ export class WsConnection {
   }
 
   private doHello(): Promise<RuntimeStartResponseFrame> {
-    const requestId = nextRequestId("rt");
+    const requestId = nextRequestId("rt", this.opts.clientNonce);
     const responseType = RpcResponseFor[Outbound.runtimeStart];
     if (!responseType) throw new ProtocolError("no known response type for `runtime_start`");
     return this.sendAndAwait<RuntimeStartResponseFrame>(
@@ -212,7 +217,7 @@ export class WsConnection {
   ): Promise<T> {
     const responseType = RpcResponseFor[requestType];
     if (!responseType) throw new ProtocolError(`no known response type for RPC \`${requestType}\``);
-    const requestId = nextRequestId("rpc");
+    const requestId = nextRequestId("rpc", this.opts.clientNonce);
     return this.sendAndAwait<T>(
       build(requestId),
       requestId,

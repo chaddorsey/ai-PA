@@ -54,6 +54,8 @@ export class RunOwnership {
   private readonly owned = new Map<string, string>();
   /** Every run_id ever attributed, so "new run" means genuinely new. */
   private readonly seenRuns = new Set<string>();
+  /** client_message_ids whose queue transition we have already applied — replay detection. */
+  private readonly consumedMessageIds = new Set<string>();
   /**
    * True when a reconnect may have hidden the frames that would have resolved a claim.
    * While degraded with claims outstanding we fall back to fail-CLOSED behaviour: treat an
@@ -83,13 +85,46 @@ export class RunOwnership {
     claim.state = disposition === "queued" ? "queued" : "armed";
   }
 
-  /** Apply `update_queue.removed`. Our dequeue arms the claim; a cancel drops it. */
-  onQueueRemovals(removals: Array<{ client_message_id: string; disposition: string }>): void {
+  /**
+   * Apply `update_queue.removed`. Our dequeue arms the claim; an explicit cancel drops it.
+   *
+   * SINGLE-SHOT BY DESIGN. `update_queue` is broadcast to every subscriber, so our
+   * `client_message_id` is on every peer's wire — unpredictable ids (protocol.newClientNonce)
+   * stop accidental *collisions* but cannot stop a deliberate or accidental *replay*. A claim may
+   * therefore leave `queued` exactly once: a removal naming a claim that is not currently queued
+   * is ignored and reported as an anomaly rather than mutating state.
+   *
+   * The dangerous case this closes is a replayed `cancelled`, which previously deleted an already
+   * armed or bound claim — so we would never own our run, never answer its approval, and hang the
+   * turn. That is the non-recoverable side of the policy's asymmetry. It also hardens attribution
+   * against benign frame redelivery on reconnect, which is the stronger everyday justification.
+   */
+  onQueueRemovals(
+    removals: Array<{ client_message_id: string; disposition: string }>,
+    onAnomaly?: (msg: string) => void,
+  ): void {
     for (const removal of removals) {
       const claim = this.claims.find((c) => c.clientMessageId === removal.client_message_id);
-      if (!claim) continue; // a peer's message
+      if (!claim) {
+        // Either a peer's message (overwhelmingly the common case) or a replay of one of ours
+        // that we already consumed. Both are no-ops; only the latter is worth reporting, and we
+        // can distinguish them because we remember the ids we minted.
+        if (this.consumedMessageIds.has(removal.client_message_id)) {
+          onAnomaly?.(
+            `duplicate queue removal for ${removal.client_message_id} (${removal.disposition}) — ignored`,
+          );
+        }
+        continue;
+      }
+      if (claim.state !== "queued") {
+        onAnomaly?.(
+          `queue removal for ${removal.client_message_id} arrived while the claim was "${claim.state}" — ignored`,
+        );
+        continue;
+      }
+      this.consumedMessageIds.add(removal.client_message_id);
       if (removal.disposition === "dequeued") claim.state = "armed";
-      else this.drop(claim); // "cancelled" (or anything else): it will never run
+      else this.drop(claim); // an explicit cancel: it will never run
     }
   }
 
