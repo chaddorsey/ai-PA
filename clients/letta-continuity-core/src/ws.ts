@@ -78,13 +78,20 @@ export class WsConnection {
   private lastIdentity: ServerIdentityCheck | null = null;
 
   constructor(options: WsConnectionOptions) {
+    // Resolve each field with ??, NOT by spreading `options` over the defaults. A caller that
+    // forwards an unset config value passes the key with an explicit `undefined`, and a spread
+    // happily overwrites the default with it — yielding `setTimeout(fn, undefined)`, which
+    // fires immediately and turns every bound into a 0 ms timeout.
     this.opts = {
-      onWarn: () => {},
-      openTimeoutMs: DEFAULTS.openTimeoutMs,
-      helloTimeoutMs: DEFAULTS.helloTimeoutMs,
-      rpcTimeoutMs: DEFAULTS.rpcTimeoutMs,
-      serverInfoTimeoutMs: DEFAULTS.serverInfoTimeoutMs,
-      ...options,
+      url: options.url,
+      runtime: options.runtime,
+      pinnedVersion: options.pinnedVersion,
+      versionPolicy: options.versionPolicy,
+      onWarn: options.onWarn ?? (() => {}),
+      openTimeoutMs: options.openTimeoutMs ?? DEFAULTS.openTimeoutMs,
+      helloTimeoutMs: options.helloTimeoutMs ?? DEFAULTS.helloTimeoutMs,
+      rpcTimeoutMs: options.rpcTimeoutMs ?? DEFAULTS.rpcTimeoutMs,
+      serverInfoTimeoutMs: options.serverInfoTimeoutMs ?? DEFAULTS.serverInfoTimeoutMs,
     };
   }
 

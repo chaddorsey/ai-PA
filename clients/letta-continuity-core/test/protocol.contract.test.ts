@@ -241,11 +241,18 @@ describe("contract: outbound builders shape the pinned frames", () => {
       agent_id: RT.agent_id,
       conversation_id: RT.conversation_id,
     });
-    const input = buildInput(RT, "hi") as Record<string, unknown>;
+    const input = buildInput(RT, "hi", {
+      requestId: "in-1",
+      clientMessageId: "cm-1",
+    }) as Record<string, unknown>;
     expect(input.type).toBe("input");
+    // request_id is REQUIRED for correlation: without it the server sends no input_accepted
+    // ack at all, and run ownership (ownership.ts) has nothing to bind a claim to.
+    expect(input.request_id).toBe("in-1");
     expect(input.payload).toEqual({
       kind: "create_message",
-      messages: [{ role: "user", content: "hi" }],
+      client_message_id: "cm-1",
+      messages: [{ role: "user", content: "hi", client_message_id: "cm-1" }],
     });
   });
 

@@ -46,6 +46,11 @@ export interface MockServerOptions {
   approvalMode?: boolean;
   /** If false, the server never auto-responds to `input` (tests drive turns manually). */
   autoTurnOnInput?: boolean;
+  /**
+   * Force the `input_accepted` disposition, simulating this client sitting behind a peer's
+   * in-flight turn without having to script the peer's whole turn.
+   */
+  inputDisposition?: "started" | "queued";
 }
 
 function isObj(v: unknown): v is Record<string, unknown> {
@@ -69,7 +74,10 @@ export class MockAppServer {
   options: MockServerOptions;
   /** Simple per-runtime serialization flag for the concurrency test. */
   private busy = new Map<string, boolean>();
-  private queued = new Map<string, Array<{ conn: ConnState; text: string }>>();
+  private queued = new Map<
+    string,
+    Array<{ conn: ConnState; text: string; clientMessageId: string }>
+  >();
 
   constructor(options: MockServerOptions = {}) {
     this.options = { autoTurnOnInput: true, ...options };
@@ -191,28 +199,71 @@ export class MockAppServer {
     });
   }
 
-  private handleInput(conn: ConnState, _msg: Record<string, unknown>): void {
+  /**
+   * Mirrors the real input path, including the correlation handles ownership.ts depends on:
+   * an `input_accepted` ack (emitted ONLY when the input carried a request_id) whose
+   * `disposition` is `started` or `queued`, and `update_queue` entries keyed by the client's
+   * own `client_message_id`.
+   */
+  private handleInput(conn: ConnState, msg: Record<string, unknown>): void {
     if (!conn.runtime) return;
+    const payload = isObj(msg.payload) ? msg.payload : {};
+    const clientMessageId =
+      typeof payload.client_message_id === "string" ? payload.client_message_id : `cm-${uid}`;
+    const key = `${conn.runtime.agent_id}/${conn.runtime.conversation_id}`;
+    const willQueue = this.options.inputDisposition
+      ? this.options.inputDisposition === "queued"
+      : this.busy.get(key) === true;
+
+    if (typeof msg.request_id === "string") {
+      conn.socket.send(
+        JSON.stringify({
+          type: "input_accepted",
+          request_id: msg.request_id,
+          runtime: conn.runtime,
+          accepted: true,
+          disposition: willQueue ? "queued" : "started",
+        }),
+      );
+    }
+
     if (this.options.approvalMode) {
-      const n = this.bump();
-      this.sendBroadcast(conn, "approval_request_message", {
-        approval_request_id: `appr-${n}`,
-        run_id: `local-run-${n}`,
+      // Start a run, announce it so the injector can attribute it, THEN gate it on approval.
+      const runId = `local-run-${this.bump()}`;
+      this.sendBroadcastAll(conn.runtime, "update_loop_status", {
+        loop_status: {
+          status: "SENDING_API_REQUEST",
+          active_run_ids: [runId],
+          executing_tool_call_ids: [],
+        },
+      });
+      this.sendBroadcastAll(conn.runtime, "approval_request_message", {
+        approval_request_id: `appr-${runId}`,
+        run_id: runId,
       });
       return;
     }
     if (!this.options.autoTurnOnInput) return;
-    this.enqueueTurn(conn);
+    this.enqueueTurn(conn, clientMessageId);
   }
 
   /** Serialize concurrent inputs on one runtime, emitting update_queue like the real server. */
-  private enqueueTurn(conn: ConnState): void {
+  private enqueueTurn(conn: ConnState, clientMessageId: string): void {
     const key = `${conn.runtime?.agent_id}/${conn.runtime?.conversation_id}`;
     const q = this.queued.get(key) ?? [];
-    q.push({ conn, text: "" });
+    q.push({ conn, text: "", clientMessageId });
     this.queued.set(key, q);
     if (this.busy.get(key)) {
-      this.sendBroadcast(conn, "update_queue", { queue: [{ id: `q-${q.length}` }], removed: [] });
+      // Queue frames are broadcast to EVERY subscriber — each client matches only its own id.
+      this.sendBroadcastAll(conn.runtime, "update_queue", {
+        queue: q.map((item, i) => ({
+          id: `q-${i + 1}`,
+          client_message_id: item.clientMessageId,
+          kind: "message",
+          source: "user",
+        })),
+        removed: [],
+      });
       return;
     }
     this.drain(key);
@@ -225,18 +276,43 @@ export class MockAppServer {
       return;
     }
     this.busy.set(key, true);
-    const item = q.shift() as { conn: ConnState; text: string };
+    const item = q.shift() as { conn: ConnState; text: string; clientMessageId: string };
     const runId = `local-run-${this.bump()}`;
     const messages: TurnMessage[] = [
       { id: `letta-msg-${1000 + this.runCounter}`, messageType: "assistant_message", text: "OK" },
     ];
     this.broadcastTurn(item.conn.runtime as ConnState["runtime"], runId, messages);
-    // remove from queue indicator, then process the next one
+    // Announce the dequeue by the client's own id — this is how a QUEUED client learns its
+    // turn is the one starting next, and therefore which run to claim.
     this.sendBroadcastAll(item.conn.runtime, "update_queue", {
-      queue: [],
-      removed: [{ id: "q-1" }],
+      queue: q.map((qi, i) => ({
+        id: `q-${i + 1}`,
+        client_message_id: qi.clientMessageId,
+        kind: "message",
+        source: "user",
+      })),
+      removed: [{ client_message_id: item.clientMessageId, disposition: "dequeued" }],
     });
     setImmediate(() => this.drain(key));
+  }
+
+  /**
+   * Announce a run that belongs to NOBODY on this test's clients, then gate it on approval.
+   * Used to prove an observer stays silent even while it has its own turn outstanding.
+   */
+  broadcastForeignApproval(runtime: ConnState["runtime"], runId: string): void {
+    if (!runtime) return;
+    this.sendBroadcastAll(runtime, "update_loop_status", {
+      loop_status: {
+        status: "SENDING_API_REQUEST",
+        active_run_ids: [runId],
+        executing_tool_call_ids: [],
+      },
+    });
+    this.sendBroadcastAll(runtime, "approval_request_message", {
+      approval_request_id: `appr-${runId}`,
+      run_id: runId,
+    });
   }
 
   /** Broadcast a full turn (own or FOREIGN) to every socket subscribed to the runtime. */

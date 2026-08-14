@@ -17,6 +17,7 @@ import {
   type ConnectionState,
   ConnectionStateMachine,
 } from "./connection.js";
+import { type OwnershipSnapshot, RunOwnership } from "./ownership.js";
 import { type ContinuityPointer, readPointer } from "./pointer.js";
 import {
   type ConversationCreateResponseFrame,
@@ -33,10 +34,14 @@ import {
   buildConversationList,
   buildConversationMessagesList,
   buildInput,
+  frameRunId,
   isApprovalRequest,
+  isInputAccepted,
+  isQueue,
   isStreamDelta,
   isTurnFinished,
   nextRequestId,
+  queueRemovals,
 } from "./protocol.js";
 import { type RenderEvent, type RenderListener, StreamAssembler } from "./stream.js";
 import { WsConnection } from "./ws.js";
@@ -66,8 +71,8 @@ export class ContinuityCore {
   private runtime: Runtime | null = null;
   private ws: WsConnection | null = null;
   private liveDedup: LiveDedup | null = null;
-  /** >0 while this client has an outstanding turn it initiated (owns approval fail-closed). */
-  private pendingSelfTurns = 0;
+  /** Which runs on the shared conversation are ours (drives approval fail-closed). */
+  private readonly ownership = new RunOwnership();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
   private readonly errorListeners = new Set<(err: Error) => void>();
@@ -111,11 +116,22 @@ export class ContinuityCore {
     await this.openConnection();
   }
 
-  /** Submit a user turn. Marks this client as the injector for approval fail-closed. */
+  /**
+   * Submit a user turn. Registers a correlation claim so the resulting run can be identified
+   * as ours (see ownership.ts) — which is what makes approval fail-closed exact rather than
+   * a guess based on how many turns are outstanding.
+   */
   send(text: string): void {
     if (!this.ws || !this.runtime) throw new Error("ContinuityCore not started");
-    this.pendingSelfTurns += 1;
-    this.ws.send(buildInput(this.runtime, text));
+    const requestId = nextRequestId("input");
+    const clientMessageId = nextRequestId("cm");
+    this.ownership.beginSend(requestId, clientMessageId);
+    this.ws.send(buildInput(this.runtime, text, { requestId, clientMessageId }));
+  }
+
+  /** Current run-ownership state (owned run ids, unbound claims, degraded flag). */
+  ownershipSnapshot(): OwnershipSnapshot {
+    return this.ownership.snapshot();
   }
 
   /** List conversations for the pointer's agent (rail primitive). */
@@ -191,21 +207,42 @@ export class ContinuityCore {
   }
 
   private routeFrame(frame: ServerFrame): void {
-    // Approval fail-closed: only the injecting client responds, and it always DENIES in M1.
+    // Correlation bookkeeping first — these frames decide which runs are ours (ownership.ts).
+    if (isInputAccepted(frame)) {
+      this.ownership.onInputAccepted(frame.request_id, frame.accepted, frame.disposition);
+      if (!frame.accepted) {
+        this.emitError(new Error(`input rejected by the server: ${frame.error ?? "unknown"}`));
+      }
+      return; // control-channel ack: never rendered
+    }
+    if (isQueue(frame)) {
+      this.ownership.onQueueRemovals(queueRemovals(frame));
+      // fall through: the assembler may surface a "queued…" indicator
+    }
+
+    // Approval fail-closed: only the client that STARTED this run responds, and it always
+    // DENIES in M1. Gating on run ownership (not an outstanding-turn counter) is what stops a
+    // foreign turn's completion from silencing our own deny, or our own gap from making us
+    // answer a peer's approval.
     if (isApprovalRequest(frame)) {
-      if (this.pendingSelfTurns > 0 && this.ws && this.runtime) {
+      if (this.ownership.shouldRespondToApproval(frame.run_id) && this.ws && this.runtime) {
         const rid = nextRequestId("appr");
         const approvalId = approvalRequestId(frame) ?? "";
         this.ws.send(buildApprovalSend(rid, this.runtime, approvalId, "deny"));
       }
       return; // observers do nothing; not rendered in M1
     }
+
     // Reconnect replay↔live dedup on message id (never on event_seq).
     if (this.liveDedup && isStreamDelta(frame) && !this.liveDedup.admit(frame.delta.id)) {
       return; // snapshot replay of an already-rendered message — drop
     }
-    if (isTurnFinished(frame) && this.pendingSelfTurns > 0) {
-      this.pendingSelfTurns -= 1;
+
+    // Attribute the run this frame belongs to, then release it when it finishes.
+    const runId = frameRunId(frame);
+    if (runId !== undefined) this.ownership.onRunObserved(runId);
+    if (isTurnFinished(frame) && typeof frame.run_id === "string") {
+      this.ownership.onTurnFinished(frame.run_id);
     }
     this.assembler.ingest(frame);
   }
@@ -234,6 +271,9 @@ export class ContinuityCore {
       const ws = this.newConnection();
       // New connection ⇒ event_seq restarts; forget the per-connection ordering watermark.
       this.assembler.reset();
+      // The gap may have hidden an ack, a dequeue, or a turn_finished — attribution is no
+      // longer trustworthy, so unknown approvals fail closed until outstanding work drains.
+      this.ownership.onReconnect();
       this.ws = ws;
       await ws.connect();
       // Snapshot BEFORE resuming live so the message-id watermark bridges the seam.

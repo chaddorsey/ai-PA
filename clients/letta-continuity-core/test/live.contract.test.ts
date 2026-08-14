@@ -13,7 +13,12 @@
  * loopback — never MC or another agent. Every op is bounded; it cannot hang the suite.
  */
 
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { ContinuityCore } from "../src/index.js";
+import { writePointer } from "../src/pointer.js";
 import {
   type AppServerInfoResponseFrame,
   type ConversationCreateResponseFrame,
@@ -124,7 +129,12 @@ describe.skipIf(!LIVE)(`live contract (opt-in, ${URL}, docs agent)`, () => {
           }
         });
       });
-      ws.send(buildInput(rt, "Reply with exactly: OK. No tools."));
+      ws.send(
+        buildInput(rt, "Reply with exactly: OK. No tools.", {
+          requestId: "live-input-1",
+          clientMessageId: "live-cm-1",
+        }),
+      );
       await done;
 
       expect(frames.some((f) => isStreamDelta(f))).toBe(true);
@@ -137,4 +147,72 @@ describe.skipIf(!LIVE)(`live contract (opt-in, ${URL}, docs agent)`, () => {
       ws.close();
     }
   }, 90000);
+
+  /**
+   * End-to-end proof of run-ownership correlation (followup finding #1) against the real
+   * server: two peers on ONE conversation both inject at once. The server serializes them,
+   * and each core must claim exactly its own run — one via the `started` ack, the other via
+   * its own `client_message_id` being `dequeued`.
+   */
+  it("two peers on one conversation each own exactly their own run", async () => {
+    const seed = new WsConnection({ url: URL, runtime: RUNTIME, versionPolicy: "warn" });
+    let convId: string;
+    try {
+      await seed.connect();
+      const created = await seed.request<ConversationCreateResponseFrame>(
+        (rid) => buildConversationCreate(rid, DOCS_AGENT, "ownership-gate"),
+        Outbound.conversationCreate,
+      );
+      if (!created.conversation?.id) throw new Error("no conversation id");
+      convId = created.conversation.id;
+    } finally {
+      seed.close();
+    }
+
+    const dir = await mkdtemp(join(tmpdir(), "continuity-live-"));
+    const cores: ContinuityCore[] = [];
+    for (const name of ["a", "b"]) {
+      const path = join(dir, `${name}.json`);
+      await writePointer(path, { agentId: DOCS_AGENT, conversationId: convId, label: name });
+      cores.push(new ContinuityCore({ pointerPath: path, url: URL, versionPolicy: "warn" }));
+    }
+    const [a, b] = cores as [ContinuityCore, ContinuityCore];
+    // Ownership is RELEASED on turn_finished, so it must be sampled while the turns run —
+    // reading it after both complete always shows empty.
+    const seenA = new Set<string>();
+    const seenB = new Set<string>();
+    const finishedRuns = new Set<string>();
+    try {
+      await a.start();
+      await b.start();
+      for (const core of [a, b]) {
+        core.onRender((e) => {
+          if (e.type === "turn_finished" && e.runId) finishedRuns.add(e.runId);
+        });
+      }
+      const sampler = setInterval(() => {
+        for (const r of a.ownershipSnapshot().owned) seenA.add(r);
+        for (const r of b.ownershipSnapshot().owned) seenB.add(r);
+      }, 20);
+
+      a.send("Reply with exactly: AAA. No tools.");
+      b.send("Reply with exactly: BBB. No tools.");
+
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline && finishedRuns.size < 2) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      clearInterval(sampler);
+
+      expect(finishedRuns.size).toBe(2); // the server serialized two distinct runs
+      expect([...seenA]).toHaveLength(1);
+      expect([...seenB]).toHaveLength(1);
+      // The whole point: disjoint attribution — neither peer claimed the other's run.
+      expect([...seenA][0]).not.toBe([...seenB][0]);
+      expect(a.ownershipSnapshot().degraded).toBe(false);
+      expect(b.ownershipSnapshot().degraded).toBe(false);
+    } finally {
+      for (const c of cores) c.stop();
+    }
+  }, 150000);
 });

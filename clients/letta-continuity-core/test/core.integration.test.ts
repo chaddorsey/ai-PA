@@ -122,6 +122,24 @@ describe("ContinuityCore integration", () => {
     await expect(core.start()).rejects.toThrow(/conversation_management/);
   });
 
+  it("a core built WITHOUT explicit timeouts still connects (undefined must not defeat defaults)", async () => {
+    // Regression: ContinuityCore forwards `openTimeoutMs: this.config.openTimeoutMs`, so an
+    // unconfigured core passes an explicit `undefined`. Spreading that over the defaults gave
+    // `setTimeout(fn, undefined)` — a 0 ms bound that aborted every connect. Every other test
+    // here sets explicit timeouts, so only a default-constructed core catches it.
+    server = new MockAppServer();
+    url = await server.start();
+    const path = await pointerFile();
+    const core = new ContinuityCore({ pointerPath: path, url });
+    cores.push(core);
+    const events: RenderEvent[] = [];
+    core.onRender((e) => events.push(e));
+
+    await core.start();
+    core.send("hello");
+    await waitFor(() => events.some((e) => e.type === "turn_finished"));
+  });
+
   it("happy path: send a turn, render stream_delta → turn_finished", async () => {
     server = new MockAppServer();
     url = await server.start();
@@ -201,6 +219,53 @@ describe("ContinuityCore integration", () => {
     const approvals = server.received.filter((m) => m.type === "approval_send");
     expect(approvals).toHaveLength(1); // exactly one responder (the injector), not the observer
     expect(approvals[0]?.decision).toBe("deny");
+  });
+
+  /**
+   * Followup finding #1: the old outstanding-turn COUNTER passed the test above while the
+   * guarantee was weak, because that test never puts a foreign turn in flight. These two
+   * exercise the concurrent case in both directions.
+   */
+  it("approval: a FOREIGN turn finishing does not silence the injector's own deny", async () => {
+    server = new MockAppServer({ approvalMode: true });
+    url = await server.start();
+    const { core: injector } = await makeCore();
+    await injector.start();
+
+    injector.send("do a risky thing");
+    await waitFor(() => injector.ownershipSnapshot().owned.length === 1);
+    const myRun = injector.ownershipSnapshot().owned[0] as string;
+
+    // A peer's turn completes on the same conversation. A counter would zero here and the
+    // injector would then fail to answer its OWN approval → both surfaces hang.
+    server.broadcastTurn({ agent_id: AGENT, conversation_id: CONV }, "local-run-foreign", [
+      { id: "letta-msg-FGN", messageType: "assistant_message", text: "elsewhere" },
+    ]);
+    await waitFor(() => server.received.some((m) => m.type === "approval_send"));
+
+    expect(injector.ownershipSnapshot().owned).toEqual([myRun]);
+    const approvals = server.received.filter((m) => m.type === "approval_send");
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]?.decision).toBe("deny");
+  });
+
+  it("approval: an observer with its own turn in flight still ignores a FOREIGN approval", async () => {
+    // The observer's send is QUEUED behind a peer's in-flight turn, so its claim is NOT armed
+    // — then the peer's turn hits an approval. A counter would be >0 here and wrongly answer
+    // for the peer. (Queued is the only realistic shape: the server serializes turns, so an
+    // "started" ack means our own run is the one running, not a peer's.)
+    server = new MockAppServer({ autoTurnOnInput: false, inputDisposition: "queued" });
+    url = await server.start();
+    const { core: observer } = await makeCore();
+    await observer.start();
+    observer.send("my own unrelated turn");
+    await waitFor(() => server.received.some((m) => m.type === "input"));
+
+    // A run that is demonstrably NOT ours: announced, then gated on approval.
+    server.broadcastForeignApproval({ agent_id: AGENT, conversation_id: CONV }, "local-run-peer");
+    await new Promise((r) => setTimeout(r, 150));
+
+    expect(server.received.filter((m) => m.type === "approval_send")).toHaveLength(0);
   });
 
   it("reconnect + message-id catch-up: no duplicate of a snapshot message, no loss of a new one", async () => {

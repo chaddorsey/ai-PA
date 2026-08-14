@@ -2,35 +2,75 @@
 
 Date: 2026-08-13
 Origin: Unit 4 code review (`clients/letta-continuity-core/`, commit on `feat/msc-app-server-sole-owner`)
-Status: open — needs a design decision, not a mechanical fix (deferred out of Unit 4)
+Status: **finding 1 RESOLVED 2026-08-13** (probe + implementation); findings 2 and 3 still open
 
 Unit 4's `/code-review` surfaced four findings that were **not** auto-fixed because they
 require a protocol/design decision that risks regressing the passing tests. The one clearly-safe
 fix (reconnect double-schedule + failed-socket leak, plus wiring `maxReconnectAttempts`) WAS
 applied and covered by a regression test. The rest are tracked here.
 
-## 1. Approval fail-closed correlation is fragile (HIGH)
+## 1. Approval fail-closed correlation is fragile (HIGH) — ✅ RESOLVED 2026-08-13
 
-`ContinuityCore.pendingSelfTurns` is a bare counter: `send()` increments it, and **any**
-`turn_finished` decrements it (`src/index.ts` routeFrame). Because the server serializes turns
-on a shared conversation, a *foreign* turn's `turn_finished` can zero the counter before the
-injector's own approval arrives → the injector does **not** auto-`deny` → the approval-gated
-turn hangs both surfaces (the exact stall the policy exists to prevent). Conversely, if the
-injector loses its `turn_finished` across a reconnect, the counter stays >0 and the client will
-auto-`deny` a **foreign** approval (violating "observers never respond" → duplicate deny).
+`ContinuityCore.pendingSelfTurns` was a bare counter: `send()` incremented it, and **any**
+`turn_finished` decremented it. Because the server serializes turns on a shared conversation, a
+*foreign* turn's `turn_finished` could zero the counter before the injector's own approval
+arrived → the injector did **not** auto-`deny` → the approval-gated turn hung both surfaces.
+Conversely, if the injector lost its `turn_finished` across a reconnect, the counter stayed >0
+and the client would auto-`deny` a **foreign** approval (duplicate deny).
 
-**Root cause:** the client cannot currently distinguish its own `run_id` from a foreign one.
-`input` gets no synchronous run-id echo in the captured protocol.
+**The stated root cause was wrong.** The doc recorded that "`input` gets no synchronous run-id
+echo in the captured protocol". A live probe (0.30.19, `:4577`) found `input` **does** get a
+synchronous, `request_id`-correlated ack — Unit 4 simply never set a `request_id`, and the
+server emits the ack *only* when one is present:
 
-**Fix direction (needs a probe):** determine whether `input` returns/echoes a correlating id
-(e.g. `client_message_id` → run mapping, seen in `update_queue`) so the core can track the set
-of `run_id`s it initiated and gate approvals + boundary bookkeeping on that set instead of a
-counter. Probe the App Server for the echo; if none exists, decide the M1 tradeoff explicitly
-(prefer over-deny/duplicate-deny — still fail-closed — over hang). Land with Unit 5/6 approval
-scenarios where a real foreign turn can be exercised (the current single-injector approval unit
-test never exercises a concurrent foreign turn, so it passes while the guarantee is weak).
+```json
+{"type":"input_accepted","request_id":"REQ-A","runtime":{…},"accepted":true,"disposition":"started"}
+```
 
-## 2. Reconnect dedup fails OPEN (MEDIUM)
+It carries no `run_id`, but `disposition` plus `update_queue` is sufficient to attribute runs
+exactly. Captured from a two-client concurrency probe on one conversation:
+
+| | client A | client B |
+|---|---|---|
+| ack | `disposition: "started"` | `disposition: "queued"` |
+| queue | — | `update_queue.queue` lists **`client_message_id: "CM-B"`** (B's own value) |
+| claim | next new run = `local-run-251` | waits |
+| dequeue | — | `removed: [{client_message_id:"CM-B", disposition:"dequeued"}]` → claims `local-run-252` |
+
+Queue frames are broadcast to every subscriber, but each client only ever matches its **own**
+`client_message_id`, which is what makes the attribution safe.
+
+**Implemented** as `src/ownership.ts` (`RunOwnership`), replacing the counter:
+
+- `send()` sets a `request_id` + `client_message_id` and registers a FIFO claim.
+- `input_accepted` — `started`/`submitting` arm the claim; `queued` waits; `accepted:false` drops it.
+- `update_queue.removed` — our `dequeued` arms the claim; `cancelled` drops it.
+- the first sighting of a new `run_id` binds the oldest armed claim; `turn_finished` releases it.
+- approvals are answered **only** for owned runs.
+
+**Load-bearing assumption (documented in the module):** an armed claim takes the next new run id.
+That is sound only because the server serializes turns per `{agent, conversation}` (Unit 1) — a
+`started` ack means our run *is* the active one. If that guarantee ever changes, attribution must
+be rebuilt on an explicit run id in the ack.
+
+**Reconnect stays fail-CLOSED.** A gap may hide an ack, a dequeue, or a `turn_finished`, so
+`onReconnect()` marks the tracker `degraded` while work is outstanding; an unattributable
+approval is then denied (recoverable) rather than left to hang every surface (not recoverable).
+Owned runs are kept across the seam because their `turn_finished` arrives on the new connection.
+
+**Verification:** 16 unit tests covering both counter-bug directions explicitly, plus two
+integration tests that exercise a real concurrent foreign turn (the gap the original review
+named — the old single-injector test passed while the guarantee was weak), plus a live
+end-to-end check: two real `ContinuityCore` peers injecting at once on one conversation each own
+exactly one run, disjointly, neither degraded.
+
+**Found while implementing:** `WsConnection` resolved its options by spreading the caller's
+object over the defaults, so a forwarded-but-unset value (`openTimeoutMs: undefined`) overwrote
+the default and produced `setTimeout(fn, undefined)` — a 0 ms bound that aborted the connect.
+Every existing test passed explicit timeouts, so only a default-constructed core hit it. Fixed
+(per-field `??`) with a regression test.
+
+## 2. Reconnect dedup fails OPEN (MEDIUM) — still open
 
 On reconnect, if `conversation_messages_list` returns `success:false` (observed live for the
 `default` conv: "Agent agent-local-default not found") or times out, `fetchSnapshot()` returns
@@ -43,12 +83,15 @@ reconnect, bounded), or fail *closed* on dedup (suppress live render until a val
 obtained) rather than silently doubling the transcript. Decide with Unit 7 acceptance (the
 "no vanishing / no duplicated messages" criterion).
 
-## 3. Post-reconnect boundary frames not message-keyed (LOW/PLAUSIBLE)
+## 3. Post-reconnect boundary frames not message-keyed (LOW/PLAUSIBLE) — still open
 
 Dedup drops a replayed `stream_delta` (message-keyed) but the accompanying `turn_finished`/
 `loop_status` for an already-completed snapshot turn are not message-keyed, so they fall through
-and can emit a phantom turn boundary (and spuriously touch `pendingSelfTurns`). Tie the fix to
-finding 1 (run-id-aware boundary bookkeeping) once correlation exists.
+and can emit a phantom turn boundary.
+
+**Now partly mitigated by finding 1's fix:** boundary bookkeeping is run-id-aware, so a phantom
+`turn_finished` for a foreign or already-released run no longer disturbs approval state. The
+*render* side (a spurious turn boundary reaching the UI) is unchanged and still needs Unit 7.
 
 ## Applied in Unit 4 (for reference)
 

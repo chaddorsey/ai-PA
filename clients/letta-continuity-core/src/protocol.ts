@@ -64,6 +64,7 @@ export const Outbound = {
 export const Inbound = {
   appServerInfoResponse: "app_server_info_response",
   runtimeStartResponse: "runtime_start_response",
+  inputAccepted: "input_accepted",
   streamDelta: "stream_delta",
   updateLoopStatus: "update_loop_status",
   updateQueue: "update_queue",
@@ -147,12 +148,48 @@ export interface LoopStatusFrame extends ServerFrame {
   event_seq: number;
 }
 
+/** A message waiting behind the active turn. `client_message_id` is OUR value, echoed back. */
+export interface QueueItem {
+  id: string;
+  client_message_id: string;
+  kind: string;
+  source: string;
+  content?: unknown;
+  enqueued_at?: string;
+}
+
+/**
+ * A queued message leaving the queue. `dequeued` = its turn is starting next;
+ * `cancelled` = it will never run.
+ */
+export interface QueueRemoval {
+  client_message_id: string;
+  disposition: "dequeued" | "cancelled" | string;
+}
+
 export interface QueueFrame extends ServerFrame {
   type: "update_queue";
-  queue: unknown[];
-  removed: unknown[];
+  queue: QueueItem[];
+  removed: QueueRemoval[];
   runtime: Runtime;
   event_seq: number;
+}
+
+/**
+ * Synchronous ack for an `input`, correlated by `request_id`. The server emits it ONLY when
+ * the `input` carried a `request_id` — so a correlated send must always set one.
+ *
+ * Carries NO run_id: `disposition` is the correlation hook instead. `started` means this
+ * client's turn is the one now beginning; `queued` means it sits behind another turn and
+ * its start is announced later via `update_queue.removed` (disposition `dequeued`).
+ */
+export interface InputAcceptedFrame extends ServerFrame {
+  type: "input_accepted";
+  request_id: string;
+  runtime: Runtime;
+  accepted: boolean;
+  disposition?: "started" | "queued" | "submitting" | string;
+  error?: string;
 }
 
 export interface SubagentStateFrame extends ServerFrame {
@@ -245,11 +282,27 @@ export function buildRuntimeStart(requestId: string, runtime: Runtime): ServerFr
   return { type: Outbound.runtimeStart, request_id: requestId, ...runtime };
 }
 
-export function buildInput(runtime: Runtime, content: string): ServerFrame {
+/**
+ * Build an `input` carrying BOTH correlation handles (see ownership.ts):
+ *  - `request_id` — without it the server sends no `input_accepted` ack at all;
+ *  - `client_message_id` — echoed verbatim in `update_queue`, so a queued turn can recognise
+ *    its own dequeue. Sent on the payload AND the message, matching the server's lookup
+ *    (`firstUserPayload.otid ?? firstUserPayload.client_message_id`).
+ */
+export function buildInput(
+  runtime: Runtime,
+  content: string,
+  correlation: { requestId: string; clientMessageId: string },
+): ServerFrame {
   return {
     type: Outbound.input,
+    request_id: correlation.requestId,
     runtime,
-    payload: { kind: "create_message", messages: [{ role: "user", content }] },
+    payload: {
+      kind: "create_message",
+      client_message_id: correlation.clientMessageId,
+      messages: [{ role: "user", content, client_message_id: correlation.clientMessageId }],
+    },
   };
 }
 
@@ -390,6 +443,13 @@ export function validateInboundFrame(frame: ServerFrame): void {
         throw new ProtocolError("approval_request_message: missing `runtime`");
       return;
     }
+    case Inbound.inputAccepted: {
+      if (typeof frame.request_id !== "string")
+        throw new ProtocolError("input_accepted: missing `request_id`");
+      if (typeof frame.accepted !== "boolean")
+        throw new ProtocolError("input_accepted: missing boolean `accepted`");
+      return; // no event_seq: this is a control-channel ack, not a broadcast
+    }
     case Inbound.appServerInfoResponse:
     case Inbound.runtimeStartResponse:
     case Inbound.conversationListResponse:
@@ -426,6 +486,31 @@ export function isLoopStatus(f: ServerFrame): f is LoopStatusFrame {
 }
 export function isQueue(f: ServerFrame): f is QueueFrame {
   return f.type === Inbound.updateQueue;
+}
+export function isInputAccepted(f: ServerFrame): f is InputAcceptedFrame {
+  return f.type === Inbound.inputAccepted;
+}
+
+/** Queue removals as a typed list (defensive: the arrays are server-shaped). */
+export function queueRemovals(f: QueueFrame): QueueRemoval[] {
+  return (Array.isArray(f.removed) ? f.removed : []).filter(
+    (r): r is QueueRemoval => isObject(r) && typeof r.client_message_id === "string",
+  );
+}
+
+/**
+ * The run id a frame belongs to, wherever the server puts it: `run_id` on `turn_finished`,
+ * `delta.run_id` on `stream_delta`, `loop_status.active_run_ids[0]` on a status update.
+ * Used to attribute frames to runs for ownership (ownership.ts).
+ */
+export function frameRunId(f: ServerFrame): string | undefined {
+  if (typeof f.run_id === "string") return f.run_id;
+  if (isStreamDelta(f) && typeof f.delta.run_id === "string") return f.delta.run_id;
+  if (isLoopStatus(f)) {
+    const active = f.loop_status.active_run_ids;
+    if (Array.isArray(active) && typeof active[0] === "string") return active[0];
+  }
+  return undefined;
 }
 export function isSubagentState(f: ServerFrame): f is SubagentStateFrame {
   return f.type === Inbound.updateSubagentState;
@@ -567,7 +652,7 @@ export function assertServerIdentity(
 
   if (actual === null) {
     onWarn(
-      `server version unverifiable (no \`letta_code_version\` in app_server_info); relying on the committed contract test as the upgrade gate`,
+      "server version unverifiable (no `letta_code_version` in app_server_info); relying on the committed contract test as the upgrade gate",
     );
     return {
       verified: false,
