@@ -261,7 +261,10 @@ describe("TerminalSession", () => {
     const s2 = new TerminalSession(failing, { write: (t) => out.push(t), color: false });
     s2.attach();
 
-    expect(s2.handleInput("during a reconnect")).toBe("ignored");
+    // "failed", not "ignored". A turn that was never delivered and a blank line the user typed
+    // are different events; collapsing them meant a caller could not tell three swallowed
+    // messages from three empty Enters, and exited 0 either way.
+    expect(s2.handleInput("during a reconnect")).toBe("failed");
     const rendered = out.join("");
     expect(rendered).toContain("not sent");
     expect(rendered).not.toContain("you › during a reconnect");

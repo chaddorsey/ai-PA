@@ -87,3 +87,51 @@ describe("parseArgs", () => {
     expect(() => parseArgs(["--backend", "local"], {})).toThrow(/unknown option: --backend/);
   });
 });
+
+describe("agent-native surface", () => {
+  it("parses one-shot, timeout and json", () => {
+    const o = parseArgs(["--message", "hi", "--timeout", "30", "--json"], {});
+    expect(o.message).toBe("hi");
+    expect(o.timeoutSeconds).toBe(30);
+    expect(o.json).toBe(true);
+  });
+
+  it("rejects a nonsense timeout instead of silently using NaN", () => {
+    expect(() => parseArgs(["--timeout", "soon"], {})).toThrow(/positive number/);
+    expect(() => parseArgs(["--timeout", "-5"], {})).toThrow(/positive number/);
+  });
+
+  it("requires --agent and --conversation together", () => {
+    expect(() => parseArgs(["--agent", "agent-x"], {})).toThrow(/together/);
+    expect(() => parseArgs(["--conversation", "conv-x"], {})).toThrow(/together/);
+    expect(() => parseArgs(["--agent", "a", "--conversation", "c"], {})).not.toThrow();
+  });
+
+  it("resolves a relative pointer path to an absolute one", () => {
+    // The bin wrapper cds to the launchpad dir before exec, so a relative --pointer was opened
+    // relative to a directory the caller never chose: ENOENT at best, and at worst attaching to
+    // a DIFFERENT conversation whose pointer happened to sit there.
+    const o = parseArgs(["--pointer", "./p.json"], {});
+    expect(o.pointerPath.startsWith("/")).toBe(true);
+    expect(o.pointerPath.endsWith("/p.json")).toBe(true);
+  });
+
+  it("parses the conversations subcommands and their options", () => {
+    expect(parseArgs(["conversations", "list"], {}).command).toBe("conversations-list");
+    const c = parseArgs(
+      ["conversations", "create", "--title", "seed", "--write-pointer", "./p.json"],
+      {},
+    );
+    expect(c.command).toBe("conversations-create");
+    expect(c.title).toBe("seed");
+    expect(c.writePointer?.startsWith("/")).toBe(true);
+    expect(() => parseArgs(["conversations", "destroy"], {})).toThrow(/unknown conversations/);
+  });
+
+  it("still validates the endpoint when a subcommand is used", () => {
+    // Subcommand parsing slices argv; the trust check must not be skipped as a side effect.
+    expect(() => parseArgs(["conversations", "list", "--url", "ws://evil.example/ws"], {})).toThrow(
+      /non-loopback/,
+    );
+  });
+});

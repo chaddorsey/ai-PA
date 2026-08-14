@@ -37,12 +37,22 @@ export interface SessionCore {
 
 export interface SessionOptions extends RendererOptions {
   write: (text: string) => void;
+  /**
+   * Sink for diagnostics — errors, connection state, approval notices, undelivered warnings.
+   *
+   * Separate from `write` so a caller capturing the transcript does not also capture client
+   * chatter. Everything used to share one sink wired to stdout, so an automation grepping the
+   * last `agent ›` line could find `— reconnecting…` or a red error interleaved with the reply,
+   * and `2>/dev/null` suppressed none of it. Defaults to `write` for callers that do not care.
+   */
+  writeErr?: (text: string) => void;
 }
 
 export class TerminalSession {
   private readonly core: SessionCore;
   private readonly renderer: Renderer;
   private readonly write: (text: string) => void;
+  private readonly writeErr: (text: string) => void;
   private readonly unsubscribes: Array<() => void> = [];
   /**
    * Attribution must be captured at turn START — ownership is released at turn_finished, so a
@@ -53,6 +63,7 @@ export class TerminalSession {
   constructor(core: SessionCore, options: SessionOptions) {
     this.core = core;
     this.write = options.write;
+    this.writeErr = options.writeErr ?? options.write;
     this.renderer = new Renderer(options);
   }
 
@@ -105,7 +116,7 @@ export class TerminalSession {
 
   private onConnectionState(state: ConnectionState): void {
     const text = this.renderer.renderConnectionState(state);
-    if (text) this.write(text);
+    if (text) this.writeErr(text);
   }
 
   /**
@@ -115,7 +126,7 @@ export class TerminalSession {
    * are deliberately never surfaced — they routinely carry file contents or credentials.
    */
   private onApproval(e: { toolName: string | undefined; outcome: string }): void {
-    this.write(
+    this.writeErr(
       this.renderer.renderNotice(
         `tool approval requested (${e.toolName ?? "unknown tool"}) — auto-${e.outcome}; no approval UI in this milestone`,
         "warn",
@@ -124,14 +135,14 @@ export class TerminalSession {
   }
 
   private onError(err: Error): void {
-    this.write(this.renderer.renderNotice(err.message, "error"));
+    this.writeErr(this.renderer.renderNotice(err.message, "error"));
   }
 
   /**
    * Handle a line typed by the user. Returns "exit" when the session should end.
    * Blank lines are ignored so a stray Enter does not start an empty turn.
    */
-  handleInput(line: string): "sent" | "ignored" | "exit" {
+  handleInput(line: string): "sent" | "ignored" | "failed" | "exit" {
     const trimmed = line.trim();
     if (trimmed === "") return "ignored";
     if (trimmed === "/exit" || trimmed === "/quit") return "exit";
@@ -143,13 +154,16 @@ export class TerminalSession {
     try {
       this.core.send(trimmed);
     } catch (err) {
-      this.write(
+      this.writeErr(
         this.renderer.renderNotice(
           `not sent (${err instanceof Error ? err.message : String(err)}) — still reconnecting`,
           "warn",
         ),
       );
-      return "ignored";
+      // NOT "ignored". A turn that was never delivered and a blank line the user typed are
+      // different events, and collapsing them meant the caller could not tell three swallowed
+      // messages from three empty Enters — it just exited 0 either way.
+      return "failed";
     }
     this.write(this.renderer.renderLocalInput(trimmed));
     return "sent";
