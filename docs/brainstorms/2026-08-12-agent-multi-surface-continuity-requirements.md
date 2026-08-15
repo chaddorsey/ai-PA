@@ -5,6 +5,16 @@ topic: agent-multi-surface-continuity
 
 # One Agent, Everywhere — Multi-Surface Continuity
 
+> **This is the ORIGIN record of the 2026-08-12 brainstorm, kept unedited.** For current intent and
+> status, read **`docs/architecture/multi-surface-continuity-goals.md`**, which supersedes the
+> *Requirements* and *Success Criteria* sections below and keeps the R-numbers for traceability.
+>
+> Two things here have since been shown to be **wrong or over-stated**, and both matter:
+> R2's "continuously available … independent of whether any client is attached" — a *conversation*
+> persists, but a **running turn is cancelled when the last client detaches** (verified 2026-08-15);
+> and the assumption that a browser could be a direct client — it cannot, so a mediator is
+> mandatory for every browser-class surface. See the goals document.
+
 ## Problem Frame
 
 The Letta personal-assistant agent is reachable today only through fragmented, **independent runtimes** that don't share state: the stock terminal TUI (`letta --backend local`), the `pa-web-ui` chat (a *subprocess-per-conversation* pool), and the Letta Desktop app (which also holds the cron scheduler lease). Because each is its own runtime writing its own session, nothing composes:
