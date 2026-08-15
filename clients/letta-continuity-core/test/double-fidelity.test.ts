@@ -64,7 +64,9 @@ const NOT_WIRE_VOCABULARY: ReadonlySet<string> = new Set([
   "server going away",
   "Approval request is no longer pending",
   "Error code: 404 - model `openai/gpt-slop-1` not found or not accessible",
-  // Fixture payload data.
+  // Fixture payload data. `LettaErrorMessage.error_type` is a free-form server string (a provider
+  // exception class name), not a token any client switches on — an example, not vocabulary.
+  "LLMError",
   "mock-agent",
   "local-conv-1",
   "OK",
@@ -163,9 +165,14 @@ describe("the test double's fidelity to protocol.ts", () => {
     expect(protocol.DeltaMessageTypes.loopError).toBe("loop_error");
     expect(protocol.DeltaMessageTypes.errorMessage).toBe("error_message");
     expect([...protocol.ERROR_DELTA_TYPES].sort()).toEqual(["error_message", "loop_error"]);
-    // `loop_error` is a CONTROL delta: it carries no `delta.id`, so requiring the watermark would
-    // make `validateInboundFrame` reject the real frame as drift and drop it before the renderer
-    // ever sees it — which would leave B1 fixed in the renderer and still broken end to end.
-    expect(protocol.CONTROL_DELTA_TYPES.has("loop_error")).toBe(true);
+    // THE ID RULES ARE OPPOSITE, and this assertion exists because they were first written the
+    // wrong way round — which left the human-readable half of an errored turn being rejected as
+    // drift and never reaching the renderer, i.e. B1 "fixed" and still broken end to end.
+    //
+    // Per the shipped declarations: `LettaErrorMessage` (message_type `error_message`) has NO
+    // `id`, so it MUST be a control delta; `LoopErrorMessage` extends `UmiLifecycleMessageBase`,
+    // where `id` is required, so it must NOT be.
+    expect(protocol.CONTROL_DELTA_TYPES.has("error_message")).toBe(true);
+    expect(protocol.CONTROL_DELTA_TYPES.has("loop_error")).toBe(false);
   });
 });

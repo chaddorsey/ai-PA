@@ -64,7 +64,7 @@ export const REQUIRED_CAPABILITIES = ["runtime_start", "conversation_management"
  * loudly. A future control type not listed here will fail too — which is the intended
  * upgrade-gate behaviour, not an oversight.
  */
-export const CONTROL_DELTA_TYPES: ReadonlySet<string> = new Set(["stop_reason", "loop_error"]);
+export const CONTROL_DELTA_TYPES: ReadonlySet<string> = new Set(["stop_reason", "error_message"]);
 
 /**
  * `stream_delta.delta.message_type` values consumers switch on.
@@ -88,12 +88,21 @@ export const DeltaMessageTypes = {
    */
   toolCall: "tool_call_message",
   /**
-   * The two deltas an ERRORED turn is carried on, captured live against a 404-model agent.
+   * The two deltas an ERRORED turn is carried on. Both were on the wire and both were dropped by
+   * `renderDelta`, so a provider outage — the commonest real fault there is — rendered as an empty
+   * SUCCESSFUL turn and exited 0.
    *
-   * Both were on the wire and both were dropped by `renderDelta`, so a provider outage — the
-   * commonest real fault there is — rendered as an empty SUCCESSFUL turn and exited 0. They are
-   * named here because the renderer must switch on them, and this file is the single home of
-   * every wire string precisely so that switch cannot drift from the server.
+   * THEY HAVE OPPOSITE ID RULES, and getting that backwards silently undoes the fix:
+   *
+   * - `loop_error` is `LoopErrorMessage extends UmiLifecycleMessageBase`, so `id` is REQUIRED.
+   *   It also carries `message`, `stop_reason` and — worth knowing — `is_terminal`.
+   * - `error_message` is the SDK's `LettaErrorMessage`, whose fields are `error_type`, `message`,
+   *   `run_id`, and optional `detail`/`seq_id`. There is **no `id`**, so it must be a CONTROL
+   *   delta or `validateInboundFrame` rejects it as drift and the renderer never sees it.
+   *
+   * Both were first assumed the other way round from a live capture summary; the shipped type
+   * declarations (`@letta-ai/letta-code/dist/types/types/protocol_v2.d.ts` and the
+   * `@letta-ai/letta-client` SDK) settle it. Read those before changing either.
    */
   loopError: "loop_error",
   errorMessage: "error_message",
@@ -842,10 +851,11 @@ export function deltaText(f: StreamDeltaFrame): UntrustedText {
   // — which is what made the old declaration a bidirectional alias for `string` and the whole
   // boundary decorative.
   if (typeof d.reasoning === "string") return untrusted(d.reasoning);
-  // `error` is where a `loop_error` delta carries its body. Without it the error deltas resolve to
-  // empty text, so a consumer that DOES render them still shows a blank failure notice — B1 fixed
-  // in the renderer and still useless on the wire.
-  for (const key of ["content", "text", "message", "error"] as const) {
+  // BOTH error deltas carry their body in `message` — `LoopErrorMessage.message` and
+  // `LettaErrorMessage.message`, per the shipped protocol types. `message` was already in this
+  // list, so no new key is needed; an earlier guess at `error` was removed once the real
+  // declarations were read.
+  for (const key of ["content", "text", "message"] as const) {
     const v = d[key];
     if (typeof v === "string") return untrusted(v);
     if (Array.isArray(v)) {

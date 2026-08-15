@@ -864,24 +864,30 @@ export class MockAppServer {
           executing_tool_call_ids: [],
         },
       });
+      // `LoopErrorMessage extends UmiLifecycleMessageBase` — so `id` and `date` are REQUIRED and
+      // the body is `message`. It also carries `stop_reason` and `is_terminal`, which is a
+      // per-run "this turn is over" signal the client does not read yet.
       this.sendBroadcast(conn, Inbound.streamDelta, {
         delta: {
+          id: `${runId}-loop-error`,
+          date: "2026-08-13T00:00:00.000Z",
           message_type: DeltaMessageTypes.loopError,
+          message: errorText,
+          stop_reason: StopReasons.error,
+          is_terminal: true,
           run_id: runId,
           seq_id: 1,
-          type: WireEnvelope.message,
-          error: errorText,
         },
       });
+      // The SDK's `LettaErrorMessage`, which has NO `id` — its fields are `error_type`, `message`,
+      // `run_id`, and optional `detail`/`seq_id`. This shape is the whole point of the fixture:
+      // emitting it WITH an id (as an earlier version did) hides that the real frame is rejected
+      // as drift unless `error_message` is a CONTROL delta.
       this.sendBroadcast(conn, Inbound.streamDelta, {
         delta: {
-          id: `${runId}-error`,
-          date: "2026-08-13T00:00:00.000Z",
-          agent_id: runtime.agent_id,
-          conversation_id: runtime.conversation_id,
           message_type: DeltaMessageTypes.errorMessage,
-          otid: `otid-${runId}-error`,
-          content: errorText,
+          error_type: "LLMError",
+          message: errorText,
           run_id: runId,
           seq_id: 2,
           type: WireEnvelope.message,
@@ -920,15 +926,12 @@ export class MockAppServer {
           executing_tool_call_ids: [],
         },
       });
+      // Same `LettaErrorMessage` shape as the other errored path — no `id`, body in `message`.
       this.sendBroadcast(conn, Inbound.streamDelta, {
         delta: {
-          id: `${runId}-error`,
-          date: "2026-08-13T00:00:00.000Z",
-          agent_id: runtime.agent_id,
-          conversation_id: runtime.conversation_id,
           message_type: DeltaMessageTypes.errorMessage,
-          otid: `otid-${runId}-error`,
-          content: errorText,
+          error_type: "LLMError",
+          message: errorText,
           run_id: runId,
           seq_id: 1,
           type: WireEnvelope.message,

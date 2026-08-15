@@ -39,6 +39,11 @@ import {
   isTurnFinished,
 } from "../src/protocol.js";
 import { WsConnection } from "../src/ws.js";
+import {
+  ABSENT_ACKNOWLEDGEMENT,
+  PACKAGE,
+  probeInstalledLettaVersion,
+} from "./helpers/installedVersion.js";
 
 const LIVE = process.env.LETTA_LIVE_WS === "1";
 const URL = process.env.LETTA_LIVE_WS_URL ?? "ws://127.0.0.1:4577/ws";
@@ -61,6 +66,40 @@ const AGENT = process.env.LETTA_LIVE_WS_AGENT ?? DOCS_AGENT;
 const RUNTIME = { agent_id: AGENT, conversation_id: "default" };
 
 describe.skipIf(!LIVE)(`live contract (opt-in, ${URL}, agent ${AGENT})`, () => {
+  it("the RUNNING server is the build that is INSTALLED on this host", async () => {
+    // The gap that hid a real drift for three days, and that no other gate can see.
+    //
+    // `version-pin.test.ts` asks "is what is ON DISK contract-verified?". The test below asks
+    // "is what is RUNNING the version we pinned?". Neither asks whether those two are the SAME
+    // build — so on 2026-08-15 a half-finished `npm install` left 0.30.20 on disk while a
+    // 0.30.19 process kept serving, both versions were in VALIDATED_SERVER_VERSIONS, and every
+    // check reported green. The running process is what actually decides behaviour, and it had
+    // silently diverged from every artifact anyone was inspecting.
+    //
+    // A long-lived server makes this the NORMAL failure, not an exotic one: upgrading the package
+    // does not restart the process, so on-disk and running drift apart by default and only
+    // converge when someone restarts. This check is what makes that visible.
+    const installed = probeInstalledLettaVersion();
+    if (installed.version === null) {
+      // Nothing to compare against; version-pin.test.ts owns that failure.
+      expect(process.env[ABSENT_ACKNOWLEDGEMENT]).toBe("1");
+      return;
+    }
+    const ws = new WsConnection({ url: URL, runtime: RUNTIME, versionPolicy: "warn" });
+    try {
+      await ws.connect();
+      expect(
+        ws.identity?.actual,
+        `The RUNNING App Server reports ${ws.identity?.actual}, but ${PACKAGE} ${installed.version} ` +
+          `is what is installed (${installed.source}).\n` +
+          "The process is serving a different build from the one on disk — restart the App Server " +
+          "so the two agree, then re-run this gate.",
+      ).toBe(installed.version);
+    } finally {
+      ws.close();
+    }
+  }, 30000);
+
   it("app_server_info reports the expected version, protocol, and required capabilities", async () => {
     const ws = new WsConnection({
       url: URL,
