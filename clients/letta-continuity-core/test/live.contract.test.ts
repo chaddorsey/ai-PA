@@ -44,10 +44,23 @@ const LIVE = process.env.LETTA_LIVE_WS === "1";
 const URL = process.env.LETTA_LIVE_WS_URL ?? "ws://127.0.0.1:4577/ws";
 /** The version this run EXPECTS to find — defaults to the pin, override when vetting an upgrade. */
 const EXPECT_VERSION = process.env.LETTA_LIVE_WS_EXPECT_VERSION ?? PINNED_SERVER_VERSION;
+/**
+ * Which agent to gate against. Defaults to the low-stakes docs agent, overridable because the
+ * gate is about the SERVER's protocol contract and a hard-coded agent makes an unrelated fault
+ * look like protocol drift.
+ *
+ * That is not hypothetical: on 2026-08-14 the docs agent's model group (`deepseek-v4-flash`)
+ * began answering 404 at the provider — "Model not found, inaccessible, and/or not deployed" —
+ * so every turn on it ends `stop_reason: "error"` and three of the four checks below fail with
+ * nothing wrong at the protocol layer at all. Point this at any low-stakes agent on a working
+ * model to gate the server; a disposable one can be minted over this same socket with
+ * `agent_create`.
+ */
 const DOCS_AGENT = "agent-local-3898b33a-2249-4f1c-9478-26a9aad26d4a";
-const RUNTIME = { agent_id: DOCS_AGENT, conversation_id: "default" };
+const AGENT = process.env.LETTA_LIVE_WS_AGENT ?? DOCS_AGENT;
+const RUNTIME = { agent_id: AGENT, conversation_id: "default" };
 
-describe.skipIf(!LIVE)(`live contract (opt-in, ${URL}, docs agent)`, () => {
+describe.skipIf(!LIVE)(`live contract (opt-in, ${URL}, agent ${AGENT})`, () => {
   it("app_server_info reports the expected version, protocol, and required capabilities", async () => {
     const ws = new WsConnection({
       url: URL,
@@ -101,7 +114,7 @@ describe.skipIf(!LIVE)(`live contract (opt-in, ${URL}, docs agent)`, () => {
       expect(hello.success).toBe(true);
 
       const list = await ws.request<ConversationListResponseFrame>(
-        (rid) => buildConversationList(rid, DOCS_AGENT),
+        (rid) => buildConversationList(rid, AGENT),
         Outbound.conversationList,
       );
       expect(Array.isArray(list.conversations)).toBe(true);
@@ -110,7 +123,7 @@ describe.skipIf(!LIVE)(`live contract (opt-in, ${URL}, docs agent)`, () => {
       // candidate server has none, and Unit 8's cutover depends on this exact RPC working.
       // A guard-failing envelope is dropped silently, so this also proves the envelope.
       const created = await ws.request<ConversationCreateResponseFrame>(
-        (rid) => buildConversationCreate(rid, DOCS_AGENT, "contract-gate"),
+        (rid) => buildConversationCreate(rid, AGENT, "contract-gate"),
         Outbound.conversationCreate,
       );
       expect(created.success).toBe(true);
@@ -119,7 +132,7 @@ describe.skipIf(!LIVE)(`live contract (opt-in, ${URL}, docs agent)`, () => {
       if (typeof convId !== "string") throw new Error("no conversation id");
 
       // Re-home this connection's runtime onto the scratch conversation before injecting.
-      const rt = { agent_id: DOCS_AGENT, conversation_id: convId };
+      const rt = { agent_id: AGENT, conversation_id: convId };
       const hello2 = await ws.request<ServerFrame>(
         (rid) => buildRuntimeStart(rid, rt),
         Outbound.runtimeStart,
@@ -225,7 +238,7 @@ describe.skipIf(!LIVE)(`live contract (opt-in, ${URL}, docs agent)`, () => {
     try {
       await seed.connect();
       const created = await seed.request<ConversationCreateResponseFrame>(
-        (rid) => buildConversationCreate(rid, DOCS_AGENT, "ownership-gate"),
+        (rid) => buildConversationCreate(rid, AGENT, "ownership-gate"),
         Outbound.conversationCreate,
       );
       if (!created.conversation?.id) throw new Error("no conversation id");
@@ -238,27 +251,33 @@ describe.skipIf(!LIVE)(`live contract (opt-in, ${URL}, docs agent)`, () => {
     const cores: ContinuityCore[] = [];
     for (const name of ["a", "b"]) {
       const path = join(dir, `${name}.json`);
-      await writePointer(path, { agentId: DOCS_AGENT, conversationId: convId, label: name });
+      await writePointer(path, { agentId: AGENT, conversationId: convId, label: name });
       cores.push(new ContinuityCore({ pointerPath: path, url: URL, versionPolicy: "warn" }));
     }
     const [a, b] = cores as [ContinuityCore, ContinuityCore];
-    // Ownership is RELEASED on turn_finished, so it must be sampled while the turns run —
-    // reading it after both complete always shows empty.
+    /**
+     * Sampled AT turn_start, not polled.
+     *
+     * Ownership is released the moment the runtime reports itself idle, which on a fast model is
+     * inside a single poll interval — so an interval sampler is a race, and it duly failed one run
+     * in three while the property it was checking held perfectly. Every comment in ownership.ts
+     * says to ask at turn_start and remember the answer; this test was the one place that did not.
+     */
     const seenA = new Set<string>();
     const seenB = new Set<string>();
     const finishedRuns = new Set<string>();
     try {
       await a.start();
       await b.start();
-      for (const core of [a, b]) {
+      for (const [core, seen] of [
+        [a, seenA],
+        [b, seenB],
+      ] as const) {
         core.onRender((e) => {
+          if (e.type === "turn_start" && e.runId && core.ownsRun(e.runId)) seen.add(e.runId);
           if (e.type === "turn_finished" && e.runId) finishedRuns.add(e.runId);
         });
       }
-      const sampler = setInterval(() => {
-        for (const r of a.ownershipSnapshot().owned) seenA.add(r);
-        for (const r of b.ownershipSnapshot().owned) seenB.add(r);
-      }, 20);
 
       a.send("Reply with exactly: AAA. No tools.");
       b.send("Reply with exactly: BBB. No tools.");
@@ -267,12 +286,13 @@ describe.skipIf(!LIVE)(`live contract (opt-in, ${URL}, docs agent)`, () => {
       while (Date.now() < deadline && finishedRuns.size < 2) {
         await new Promise((r) => setTimeout(r, 100));
       }
-      clearInterval(sampler);
 
       expect(finishedRuns.size).toBe(2); // the server serialized two distinct runs
       expect([...seenA]).toHaveLength(1);
       expect([...seenB]).toHaveLength(1);
-      // The whole point: disjoint attribution — neither peer claimed the other's run.
+      // The whole point: disjoint attribution — neither peer claimed the other's run. This also
+      // pins the DEQUEUE ORDERING the offline suite cannot decide: b was queued behind a, so b
+      // owning its own run means the dequeue notice arrived before the run it announced.
       expect([...seenA][0]).not.toBe([...seenB][0]);
       expect(a.ownershipSnapshot().degraded).toBe(false);
       expect(b.ownershipSnapshot().degraded).toBe(false);

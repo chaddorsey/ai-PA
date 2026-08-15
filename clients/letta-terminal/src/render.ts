@@ -64,12 +64,23 @@ export const MAX_TRACKED_ORIGINS = 512;
  */
 export type TurnOrigin = "self" | "peer" | "unknown";
 
+/**
+ * Output split by sink: what belongs in the conversation, and what the client is saying about
+ * itself. See Renderer.EMPTY for why this is a pair rather than one string.
+ */
+export interface RenderOutput {
+  /** The conversation: the local echo, the agent's words, and the newlines that close them. */
+  transcript: string;
+  /** Client chatter: connection state, approvals, abnormal endings, subagent activity. */
+  notice: string;
+}
+
 export interface RenderContext {
   /** Did THIS client start `runId`? Backed by the core's run-ownership attribution. */
   isOwnRun(runId: string | undefined): boolean;
   /** Three-way attribution; `isOwnRun` is the collapsed form and loses the `unknown` case. */
   attributeRun(runId: string | undefined): TurnOrigin;
-  queueHasMine(frame: unknown): boolean;
+  queueHasMine(frame: protocol.ServerFrame): boolean;
 }
 
 export class Renderer {
@@ -111,6 +122,19 @@ export class Renderer {
     return "\n";
   }
 
+  /**
+   * What one event produces, split by SINK.
+   *
+   * The transcript is the conversation — the local echo and the agent's words, and nothing else.
+   * A notice is the client talking about itself: connection state, an approval, a turn that ended
+   * badly, subagent activity. They went to one stream, so an automation reading the last `agent ›`
+   * line could find `— subagents idle` instead, and `2>/dev/null` suppressed none of it. Returning
+   * them separately is what lets the caller keep that promise; a single string could not, because
+   * a notice arriving mid-stream must ALSO emit the newline that closes the transcript's open line,
+   * and that newline belongs to the transcript.
+   */
+  private static readonly EMPTY: RenderOutput = { transcript: "", notice: "" };
+
   /** A locally-typed line, echoed so the transcript reads as a conversation. */
   renderLocalInput(text: string): string {
     // Sanitized even though this is the user's OWN line. Readline consumes escapes as key events
@@ -122,16 +146,17 @@ export class Renderer {
   }
 
   /** A status/system line (connection changes, errors, notices). */
-  renderNotice(text: string, level: "info" | "warn" | "error" = "info"): string {
+  renderNotice(text: string, level: "info" | "warn" | "error" = "info"): RenderOutput {
     const codes = level === "error" ? [ANSI.red] : level === "warn" ? [ANSI.yellow] : [ANSI.dim];
     // Notices routinely carry server-derived strings (error messages, stop reasons, tool names),
     // so they go through the same sanitizer as delta text — and are bounded harder, because a
     // notice is a status line, not content.
     const safe = indentContinuation(sanitize(text, { maxLength: NOTICE_MAX_LENGTH }));
-    return `${this.closeStream()}${this.paint(`— ${safe}`, ...codes)}\n`;
+    // The closing newline goes to the TRANSCRIPT, because that is the stream whose line is open.
+    return { transcript: this.closeStream(), notice: `${this.paint(`— ${safe}`, ...codes)}\n` };
   }
 
-  renderConnectionState(state: ConnectionState): string {
+  renderConnectionState(state: ConnectionState): RenderOutput {
     switch (state) {
       case "connected":
         return this.renderNotice("connected");
@@ -143,12 +168,12 @@ export class Renderer {
       case "disconnected":
         return this.renderNotice("disconnected", "error");
       default:
-        return "";
+        return Renderer.EMPTY;
     }
   }
 
-  /** Translate one core render event into terminal output ("" when nothing should print). */
-  render(event: RenderEvent, ctx: RenderContext): string {
+  /** Translate one core render event into terminal output, split by sink. */
+  render(event: RenderEvent, ctx: RenderContext): RenderOutput {
     switch (event.type) {
       case "turn_start": {
         // Decide origin ONCE, here: run ownership is released at turn_finished, so asking
@@ -163,41 +188,42 @@ export class Renderer {
           // fact on the one label the operator uses to tell their own turn from someone else's.
           return this.renderNotice("a turn is starting (origin unknown)");
         }
-        return this.closeStream();
+        return { transcript: this.closeStream(), notice: "" };
       }
 
       case "delta":
-        return this.renderDelta(event);
+        return { transcript: this.renderDelta(event), notice: "" };
 
       case "subagent_state": {
         const count = subagentCount(event);
-        if (count === null) return "";
+        if (count === null) return Renderer.EMPTY;
         return this.renderNotice(count === 0 ? "subagents idle" : `subagents active: ${count}`);
       }
 
       case "queue": {
         const depth = queueDepth(event);
-        if (depth === null || depth === 0) return "";
+        if (depth === null || depth === 0) return Renderer.EMPTY;
         // update_queue is BROADCAST, so a non-zero depth does not mean WE are waiting. Rendering
         // it unconditionally told the surface whose turn was actually running that it was queued
         // behind itself — and an operator reading their live turn as blocked is likely to retype
         // or Ctrl-C, which on a shared conversation makes the real depth worse.
-        if (!ctx.queueHasMine(event.frame)) return "";
+        if (!ctx.queueHasMine(event.frame)) return Renderer.EMPTY;
         return this.renderNotice(`queued behind ${depth} turn${depth === 1 ? "" : "s"}…`);
       }
 
       case "turn_finished": {
-        const out = this.closeStream();
+        const closing = this.closeStream();
         if (event.runId) this.originByRun.delete(event.runId);
         this.evictOldOrigins();
         if (event.stopReason && event.stopReason !== StopReasons.endTurn) {
-          return `${out}${this.renderNotice(`turn ended: ${event.stopReason}`, "warn")}`;
+          const out = this.renderNotice(`turn ended: ${event.stopReason}`, "warn");
+          return { transcript: closing + out.transcript, notice: out.notice };
         }
-        return out;
+        return { transcript: closing, notice: "" };
       }
 
       default:
-        return "";
+        return Renderer.EMPTY;
     }
   }
 
@@ -208,7 +234,12 @@ export class Renderer {
     const text = event.text ?? "";
     if (text === "") return "";
 
-    const origin = event.runId ? this.originByRun.get(event.runId) : undefined;
+    // No entry means we never saw this run START — a turn already in flight when we attached, or
+    // one whose opening frames were lost across a reconnect. That is an UNKNOWN origin, not our
+    // own. Defaulting it to `self` labelled another surface's turn `agent ›` on the strength of a
+    // missing map entry, and on a shared conversation that label is the security signal the
+    // operator reads. A hedge is honest; a confident wrong answer is not.
+    const origin = (event.runId ? this.originByRun.get(event.runId) : undefined) ?? "unknown";
     const streamKey = `${event.runId ?? ""}|${event.messageType ?? ""}`;
     let prefixOut = "";
     // Start a new labelled line only when the run or the message type changes — chunks of one
@@ -216,17 +247,17 @@ export class Renderer {
     if (!this.streaming || this.currentStreamKey !== streamKey) {
       prefixOut = this.closeStream();
       const label =
-        origin === "peer"
-          ? this.opts.peerLabel
-          : origin === "unknown"
-            ? this.opts.unknownLabel
-            : this.opts.selfLabel;
+        origin === "self"
+          ? this.opts.selfLabel
+          : origin === "peer"
+            ? this.opts.peerLabel
+            : this.opts.unknownLabel;
       const codes =
-        origin === "peer"
-          ? [ANSI.bold, ANSI.magenta]
-          : origin === "unknown"
-            ? [ANSI.bold, ANSI.yellow]
-            : [ANSI.bold];
+        origin === "self"
+          ? [ANSI.bold]
+          : origin === "peer"
+            ? [ANSI.bold, ANSI.magenta]
+            : [ANSI.bold, ANSI.yellow];
       prefixOut += `${this.paint(`${label} ›`, ...codes)} `;
       this.streaming = true;
       this.currentStreamKey = streamKey;

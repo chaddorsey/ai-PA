@@ -24,6 +24,18 @@ export interface ReconnectPolicy {
   maxDelayMs?: number;
   /** Returns [0,1). Injectable so the jitter is testable rather than flaky. */
   jitter?: () => number;
+  /**
+   * How long a connection must SURVIVE before it counts as a recovery and restores the budget.
+   *
+   * Resetting the counter the instant a hello completes is no budget at all. A server that
+   * accepts the socket, answers every RPC, and then dies rearms it on every cycle, so backoff
+   * never grows and the cap is never reached — measured at 81 handshakes against a budget of 2.
+   * That is precisely the crash-loop the bound exists for, and the client hammers the recovering
+   * server through it while showing the user "connected".
+   *
+   * Defaults to `maxDelayMs`: a connection that outlives the longest backoff has proven itself.
+   */
+  stabilityMs?: number;
 }
 
 /**
@@ -44,11 +56,15 @@ export class ConnectionStateMachine {
   private readonly baseDelayMs: number;
   private readonly maxDelayMs: number;
   private readonly jitter: () => number;
+  private readonly stabilityMs: number;
+  /** Pending "this connection has survived long enough to count" timer. */
+  private stabilityTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(opts: ReconnectPolicy = {}) {
     this.maxReconnectAttempts = opts.maxReconnectAttempts ?? DEFAULT_MAX_ATTEMPTS;
     this.baseDelayMs = opts.baseDelayMs ?? DEFAULT_BASE_DELAY_MS;
     this.maxDelayMs = opts.maxDelayMs ?? DEFAULT_MAX_DELAY_MS;
+    this.stabilityMs = opts.stabilityMs ?? this.maxDelayMs;
     // Injectable so the jitter is testable: with Math.random the schedule assertion would be
     // either flaky or vacuous.
     this.jitter = opts.jitter ?? Math.random;
@@ -93,9 +109,15 @@ export class ConnectionStateMachine {
     this.transition("connecting");
   }
 
-  /** Socket opened and hello succeeded. */
+  /**
+   * Socket opened and hello succeeded.
+   *
+   * The budget is NOT restored here. It is restored once this connection has survived
+   * `stabilityMs` — see the field. A connection that dies before then was an attempt, not a
+   * recovery, and must count against the bound like any other.
+   */
   connected(): void {
-    this.attempts = 0;
+    this.armStability();
     this.transition("connected");
   }
 
@@ -104,6 +126,7 @@ export class ConnectionStateMachine {
    * false if the attempt budget is exhausted (→ disconnected).
    */
   dropped(): boolean {
+    this.cancelStability();
     if (this.attempts >= this.maxReconnectAttempts) {
       this.transition("disconnected");
       return false;
@@ -115,6 +138,27 @@ export class ConnectionStateMachine {
 
   /** Give up / explicit close. */
   disconnected(): void {
+    this.cancelStability();
+    this.attempts = 0;
     this.transition("disconnected");
+  }
+
+  private armStability(): void {
+    this.cancelStability();
+    if (this.stabilityMs <= 0) {
+      this.attempts = 0;
+      return;
+    }
+    this.stabilityTimer = setTimeout(() => {
+      this.stabilityTimer = null;
+      this.attempts = 0;
+    }, this.stabilityMs);
+    this.stabilityTimer.unref?.();
+  }
+
+  private cancelStability(): void {
+    if (!this.stabilityTimer) return;
+    clearTimeout(this.stabilityTimer);
+    this.stabilityTimer = null;
   }
 }

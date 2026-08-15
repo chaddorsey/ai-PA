@@ -69,6 +69,8 @@ describe("sanitize", () => {
     expect(sanitize("a\u00adb")).toBe("ab"); // soft hyphen
     expect(sanitize("a\u3164b")).toBe("ab"); // Hangul filler: a blank glyph
     expect(sanitize("a\ufe0fb")).toBe("ab"); // variation selector
+    expect(sanitize("a\u{e0100}b")).toBe("ab"); // variation selectors SUPPLEMENT: 240 more
+    expect(sanitize("a\ufff9b\ufffac\ufffbd")).toBe("abcd"); // interlinear annotation hides a run
   });
 
   // The bound below is a SECURITY property, not a nicety. The agent relays third-party content,
@@ -76,16 +78,40 @@ describe("sanitize", () => {
   // how many introducers the attacker packs in: with an unbounded lazy payload the engine restarts
   // its forward scan at every one of them, and 125KB measured at 3.3 SECONDS of blocked event loop
   // — during which the client reads no frames and answers no approval request.
+  // `maxLength` is passed explicitly and large on purpose. With the default the input is
+  // truncated to 16KB before the first pass, so the hostile payload never reaches the code under
+  // test and the timing assertion passes whatever that code does — which is how the quadratic
+  // body survived a test written to catch it.
+  const UNBOUNDED = { maxLength: 4_000_000 };
+
   it("bounds cost on unterminated OSC introducers", () => {
     const t0 = performance.now();
-    sanitize(`${ESC}]`.repeat(64_000));
+    sanitize(`${ESC}]`.repeat(64_000), UNBOUNDED);
     expect(performance.now() - t0).toBeLessThan(100);
   });
 
   it("bounds cost on unterminated DCS introducers", () => {
     const t0 = performance.now();
-    sanitize(`${ESC}P`.repeat(32_000));
+    sanitize(`${ESC}P`.repeat(32_000), UNBOUNDED);
     expect(performance.now() - t0).toBeLessThan(100);
+  });
+
+  it("bounds cost on unterminated 8-BIT introducers too", () => {
+    // The C1 forms bypass every ESC-anchored pattern, so they need their own measurement.
+    const t0 = performance.now();
+    sanitize("\u009d".repeat(64_000), UNBOUNDED);
+    expect(performance.now() - t0).toBeLessThan(100);
+  });
+
+  it("removes a string-sequence payload of ANY length, not just a short one", () => {
+    // Every bounded-body implementation has a cliff: one character past the cap the sequence did
+    // not match at all, so its entire payload survived as visible text. Measured clean at 4096
+    // and through at 4097 — a clipboard write is no less dangerous for being long.
+    for (const bodyLength of [10, 4_096, 4_097, 40_000]) {
+      const payload = "A".repeat(bodyLength);
+      const out = sanitize(`${ESC}]52;c;${payload}${BEL}after`, UNBOUNDED);
+      expect(out).toBe("after");
+    }
   });
 
   it("bounds cost on a huge plain-text delta", () => {

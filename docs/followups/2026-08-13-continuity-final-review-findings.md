@@ -387,3 +387,148 @@ U+E0100–E01EF and U+FFF9–FFFB · `--timeout` above ~24.8 days overflows and 
 `renderDelta` treats an `undefined` origin as `self` · `SessionCore`'s conformance assertion does
 not catch the bivariance it claims · NDJSON drops `loop_status.status` · `conversation_*` results
 narrowed by cast, and `--write-pointer` can clobber a good pointer.
+
+---
+
+# Round 4 — the corrective work (2026-08-14)
+
+Goal: `docs/plans/2026-08-14-001-fix-continuity-test-binding-goal.md`. Instruments first, then
+fixes. Suites after: **195 core + 4 skipped, 93 terminal, 4 live**.
+
+## The instruments
+
+**`tools/mutate.mjs` + `tools/mutations.mjs`.** Every fix in these two packages now has a table
+entry that reverts exactly that component and names the test which must fail when it does. The
+harness applies each in turn, runs the owning suite, checks it failed *for the stated reason*, and
+restores. `node tools/mutate.mjs` — **47/47 caught, 2 retired**. This is what replaces
+revert-the-whole-commit, which proved a commit was load-bearing and nothing about any component.
+
+**The doubles now model what the wire does.** `MockAppServer` gained the three shapes whose
+absence made the previous round unfalsifiable:
+
+- `toolUse` — the captured MULTI-RUN reply: our send starts run N, a tool suspends it, a NEW run
+  N+1 carries the answer and only N+1 finishes. **N is never closed, ever.**
+- `closeAllConnections()` + `holdCloseHandshakes()`/`releaseCloseHandshakes()` — a polite close,
+  and a close handshake deferred on cue, which is the only way to produce a superseded-but-open
+  socket deterministically. `dropAllConnections()` (terminate) remains for the killed-process case.
+- `FaultyWsConnection` — an injected WRITE fault. No server-side action can produce one: the frame
+  that triggers a send and the send itself run in the same tick.
+- `suppressFirstResponseFor` / `holdFirstConnectionCloseAfter` / `dropFirstConnectionAfter` /
+  `rejectInputWith` — first-connection-only failures, so "the attach failed, then the retry
+  succeeded" is drivable against one server.
+
+**Two fixes were RETIRED rather than kept.** Both survived every mutation because they were
+unreachable, and an unfalsifiable guard is worse than none — it looks like coverage.
+
+- `reconnect()`'s `previous.close()`. `reconnect()` is reached only from `handleClose` (which fires
+  for a socket that already went away) or from its own catch (which now closes the *attempt* rather
+  than `this.ws`, itself a fix — the old code could close a NEWER connection). `previous` was
+  always already closed.
+- `routeFrame`'s identity guard. It and `WsConnection.close()` detaching its listeners were two
+  answers to one question, each masking the other. The lifecycle-side detach was kept because it
+  protects every consumer, including Unit 6's web client; the consumer-side filter was removed.
+
+## What the instruments then found
+
+Fixes below are each bound by a numbered mutation. Highlights rather than the full list:
+
+- **The approval send/record ordering is now assertable** (mutation 1). With the write fault, the
+  pre-fix ordering fails: the deny is marked answered, the server's redelivery is skipped, nobody
+  answers.
+- **Continuation runs inherit attribution** — the reply to a tool-using turn arrives on a run no
+  claim can bind, so origin threading stopped at the first run and a bridge had nothing to route
+  by. Bounded by `onIdle()`: `WAITING_ON_INPUT` is the wire stating no turn is executing, which
+  stops inheritance running away after a lost `turn_finished`, and releases the orphaned first run
+  that never finishes.
+- **The idle reaper works on a shared conversation.** It measured from one global `lastActivity`
+  that every peer frame bumped, so on the only deployment where a stranded claim costs anything it
+  could never fire. Ageing is now per claim and per run.
+- **`lost` is no longer a terminal claim state** — a demoted claim can be resolved by its own
+  dequeue notice, which is direct evidence rather than the positional inference a reconnect voids.
+- **The reconnect budget cannot be rearmed by a server that accepts and dies.** A recovery is now a
+  connection that SURVIVES `stabilityMs`, not one that merely opens.
+- **`stop()` → `start()` was a total silent blackout** (the watermark was reset only in
+  `reconnect()`), and an unknown frame type carrying `MAX_SAFE_INTEGER` could latch the watermark
+  permanently — ordering is now restricted to an explicit allowlist of known broadcast types.
+- **The sanitizer's capped regex became a linear scanner**, removing both the quadratic
+  backtracking and the 4096-byte cliff past which a whole OSC payload survived as visible text.
+- **`main.ts` is importable and covered.** The whole program is `run(argv, env, io)`; the process
+  shell only exists behind an entry-point check.
+
+## Two defects only a real process could show
+
+Both were found AFTER the offline suite was green, by running the client against the live server —
+and both are now covered by subprocess tests that spawn the CLI through an actual pipe.
+
+1. **`--json | head -3` died with an unhandled EPIPE.** The listener-isolation fix could not have
+   caught it: a failed pipe write is reported ASYNCHRONOUSLY, as an `error` event on the socket
+   after `write()` returned. An array-backed test sink never closes, never fills and never errors,
+   so no in-process test could see it either.
+2. **`— subagents idle` was landing in the transcript**, between the echo and the reply. The
+   stdout/stderr split existed for connection state and errors but not for anything the RENDERER
+   produced, and the session tests gave the session ONE sink — so `writeErr` defaulted back to
+   `write` and every routing assertion was vacuous. `Renderer.render` now returns
+   `{transcript, notice}`; the newline that closes an open line stays with the transcript.
+
+## Residual risks, stated rather than closed
+
+**The inverse dequeue ordering is undecidable from the wire.** The previous round asserted that a
+queued claim "degrades to unknown, never to a peer's run", and stopped one turn before the
+interesting part. Driven further, the armed claim binds the NEXT run — whoever started it — and
+labels a peer's turn as ours with our origin attached. The two orderings are frame-for-frame
+identical:
+
+```
+live      [peer run starts, peer run finishes, OUR dequeue, our run starts]
+inverse   [our run starts,  our run finishes,  OUR dequeue, next run starts]
+```
+
+Same shapes, same counts, same order; nothing in `input_accepted`, `update_queue` or the run stream
+separates them. No client-side rule can fix this. What makes it acceptable is that the live server
+emits the dequeue FIRST, and the live gate fails if that changes — `two peers on one conversation
+each own exactly their own run` depends on it directly, since under the inverse ordering the queued
+peer owns nothing. The exposure is a bridge (Unit 6) mislabelling one turn after an unnoticed
+protocol change. The offline test now asserts the real behaviour and says so.
+
+**The `--json` stream is escaped, not sanitized.** C1 and DEL are emitted as `\uXXXX`, so a
+consumer still receives the real characters and a terminal on the other end of the pipe does not
+act on them. A consumer that unescapes and prints to a TTY is on its own.
+
+## Blocked: the live end-to-end could not run on the docs agent
+
+The docs agent's model group **`deepseek-v4-flash` answers 404 at the provider** — "Model not
+found, inaccessible, and/or not deployed" — so every turn on it ends `stop_reason: "error"`.
+Diagnosis:
+
+- Fireworks' own model list DOES contain `accounts/fireworks/models/deepseek-v4-flash`, using the
+  key in `.env`.
+- Through litellm the same model 404s, while `gpt-4.1-mini`, `gpt-5.4-nano`, `gpt-5.2` and
+  `deepseek-v4-pro` all answer normally. So litellm is healthy and the fault is specific to that
+  one model group — most likely the key inside the litellm container, or account access to that
+  serverless deployment.
+- **This is not a client defect and not in these packages.** It does mean the docs agent cannot
+  complete a turn from any surface right now, which is worth knowing on its own.
+
+The gate had hard-coded the agent, so an unrelated model outage read as protocol drift. It now
+takes `LETTA_LIVE_WS_AGENT`, and `tools/scratch-agent.mjs` mints a disposable agent to be that
+input. The full end-to-end below ran on such an agent, which was deleted afterwards.
+
+## Live evidence (2026-08-14, App Server 0.30.19 running, 0.30.20 on disk)
+
+Live gate: **4/4, four consecutive runs.** One flaky test was fixed on the way — the two-peer
+ownership check polled `ownershipSnapshot()` on a 20ms interval for a state released the moment the
+runtime goes idle, and failed one run in three while the property held. It now samples at
+`turn_start`, which is what every comment in `ownership.ts` says to do.
+
+| step | result |
+|---|---|
+| `conversations create --write-pointer` | exit 0; pointer written, previous saved to `.bak` |
+| piped one-shot | exit 0; `agent › OK.` |
+| **tool-using** one-shot (`--json`) | exit 0; **2 runs, NO `turn_finished` for either**, terminated on idle; reply `e2e-final-marker` |
+| `--json` parsed line-by-line | 32/32 lines parsed; both runs attributed `self` — including the continuation run no claim could bind |
+| interactive (over a pty) | exit 0; `you ›` → `agent › FINALOK.` → `/exit` → detached |
+| `conversations list` | exit 0; 20 lines on stdout, **0 bytes on stderr** |
+
+The tool-using run is the direct live confirmation of the protocol fact this round was built
+around: `turn_finished` never arrives for either run, so the pre-fix wait would have hung, and the
+answer lands on a continuation run that inherits its origin.

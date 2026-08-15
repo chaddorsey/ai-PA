@@ -23,14 +23,35 @@ describe("ConnectionStateMachine", () => {
     expect(m.current).toBe("disconnected");
   });
 
-  it("connected() resets the reconnect attempt budget", () => {
-    const m = new ConnectionStateMachine({ maxReconnectAttempts: 1 });
+  /**
+   * PROPERTY CHANGED, deliberately. `connected()` used to restore the budget the instant a hello
+   * completed, which made the bound unenforceable against the exact shape it exists for: a server
+   * that accepts the socket, answers every RPC, and dies seconds later rearmed it on every cycle.
+   * A recovery is now a connection that SURVIVES, not one that merely opens.
+   */
+  it("a recovered connection restores the budget once it has proven itself", async () => {
+    const m = new ConnectionStateMachine({ maxReconnectAttempts: 2, stabilityMs: 30 });
     m.connecting();
     m.connected();
     expect(m.dropped()).toBe(true);
-    m.connected(); // recovered
+
+    m.connected(); // reattached, but zero seconds old
+    expect(m.reconnectAttempts).toBe(1);
+
+    await new Promise((r) => setTimeout(r, 60));
     expect(m.reconnectAttempts).toBe(0);
-    expect(m.dropped()).toBe(true); // budget available again
+    expect(m.dropped()).toBe(true);
+  });
+
+  it("a connection that dies inside the stability window spends budget instead of restoring it", async () => {
+    const m = new ConnectionStateMachine({ maxReconnectAttempts: 2, stabilityMs: 10_000 });
+    m.connecting();
+    m.connected();
+    expect(m.dropped()).toBe(true); // attempt 1
+    m.connected();
+    expect(m.dropped()).toBe(true); // attempt 2 — the flap did NOT count as a recovery
+    expect(m.dropped()).toBe(false); // exhausted, as it must be
+    expect(m.current).toBe("disconnected");
   });
 
   it("no duplicate notifications for same-state transitions", () => {
@@ -79,12 +100,13 @@ describe("ConnectionStateMachine", () => {
       expect(total).toBeGreaterThan(60_000); // > a minute of retrying, vs ~5s before
     });
 
-    it("a successful connect resets the schedule", () => {
-      const m = new ConnectionStateMachine({ jitter: () => 1, baseDelayMs: 500 });
+    it("a connection that lasts resets the schedule", async () => {
+      const m = new ConnectionStateMachine({ jitter: () => 1, baseDelayMs: 500, stabilityMs: 20 });
       m.dropped();
       m.dropped();
       expect(m.nextDelayMs()).toBe(1000);
       m.connected();
+      await new Promise((r) => setTimeout(r, 50));
       m.dropped();
       expect(m.nextDelayMs()).toBe(500);
     });

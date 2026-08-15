@@ -3,16 +3,18 @@
  * with no socket and no server. Frame shapes match the live 0.30.19 captures.
  */
 
-import type { ConnectionState, RenderEvent } from "@ai-pa/letta-continuity-core";
+import type { ApprovalEvent, ConnectionState, RenderEvent } from "@ai-pa/letta-continuity-core";
 import type { SessionCore } from "../../src/session.js";
 
 const RT = { agent_id: "agent-local-mc", conversation_id: "local-conv-1" };
 
 export class StubCore implements SessionCore {
   private renderCbs: Array<(e: RenderEvent) => void> = [];
-  private stateCbs: Array<(s: ConnectionState) => void> = [];
+  private stateCbs: Array<(s: ConnectionState, prev: ConnectionState) => void> = [];
   private errorCbs: Array<(e: Error) => void> = [];
-  private approvalCbs: Array<(e: { toolName: string | undefined; outcome: string }) => void> = [];
+  private approvalCbs: Array<(e: ApprovalEvent) => void> = [];
+  /** Mirrors the core: the previous state is part of the callback contract. */
+  private lastState: ConnectionState = "disconnected";
   /** Runs this "client" started — drives ownsRun(), as real attribution would. */
   readonly ownedRuns = new Set<string>();
   /**
@@ -30,7 +32,7 @@ export class StubCore implements SessionCore {
       this.renderCbs = this.renderCbs.filter((c) => c !== cb);
     };
   }
-  onConnectionState(cb: (s: ConnectionState) => void): () => void {
+  onConnectionState(cb: (s: ConnectionState, prev: ConnectionState) => void): () => void {
     this.stateCbs.push(cb);
     return () => {
       this.stateCbs = this.stateCbs.filter((c) => c !== cb);
@@ -42,14 +44,14 @@ export class StubCore implements SessionCore {
       this.errorCbs = this.errorCbs.filter((c) => c !== cb);
     };
   }
-  onApproval(cb: (e: { toolName: string | undefined; outcome: string }) => void): () => void {
+  onApproval(cb: (e: ApprovalEvent) => void): () => void {
     this.approvalCbs.push(cb);
     return () => {
       this.approvalCbs = this.approvalCbs.filter((c) => c !== cb);
     };
   }
-  approval(toolName: string | undefined, outcome = "denied"): void {
-    for (const cb of this.approvalCbs) cb({ toolName, outcome });
+  approval(toolName: string | undefined, requestId = "perm-toolu-1"): void {
+    for (const cb of this.approvalCbs) cb({ requestId, toolName, outcome: "denied" });
   }
   ownsRun(runId: string | undefined): boolean {
     return runId !== undefined && this.ownedRuns.has(runId);
@@ -83,7 +85,9 @@ export class StubCore implements SessionCore {
   }
 
   setState(state: ConnectionState): void {
-    for (const cb of this.stateCbs) cb(state);
+    const prev = this.lastState;
+    this.lastState = state;
+    for (const cb of this.stateCbs) cb(state, prev);
   }
 
   fail(message: string): void {

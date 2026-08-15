@@ -6,34 +6,53 @@
  * a stubbed core"). main.ts supplies the real ContinuityCore and process.stdout.
  */
 
-import type { ConnectionState, ContinuityCore, RenderEvent } from "@ai-pa/letta-continuity-core";
-import { MAX_TRACKED_ORIGINS, Renderer, type RendererOptions, type TurnOrigin } from "./render.js";
+import type {
+  ApprovalEvent,
+  ConnectionState,
+  ContinuityCore,
+  RenderEvent,
+  protocol,
+} from "@ai-pa/letta-continuity-core";
+import {
+  MAX_TRACKED_ORIGINS,
+  type RenderOutput,
+  Renderer,
+  type RendererOptions,
+  type TurnOrigin,
+} from "./render.js";
 
 /**
- * `ContinuityCore` must satisfy this seam. Without an explicit assertion the only check is the
- * single `new TerminalSession(core, …)` call in main.ts — and because the members are declared
- * with method syntax, TypeScript compares their parameters BIVARIANTLY, so a core that narrowed
- * a parameter type would still assign cleanly and fail only at runtime. This makes the
- * conformance a compile error at the point the seam is defined.
+ * The slice of ContinuityCore this session needs — the seam a test stub implements.
+ *
+ * Members are declared as PROPERTIES holding function types, not with method syntax. That is the
+ * whole point of the assertion below: TypeScript compares method parameters BIVARIANTLY, so a
+ * core that narrowed a parameter, took a different callback shape, or dropped an argument the
+ * seam promises still assigned cleanly and failed only at runtime. The conformance check was
+ * therefore asserting almost nothing — it caught a missing member and nothing else. Under
+ * `strictFunctionTypes`, property-held function types are checked contravariantly and the check
+ * means what it says.
+ */
+export interface SessionCore {
+  onRender: (cb: (event: RenderEvent) => void) => () => void;
+  onConnectionState: (cb: (state: ConnectionState, prev: ConnectionState) => void) => () => void;
+  onError: (cb: (err: Error) => void) => () => void;
+  onApproval: (cb: (e: ApprovalEvent) => void) => () => void;
+  ownsRun: (runId: string | undefined) => boolean;
+  /** Three-way attribution. `ownsRun` collapses `foreign` and `unknown` into a single false. */
+  attributeRun: (runId: string | undefined) => "mine" | "foreign" | "unknown";
+  /** Whether an update_queue frame contains one of OUR queued messages. */
+  queueHasMine: (frame: protocol.ServerFrame, origin?: string) => boolean;
+  send: (text: string) => void;
+}
+
+/**
+ * `ContinuityCore` must satisfy the seam. Without this the only check is the single
+ * `new TerminalSession(core, …)` call in main.ts, which type-checks one direction of one usage.
  */
 type SessionCoreConformance = ContinuityCore extends SessionCore ? true : never;
 /** Use site: when the conditional above resolves to `never`, this assignment fails to compile. */
 const _coreSatisfiesSeam: SessionCoreConformance = true;
 void _coreSatisfiesSeam;
-
-/** The slice of ContinuityCore this session needs — the seam a test stub implements. */
-export interface SessionCore {
-  onRender(cb: (event: RenderEvent) => void): () => void;
-  onConnectionState(cb: (state: ConnectionState) => void): () => void;
-  onError(cb: (err: Error) => void): () => void;
-  onApproval(cb: (e: { toolName: string | undefined; outcome: string }) => void): () => void;
-  ownsRun(runId: string | undefined): boolean;
-  /** Three-way attribution. `ownsRun` collapses `foreign` and `unknown` into a single false. */
-  attributeRun(runId: string | undefined): "mine" | "foreign" | "unknown";
-  /** Whether an update_queue frame contains one of OUR queued messages. */
-  queueHasMine(frame: unknown): boolean;
-  send(text: string): void;
-}
 
 export interface SessionOptions extends RendererOptions {
   write: (text: string) => void;
@@ -87,14 +106,14 @@ export class TerminalSession {
     if (event.type === "turn_start" && event.runId) {
       this.originCache.set(event.runId, this.attribute(event.runId));
     }
-    const text = this.renderer.render(event, {
+    const out = this.renderer.render(event, {
       queueHasMine: (frame) => this.core.queueHasMine(frame),
       attributeRun: (runId) => {
-        if (runId === undefined) return "self";
+        if (runId === undefined) return "unknown";
         return this.originCache.get(runId) ?? this.attribute(runId);
       },
       isOwnRun: (runId) => {
-        if (runId === undefined) return true;
+        if (runId === undefined) return false;
         return (this.originCache.get(runId) ?? this.attribute(runId)) === "self";
       },
     });
@@ -105,7 +124,13 @@ export class TerminalSession {
       if (oldest === undefined) break;
       this.originCache.delete(oldest);
     }
-    if (text) this.write(text);
+    this.emit(out);
+  }
+
+  /** Route a renderer result to its two sinks. */
+  private emit(out: RenderOutput): void {
+    if (out.transcript) this.write(out.transcript);
+    if (out.notice) this.writeErr(out.notice);
   }
 
   /** Map the core's attribution onto the renderer's origin vocabulary. */
@@ -115,8 +140,7 @@ export class TerminalSession {
   }
 
   private onConnectionState(state: ConnectionState): void {
-    const text = this.renderer.renderConnectionState(state);
-    if (text) this.writeErr(text);
+    this.emit(this.renderer.renderConnectionState(state));
   }
 
   /**
@@ -126,7 +150,7 @@ export class TerminalSession {
    * are deliberately never surfaced — they routinely carry file contents or credentials.
    */
   private onApproval(e: { toolName: string | undefined; outcome: string }): void {
-    this.writeErr(
+    this.emit(
       this.renderer.renderNotice(
         `tool approval requested (${e.toolName ?? "unknown tool"}) — auto-${e.outcome}; no approval UI in this milestone`,
         "warn",
@@ -135,7 +159,7 @@ export class TerminalSession {
   }
 
   private onError(err: Error): void {
-    this.writeErr(this.renderer.renderNotice(err.message, "error"));
+    this.emit(this.renderer.renderNotice(err.message, "error"));
   }
 
   /**
@@ -154,7 +178,7 @@ export class TerminalSession {
     try {
       this.core.send(trimmed);
     } catch (err) {
-      this.writeErr(
+      this.emit(
         this.renderer.renderNotice(
           `not sent (${err instanceof Error ? err.message : String(err)}) — still reconnecting`,
           "warn",

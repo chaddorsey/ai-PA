@@ -82,11 +82,39 @@ LETTA_LIVE_WS=1 LETTA_LIVE_WS_URL=ws://127.0.0.1:4599/ws \
   LETTA_LIVE_WS_EXPECT_VERSION=0.30.20 npm run check:live
 ```
 
+`LETTA_LIVE_WS_AGENT` chooses which agent to gate against; it defaults to the low-stakes docs
+agent. It is an input rather than a constant because a gate that hard-codes an agent cannot tell
+"the protocol drifted" from "that one agent's model is down" — which is exactly what happened on
+2026-08-14, when the docs agent's model group started answering 404 at the provider and three of
+the four checks failed with nothing wrong at the protocol layer. `../tools/scratch-agent.mjs`
+mints a disposable agent to be that input, and deletes it again.
+
 The default suite is fully offline against an in-process mock App Server
 (`test/helpers/mockServer.ts`). The mock reproduces the server's **command guards** — a
 guard-failing frame is dropped silently, exactly as the real server drops it — because a double
 that answers any shape rubber-stamps a malformed builder, which is how `conversation_create`
-once shipped with an envelope the server ignored.
+once shipped with an envelope the server ignored. It also produces the shapes a healthy server
+cannot be asked for on cue: an ORPHAN run (`toolUse` — the captured tool-using reply, whose first
+run never emits `turn_finished`), a gracefully closed socket whose close handshake is deferred
+(`closeAllConnections` + `holdCloseHandshakes`), and an injected write fault
+(`FaultyWsConnection`). Those three exist because without them the properties that matter most —
+approval send/record ordering, one-shot termination, continuation-run attribution — could not be
+disproved by any test.
+
+## Every fix carries a mutation
+
+`../tools/mutations.mjs` holds one entry per fix in this package and in `letta-terminal`: a revert
+of exactly that component, plus the test that must fail when it is applied.
+
+```bash
+node ../tools/mutate.mjs          # apply each, run the owning suite, expect a failure, restore
+node ../tools/mutate.mjs --list
+```
+
+This exists because three remediation rounds shipped with a green suite: tests had been written
+from the fix rather than from the property, and "verified" by reverting whole commits, which proves
+a commit is load-bearing and nothing about any component. A fix whose mutation leaves the suite
+green is not done — it is either untested or unnecessary, and both are findings.
 
 ### Known gap
 

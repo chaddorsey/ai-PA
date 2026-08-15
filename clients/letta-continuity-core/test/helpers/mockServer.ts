@@ -12,12 +12,72 @@
 
 import type { AddressInfo } from "node:net";
 import { type RawData, type WebSocket, WebSocketServer } from "ws";
-import { PINNED_PROTOCOL_VERSION, PINNED_SERVER_VERSION } from "../../src/protocol.js";
+import {
+  PINNED_PROTOCOL_VERSION,
+  PINNED_SERVER_VERSION,
+  type ServerFrame,
+} from "../../src/protocol.js";
+import { WsConnection, type WsConnectionOptions } from "../../src/ws.js";
+
+/**
+ * A real `WsConnection` whose WRITES can be made to fail on cue.
+ *
+ * Everything else — the socket, the hello, the version gate, frame routing — is the production
+ * class. Only `send` is faultable, because that is the one condition a mock SERVER cannot produce:
+ * the frame that triggers a send and the send itself run in the same tick, so nothing the server
+ * does can put the socket into a non-writable state in between. Pass the factory to
+ * `ContinuityCore({ createConnection })`.
+ */
+export class FaultyWsConnection extends WsConnection {
+  /** Set to a message to make every subsequent `send` throw; null to write normally again. */
+  static failSendsWith: string | null = null;
+  /** Frames whose send was rejected, for assertions. */
+  static readonly refused: ServerFrame[] = [];
+
+  override send(frame: ServerFrame): void {
+    if (FaultyWsConnection.failSendsWith !== null) {
+      FaultyWsConnection.refused.push(frame);
+      throw new Error(FaultyWsConnection.failSendsWith);
+    }
+    super.send(frame);
+  }
+
+  /** Restore normal writes and forget what was refused. Call in `afterEach`. */
+  static reset(): void {
+    FaultyWsConnection.failSendsWith = null;
+    FaultyWsConnection.refused.length = 0;
+  }
+
+  static factory(options: WsConnectionOptions): WsConnection {
+    return new FaultyWsConnection(options);
+  }
+}
 
 interface ConnState {
   socket: WebSocket;
   seq: number;
   runtime: { agent_id: string; conversation_id: string } | null;
+  /** True while this connection is refusing to answer a close handshake. */
+  held: boolean;
+  /** 0-based order of acceptance, so a test can single out the FIRST attach. */
+  index: number;
+}
+
+/**
+ * Stop reading from a client socket without closing it.
+ *
+ * `ws.pause()` pauses the receiver, so an inbound close frame is never parsed and therefore never
+ * answered. The `_socket` fallback covers builds without the public method; both do the same job
+ * at the level that matters, which is "the peer's close frame is not processed".
+ */
+function pauseSocket(socket: WebSocket): void {
+  if (typeof socket.pause === "function") socket.pause();
+  else (socket as unknown as { _socket?: { pause(): void } })._socket?.pause();
+}
+
+function resumeSocket(socket: WebSocket): void {
+  if (typeof socket.resume === "function") socket.resume();
+  else (socket as unknown as { _socket?: { resume(): void } })._socket?.resume();
 }
 
 export interface TurnMessage {
@@ -66,6 +126,38 @@ export interface MockServerOptions {
    * in-flight turn without having to script the peer's whole turn.
    */
   inputDisposition?: "started" | "queued";
+  /**
+   * Answer an `input` with the captured MULTI-RUN shape of a tool-using reply rather than the
+   * single-run shape.
+   *
+   * Captured live on 0.30.20: the run our send starts is never closed. A tool call suspends it,
+   * a NEW run carries the reply, and only that second run emits `turn_finished`. A double that
+   * always closes the run it started cannot produce that, so every property that depends on it —
+   * one-shot termination, continuation-run attribution, the idle reaper being load-bearing rather
+   * than a nicety — was asserted against a shape the client never meets.
+   */
+  toolUse?: boolean;
+  /**
+   * Like `suppressResponsesFor`, but only on the FIRST connection this server accepts.
+   *
+   * Lets one test drive "the attach failed, then the retry succeeded" against one server, which is
+   * the only way to get a client into the state the identity guards exist for: a first connection
+   * that was closed by us and a second, healthy one that is current.
+   */
+  suppressFirstResponseFor?: string[];
+  /**
+   * On the FIRST connection, stop reading once a frame of this type arrives — so the close
+   * handshake the client subsequently starts is never answered and its `close` event is deferred
+   * until `releaseCloseHandshakes()`.
+   */
+  holdFirstConnectionCloseAfter?: string;
+  /** On the FIRST connection, terminate abruptly once a frame of this type arrives. */
+  dropFirstConnectionAfter?: string;
+  /**
+   * Refuse every `input` with `accepted:false` and this error, the way the server answers a send
+   * against a runtime that is no longer active.
+   */
+  rejectInputWith?: string;
 }
 
 /** Split a message body into per-chunk deltas the way a streaming provider does. */
@@ -89,6 +181,8 @@ export class MockAppServer {
   private wss: WebSocketServer | null = null;
   private readonly conns = new Set<ConnState>();
   private runCounter = 0;
+  /** How many connections this server has ever accepted — the source of ConnState.index. */
+  private acceptedCount = 0;
   /** Frames received from clients, for assertions (e.g. the approval-deny `input`). */
   readonly received: Array<Record<string, unknown>> = [];
   /** Count of frames dropped by a command guard (malformed envelope). */
@@ -140,10 +234,51 @@ export class MockAppServer {
     for (const c of this.conns) c.socket.send(text);
   }
 
-  /** Simulate a watchdog stall-restart: drop every client socket at once. */
+  /** Simulate a watchdog stall-restart: drop every client socket at once (abrupt, no handshake). */
   dropAllConnections(): void {
     for (const c of this.conns) c.socket.terminate();
     this.conns.clear();
+  }
+
+  /**
+   * Close every client socket GRACEFULLY — a close frame and a handshake, not a TCP reset.
+   *
+   * `dropAllConnections` uses `terminate()`, which makes the client's `close` event arrive
+   * immediately and in lockstep with the drop. That is one real shape (a killed process) but not
+   * the one three of this client's fixes guard against: a socket that is closed politely and whose
+   * `close` event therefore lands whenever the handshake completes — which the `ws` package will
+   * wait up to 30s for. Combined with `holdCloseHandshakes`, this is how a test produces a
+   * SUPERSEDED-but-not-yet-closed connection deterministically.
+   */
+  closeAllConnections(code = 1001, reason = "server going away"): void {
+    for (const c of this.conns) c.socket.close(code, reason);
+  }
+
+  /**
+   * Stop answering close handshakes on every CURRENT connection.
+   *
+   * A client that calls `close()` sends a close frame and then waits for the peer's reply before
+   * emitting `close`. Pausing the server's receiver means that reply never comes, so the client's
+   * socket sits in CLOSING — open enough to keep receiving, not open enough to send. That is
+   * exactly the lingering superseded socket the identity guards exist for, and the only state in
+   * which a client-side `ws.send` can throw while frames are still arriving.
+   *
+   * Release it with `releaseCloseHandshakes()` to let the pending closes complete on cue.
+   */
+  holdCloseHandshakes(): void {
+    for (const c of this.conns) {
+      c.held = true;
+      pauseSocket(c.socket);
+    }
+  }
+
+  /** Let every held close handshake complete now, so the client's `close` events fire on cue. */
+  releaseCloseHandshakes(): void {
+    for (const c of this.conns) {
+      if (!c.held) continue;
+      c.held = false;
+      resumeSocket(c.socket);
+    }
   }
 
   get connectionCount(): number {
@@ -151,17 +286,43 @@ export class MockAppServer {
   }
 
   private onConnection(socket: WebSocket): void {
-    const conn: ConnState = { socket, seq: 0, runtime: null };
+    const conn: ConnState = {
+      socket,
+      seq: 0,
+      runtime: null,
+      held: false,
+      index: this.acceptedCount,
+    };
+    this.acceptedCount += 1;
     this.conns.add(conn);
     socket.on("message", (data: RawData) => this.onMessage(conn, data));
     socket.on("close", () => this.conns.delete(conn));
     socket.on("error", () => {});
   }
 
+  /** Deliver a raw payload to ONE connection, so a test can address a superseded socket alone. */
+  sendRawTo(index: number, payload: unknown): void {
+    const text = typeof payload === "string" ? payload : JSON.stringify(payload);
+    for (const c of this.conns) if (c.index === index) c.socket.send(text);
+  }
+
   private onMessage(conn: ConnState, data: RawData): void {
     const msg = JSON.parse(data.toString()) as Record<string, unknown>;
     this.received.push(msg);
     const type = msg.type as string;
+    const first = conn.index === 0;
+    if (first && this.options.dropFirstConnectionAfter === type) {
+      this.conns.delete(conn);
+      conn.socket.terminate();
+      return;
+    }
+    if (first && this.options.holdFirstConnectionCloseAfter === type) {
+      conn.held = true;
+      // Answer first, THEN stop reading: the point is to defer the client's close event, not to
+      // withhold the response the client is waiting on.
+      queueMicrotask(() => pauseSocket(conn.socket));
+    }
+    if (first && this.options.suppressFirstResponseFor?.includes(type)) return;
     if (this.options.suppressResponsesFor?.includes(type)) return;
     if (type === "app_server_info") this.handleAppServerInfo(conn, msg);
     else if (type === "runtime_start") {
@@ -294,6 +455,21 @@ export class MockAppServer {
       ? this.options.inputDisposition === "queued"
       : this.busy.get(key) === true;
 
+    if (this.options.rejectInputWith !== undefined) {
+      if (typeof msg.request_id === "string") {
+        conn.socket.send(
+          JSON.stringify({
+            type: "input_accepted",
+            request_id: msg.request_id,
+            runtime: conn.runtime,
+            accepted: false,
+            error: this.options.rejectInputWith,
+          }),
+        );
+      }
+      return;
+    }
+
     if (typeof msg.request_id === "string") {
       conn.socket.send(
         JSON.stringify({
@@ -397,12 +573,25 @@ export class MockAppServer {
       });
     };
 
-    if (this.options.dequeueAfterRunStart) {
+    const runTurn = (): void => {
+      if (this.options.toolUse) {
+        this.broadcastToolUsingTurn(
+          item.conn.runtime as ConnState["runtime"],
+          runId,
+          `local-run-${this.bump()}`,
+          messages,
+        );
+        return;
+      }
       this.broadcastTurn(item.conn.runtime as ConnState["runtime"], runId, messages);
+    };
+
+    if (this.options.dequeueAfterRunStart) {
+      runTurn();
       announceDequeue();
     } else {
       announceDequeue();
-      this.broadcastTurn(item.conn.runtime as ConnState["runtime"], runId, messages);
+      runTurn();
     }
     setImmediate(() => this.drain(key));
   }
@@ -477,6 +666,113 @@ export class MockAppServer {
           active_run_ids: [],
           executing_tool_call_ids: [],
         },
+      });
+    }
+  }
+
+  /**
+   * A TOOL-USING reply, in the shape captured live on 0.30.20.
+   *
+   * ```
+   * turn_start    local-run-320  owns=true     ← the run our send starts
+   * loop_status   EXECUTING_CLIENT_SIDE_TOOL
+   * turn_start    local-run-321  owns=false    ← a NEW run carries the answer
+   * loop_status   WAITING_ON_INPUT
+   * turn_finished local-run-321  end_turn      ← only 321 ever finishes
+   * ```
+   *
+   * `firstRunId` is deliberately ORPHANED: no `turn_finished` is ever emitted for it, on this
+   * turn or any later one. Three consequences the single-run shape hid — a wait keyed on "our run
+   * finished" never returns; the run is never released from ownership, so the idle reaper is the
+   * only thing that stops attribution degrading permanently; and the reply arrives on a run no
+   * claim can bind.
+   */
+  broadcastToolUsingTurn(
+    runtime: ConnState["runtime"],
+    firstRunId: string,
+    continuationRunId: string,
+    messages: TurnMessage[],
+    stopReason = "end_turn",
+  ): void {
+    if (!runtime) return;
+    for (const conn of this.subscribers(runtime)) {
+      const toolCallId = `toolu_${firstRunId}`;
+      this.sendBroadcast(conn, "update_loop_status", {
+        loop_status: {
+          status: "SENDING_API_REQUEST",
+          active_run_ids: [firstRunId],
+          executing_tool_call_ids: [],
+        },
+      });
+      this.sendBroadcast(conn, "stream_delta", {
+        delta: {
+          id: `${firstRunId}-toolcall`,
+          date: "2026-08-13T00:00:00.000Z",
+          agent_id: runtime.agent_id,
+          conversation_id: runtime.conversation_id,
+          message_type: "tool_call_message",
+          otid: `otid-${firstRunId}`,
+          run_id: firstRunId,
+          seq_id: 1,
+          type: "message",
+        },
+      });
+      this.sendBroadcast(conn, "update_loop_status", {
+        loop_status: {
+          status: "EXECUTING_CLIENT_SIDE_TOOL",
+          active_run_ids: [firstRunId],
+          executing_tool_call_ids: [toolCallId],
+        },
+      });
+      // The continuation. Note there is NO turn_finished for firstRunId — not here, not later.
+      this.sendBroadcast(conn, "update_loop_status", {
+        loop_status: {
+          status: "SENDING_API_REQUEST",
+          active_run_ids: [continuationRunId],
+          executing_tool_call_ids: [],
+        },
+      });
+      for (const m of messages) {
+        for (const [i, chunk] of splitIntoChunks(m.text).entries()) {
+          this.sendBroadcast(conn, "stream_delta", {
+            delta: {
+              id: `${m.id}-${i}`,
+              date: "2026-08-13T00:00:00.000Z",
+              agent_id: runtime.agent_id,
+              conversation_id: runtime.conversation_id,
+              message_type: m.messageType,
+              otid: `otid-${m.id}`,
+              content: chunk,
+              run_id: continuationRunId,
+              seq_id: i + 1,
+              type: "message",
+            },
+          });
+        }
+      }
+      this.sendBroadcast(conn, "stream_delta", {
+        delta: {
+          message_type: "stop_reason",
+          stop_reason: stopReason,
+          run_id: continuationRunId,
+          seq_id: 901,
+          type: "message",
+        },
+      });
+      // IDLE BEFORE FINISHED, as captured. The ordering is not cosmetic: it is why a one-shot
+      // that waits for its own run's `turn_finished` hangs, and why the client terminates on the
+      // runtime going idle instead.
+      this.sendBroadcast(conn, "update_loop_status", {
+        loop_status: {
+          status: "WAITING_ON_INPUT",
+          active_run_ids: [],
+          executing_tool_call_ids: [],
+        },
+      });
+      this.sendBroadcast(conn, "turn_finished", {
+        turn_id: `batch-${continuationRunId}`,
+        stop_reason: stopReason,
+        run_id: continuationRunId,
       });
     }
   }

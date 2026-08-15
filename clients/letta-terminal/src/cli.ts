@@ -45,6 +45,16 @@ export class CliError extends Error {
 /** Generous: local turns in this system run 51s-600s. */
 const DEFAULT_TIMEOUT_SECONDS = 180;
 
+/**
+ * The largest delay `setTimeout` can actually hold (a signed 32-bit millisecond count, ~24.8 days).
+ *
+ * Beyond it the value overflows and the timer fires almost IMMEDIATELY — so `--timeout 9999999999`,
+ * which reads as "effectively no limit", produced a one-shot that gave up after about 4ms and
+ * exited 1. Refusing is better than clamping: a caller who asked for a month-long bound has a
+ * misunderstanding worth surfacing, not a preference worth quietly rounding.
+ */
+const MAX_TIMEOUT_SECONDS = Math.floor((2 ** 31 - 1) / 1000);
+
 export const DEFAULT_POINTER_PATH = join(homedir(), ".letta", "continuity-pointer.json");
 
 export const USAGE = `letta-continuity — terminal client for the sole-owner Letta App Server
@@ -199,6 +209,11 @@ export function parseArgs(argv: readonly string[], env: NodeJS.ProcessEnv = {}):
         const parsed = Number(value);
         if (!value || !Number.isFinite(parsed) || parsed <= 0) {
           throw new CliError("--timeout requires a positive number of seconds");
+        }
+        if (parsed > MAX_TIMEOUT_SECONDS) {
+          throw new CliError(
+            `--timeout must be at most ${MAX_TIMEOUT_SECONDS} seconds (about 24 days); anything larger overflows the timer and fires immediately`,
+          );
         }
         opts.timeoutSeconds = parsed;
         break;

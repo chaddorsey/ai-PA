@@ -30,32 +30,70 @@
 const KEEP = new Set(["\n", "\t"]);
 
 const ESC = "\u001b";
-/** String terminator: ESC backslash, 8-bit ST (U+009C), or BEL. */
-const ST = "(?:\u001b\\\\|\u009c|\u0007)";
+const BEL = "\u0007";
+/** 8-bit string terminator. */
+const ST_8BIT = "\u009c";
 
 /**
- * Escape sequences to remove wholesale, so their payload text does not survive as visible junk.
- * Each family is listed in both its 7-bit (ESC-introduced) and 8-bit (C1) form.
- */
-/**
- * Body of a string-type sequence (OSC/DCS/SOS/PM/APC).
+ * String-type sequences (OSC/DCS/SOS/PM/APC) are removed by a SCANNER, not a pattern.
  *
- * NOT `[\\s\\S]*?`. A lazy unrestricted body backtracks: given many introducers and no terminator
- * the engine restarts its forward scan at every one of them, which is quadratic in the length of
- * ATTACKER-SUPPLIED text — 125KB of bare `ESC ]` measured at 3.3s of blocked event loop, during
+ * A regex cannot do this job safely. A lazy body (`[\s\S]*?`) backtracks: given many introducers
+ * and no terminator the engine restarts its forward scan at every one of them, which is quadratic
+ * in ATTACKER-SUPPLIED text — 125KB of bare `ESC ]` measured at 3.3s of blocked event loop, during
  * which the client renders nothing and answers no approval request. Excluding the terminator
- * characters from the body makes each scan stop at the first candidate instead, and the repetition
- * cap keeps one unterminated introducer from scanning to end-of-string.
+ * characters from the body stops the backtracking, but then a repetition cap is needed to keep one
+ * unterminated introducer from scanning to end-of-string — and any cap is a cliff: a body one
+ * character past it did not match at all, so the entire payload survived as visible text (clean at
+ * 4096, through at 4097).
+ *
+ * A single left-to-right pass has neither problem. Every character is visited once, so cost is
+ * linear with no cap, and a body of any length is removed in full.
  */
-const SEQ_BODY = "[^\\u001b\\u009c\\u0007]{0,4096}";
+/** 7-bit introducers: ESC followed by one of these opens a string sequence. */
+const SEQ_INTRODUCERS_7BIT = "]P^_X";
+/** 8-bit (C1) introducers: DCS, SOS, OSC, PM, APC. */
+const SEQ_INTRODUCERS_8BIT = "\u0090\u0098\u009d\u009e\u009f";
 
+function stripStringSequences(input: string): string {
+  let out = "";
+  let i = 0;
+  while (i < input.length) {
+    const ch = input[i] as string;
+    const next = input[i + 1];
+    let body = -1;
+    if (ch === ESC && next !== undefined && SEQ_INTRODUCERS_7BIT.includes(next)) body = i + 2;
+    else if (SEQ_INTRODUCERS_8BIT.includes(ch)) body = i + 1;
+    if (body === -1) {
+      out += ch;
+      i += 1;
+      continue;
+    }
+    // Consume to the string terminator. An UNTERMINATED sequence runs to end-of-input, which is
+    // the safe reading — a terminal would swallow the rest too. An ESC that is not `ESC \` ends
+    // the scan WITHOUT being consumed, so whatever it introduces is still seen by the next pass.
+    let j = body;
+    while (j < input.length) {
+      const c = input[j];
+      if (c === BEL || c === ST_8BIT) {
+        j += 1;
+        break;
+      }
+      if (c === ESC) {
+        if (input[j + 1] === "\\") j += 2;
+        break;
+      }
+      j += 1;
+    }
+    i = j;
+  }
+  return out;
+}
+
+/**
+ * Escape sequences removed by pattern. Only bounded grammars are left here: a CSI sequence is
+ * parameters, then intermediates, then exactly one final byte, with nothing to backtrack over.
+ */
 const SEQUENCES: RegExp[] = [
-  // OSC — includes OSC 52 (clipboard) and OSC 8 (hyperlink).
-  new RegExp(`${ESC}\\]${SEQ_BODY}${ST}`, "g"),
-  new RegExp(`\u009d${SEQ_BODY}${ST}`, "g"),
-  // DCS / SOS / PM / APC.
-  new RegExp(`${ESC}[P^_X]${SEQ_BODY}${ST}`, "g"),
-  new RegExp(`[\u0090\u0098\u009e\u009f]${SEQ_BODY}${ST}`, "g"),
   // CSI — parameters, intermediates, final byte.
   new RegExp(`${ESC}\\[[0-?]*[ -/]*[@-~]`, "g"),
   /\u009b[0-?]*[ -\/]*[@-~]/g,
@@ -86,8 +124,10 @@ const INVISIBLE = new RegExp(
     "[\\u2060-\\u2064]", // word joiner + invisible operators
     "[\\u2066-\\u2069]", // bidi isolates
     "[\\ufe00-\\ufe0f]", // variation selectors
+    "[\\ufff9-\\ufffb]", // interlinear annotation: hides the annotated run
     "\\ufeff", // BOM / zero-width no-break space
     "[\\u{e0000}-\\u{e007f}]", // TAG block: the canonical invisible-text smuggling range
+    "[\\u{e0100}-\\u{e01ef}]", // variation selectors supplement — the other 240 of them
   ].join("|"),
   "gu",
 );
@@ -110,12 +150,13 @@ export function sanitize(text: string, options: SanitizeOptions = {}): string {
   const max = options.maxLength ?? DEFAULT_MAX_LENGTH;
 
   // Bound the input BEFORE any pass, not just the output after them. Every stage below is linear
-  // only over bounded input, and the per-codepoint filter allocates an array the size of its
-  // INPUT — so truncating at the end still pays full price on the way there. 2x leaves room for
-  // sequences that sanitize away to nothing without changing what a legitimate delta renders as.
+  // in its input, but the per-codepoint filter allocates an array the size of that input — so
+  // truncating at the end still pays full price on the way there. 2x leaves room for sequences
+  // that sanitize away to nothing without changing what a legitimate delta renders as.
   let truncated = text.length > max * 2;
   let out = truncated ? text.slice(0, max * 2) : text;
 
+  out = stripStringSequences(out);
   for (const pattern of SEQUENCES) out = out.replace(pattern, "");
   out = out.replace(INVISIBLE, "");
 

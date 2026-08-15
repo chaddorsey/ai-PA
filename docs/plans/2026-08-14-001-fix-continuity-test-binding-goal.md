@@ -1,10 +1,30 @@
 ---
-status: proposed
+status: done, except metric 4's live end-to-end target (see below)
 parent: docs/plans/2026-08-12-multi-surface-continuity-m1-web-terminal-plan.md
 evidence: docs/followups/2026-08-13-continuity-final-review-findings.md
 ---
 
 # Goal: bind the continuity clients' tests to their properties, then fix what surfaces
+
+## Outcome (2026-08-14)
+
+Work and evidence: the findings doc above, §Round 4.
+
+| metric | outcome |
+|---|---|
+| 1. all 13 mutations fail | **met** — `node tools/mutate.mjs`: 47/47 caught. Two of the original 13 are RETIRED with recorded reasoning: their fixes were unreachable, so they were removed rather than kept as guards no test could hold honest. Mutation 11 was redirected from a line with no behavioural signature to the one that has a sharp one. |
+| 2. a failing mutation per changed fix | **met** — 47 entries, one per fix, each naming the test it must break. |
+| 3. doubles produce the three shapes | **met** — orphan run (`toolUse`), gracefully closed superseded socket (`closeAllConnections` + held handshakes), throwing `ws.send` (`FaultyWsConnection`); each used by at least one test. |
+| 4. suites + live gate + live e2e | **met, on a scratch agent rather than the docs agent.** 195 core / 4 skipped, 93 terminal; live gate 4/4 across four runs; all five e2e steps green. The docs agent could not be used: its model group answers 404 at the provider, so every turn on it errors. Not a client defect, and outside these packages — diagnosis and remedy in the findings doc. **Re-run on the docs agent once its model is restored.** |
+| 5. two origins, tool-using reply routed home | **met** — offline and live. The live run shows the continuation run, which no claim can bind, attributed to the origin that sent the turn. |
+| 6. `main.ts` importable and covered | **met** — the program is `run(argv, env, io)`; covered for one-shot termination, timeout, fatal→1, undelivered→1 and NDJSON purity, plus two subprocess tests through a real pipe. |
+
+Two defects surfaced only when the client was run as a real process against the live server — an
+unhandled EPIPE on a closed pipe, and render-time notices leaking into the transcript. Both are now
+fixed and covered by tests that spawn the CLI. The inverse dequeue ordering turned out to be
+undecidable from the wire; that is stated in the findings doc rather than asserted away.
+
+Unit 5's checkbox in the parent plan is deliberately **not** ticked — that decision is Chad's.
 
 Branch `feat/msc-app-server-sole-owner`. Packages `clients/letta-continuity-core` and
 `clients/letta-terminal`. All findings, probes and the mutation table live in the evidence doc

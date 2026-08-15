@@ -634,10 +634,31 @@ export function validateInboundFrame(frame: ServerFrame): void {
       return;
     }
     default:
-      // Unknown/forward-compat frame types are tolerated (ignored downstream).
+      // Unknown/forward-compat frame types are tolerated (ignored downstream, and excluded from
+      // the ordered stream by frameEventSeq — see ORDERED_BROADCAST_TYPES).
       return;
   }
 }
+
+/**
+ * Frame types that participate in the per-connection ordered stream.
+ *
+ * An explicit allowlist, because the watermark is a one-way latch: whatever arrives raises it and
+ * everything at or below is dropped for the life of the connection. Ordering on ANY frame that
+ * happened to carry an `event_seq` meant a single unknown frame — a forward-compat type this
+ * client does not even render — could carry MAX_SAFE_INTEGER and silence the client permanently:
+ * connected, accepting input, rendering nothing, reporting nothing, with no reset short of a
+ * reconnect. Tolerating a frame we do not understand is not the same as letting it dictate the
+ * ordering of the frames we do.
+ */
+const ORDERED_BROADCAST_TYPES: ReadonlySet<string> = new Set([
+  Inbound.streamDelta,
+  Inbound.turnFinished,
+  Inbound.updateLoopStatus,
+  Inbound.updateQueue,
+  Inbound.updateSubagentState,
+  Inbound.updateDeviceStatus,
+]);
 
 // Type guards used by the stream/facade layers.
 export function isStreamDelta(f: ServerFrame): f is StreamDeltaFrame {
@@ -713,10 +734,18 @@ export function isControlRequest(f: ServerFrame): f is ControlRequestFrame {
   return f.type === Inbound.controlRequest;
 }
 
-/** Per-connection monotonic ordering key. */
+/**
+ * Per-connection monotonic ordering key, or undefined when this frame does not take part in the
+ * ordered stream (an RPC response, a control-channel ack, or a type we do not recognise).
+ *
+ * Both conditions are load-bearing. The range check is the same one the validator applies, so a
+ * counter that is not a counter cannot latch the watermark; the type check keeps a frame we do
+ * not understand from dictating the ordering of the frames we do.
+ */
 export function frameEventSeq(f: ServerFrame): number | undefined {
+  if (!ORDERED_BROADCAST_TYPES.has(f.type)) return undefined;
   const s = (f as { event_seq?: unknown }).event_seq;
-  return typeof s === "number" ? s : undefined;
+  return isEventSeq(s) ? s : undefined;
 }
 
 /** The conversation-stable message id from a stream_delta (`letta-msg-NNN`). */

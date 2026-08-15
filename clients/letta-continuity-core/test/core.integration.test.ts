@@ -387,14 +387,30 @@ describe("ContinuityCore integration", () => {
     await waitFor(() => mine.ownershipSnapshot().pending === 0, 3_000);
   });
 
-  it("under the INVERSE dequeue ordering a queued send degrades to unknown, never to a peer's run", async () => {
-    // ownership.ts is documented as hardening against the inverse of the live ordering. This pins
-    // what that hardening actually buys, which is narrower than it sounds: the claim is still
-    // "queued" when the run is first seen, so nothing binds and attribution degrades to unknown.
-    // It does NOT still attribute correctly. That is acceptable only because the live server was
-    // captured emitting the dequeue FIRST — but "degrades honestly" is the property, and the
-    // dangerous alternative (binding our claim to a peer's run and labelling their turn as ours)
-    // is what must never happen.
+  /**
+   * THE CLAIM HERE IS NARROWER THAN IT WAS, because the wider one was not true.
+   *
+   * This used to assert that under the inverse dequeue ordering a queued claim "degrades to
+   * unknown, never to a peer's run", and stopped after two turns — which is exactly one turn
+   * before the interesting thing happens. Driven one turn further, the armed claim binds the NEXT
+   * run, whoever started it, and labels a peer's turn as ours with our origin attached.
+   *
+   * That is not fixable from the wire, and saying so is better than asserting otherwise. The two
+   * orderings are frame-for-frame identical:
+   *
+   *   live      [peer run starts, peer run finishes, OUR dequeue, our run starts]
+   *   inverse   [our run starts,  our run finishes,  OUR dequeue, next run starts]
+   *
+   * Same shapes, same counts, same order. Nothing in `input_accepted`, `update_queue` or the run
+   * stream distinguishes them, so no client-side rule can. What makes this acceptable is that the
+   * live server was captured emitting the dequeue FIRST, and the live contract test would fail if
+   * that stopped being true: `two peers on one conversation each own exactly their own run`
+   * depends on it directly — under the inverse ordering the queued peer owns nothing.
+   *
+   * The residual exposure is a bridge (M1 Unit 6) mislabelling one turn after a protocol change
+   * nobody noticed. It is recorded in the findings doc rather than papered over here.
+   */
+  it("under the INVERSE dequeue ordering our own run is unattributable, and the NEXT run is mislabelled", async () => {
     server = new MockAppServer({ dequeueAfterRunStart: true });
     url = await server.start();
     const { core: peer } = await makeCore();
@@ -402,18 +418,30 @@ describe("ContinuityCore integration", () => {
     await peer.start();
     await mine.start();
 
-    const misattributed: string[] = [];
+    const claimed: string[] = [];
     mine.onRender((e) => {
-      if (e.type === "turn_start" && e.runId && mine.ownsRun(e.runId)) misattributed.push(e.runId);
+      if (e.type === "turn_start" && e.runId && mine.ownsRun(e.runId)) claimed.push(e.runId);
     });
 
     peer.send("peer goes first");
     mine.send("mine is queued behind it");
     await waitFor(() => events.filter((e) => e.type === "turn_finished").length >= 2, 5_000);
 
-    // Exactly zero runs claimed: our own is unattributable here, and crucially the PEER's run was
-    // not claimed either. Silence is the honest answer; a wrong label would not be.
-    expect(misattributed).toEqual([]);
+    // Through our own turn: nothing bound. The claim was still `queued` when the run appeared.
+    expect(claimed).toEqual([]);
+    // …and it is now ARMED, holding a dequeue notice that arrived after the run it referred to.
+    expect(mine.ownershipSnapshot().pending).toBe(1);
+
+    // One more turn, started by nobody but the peer.
+    const before = events.filter((e) => e.type === "turn_finished").length;
+    server.injectForeignTurn({ agent_id: AGENT, conversation_id: CONV }, "run-definitely-theirs", [
+      { id: "letta-msg-T", messageType: "assistant_message", text: "theirs" },
+    ]);
+    await waitFor(() => events.filter((e) => e.type === "turn_finished").length > before, 5_000);
+
+    // Documented, not desired. Under this ordering the armed claim takes it — and it cannot be
+    // told apart from the run it was legitimately waiting for.
+    expect(claimed).toEqual(["run-definitely-theirs"]);
   });
 
   it("a catch-up snapshot that FAILS degrades to no-dedup and keeps rendering", async () => {

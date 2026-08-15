@@ -6,53 +6,98 @@
  * `~/.letta/lc-local-backend`. That distinction is the whole point of Unit 5 — the legacy
  * `~/bin/letta-<slug>` wrappers run `letta --backend local`, which makes them *second writers*
  * on the backend the App Server sole-owns (R1/R4). This client cannot do that.
+ *
+ * The whole program is `run(argv, env, io)`, which returns an exit code and touches no global.
+ * It used to be a top-level `main()` that read `process.argv`, wrote to `process.stdout`, built
+ * its own readline and called `process.exit` — so nothing in it could be tested, and it held
+ * three defects nobody could have caught: a one-shot that hung on tool-using replies, `--json`
+ * output that was not parseable because the human echo shared the stream, and `process.exit()`
+ * truncating piped stdout mid-flush (122 of 20,000 lines delivered, at exit 0).
  */
 
+import { copyFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
-import { ContinuityCore, protocol, writePointer } from "@ai-pa/letta-continuity-core";
+import { fileURLToPath } from "node:url";
+import {
+  ContinuityCore,
+  type ContinuityCoreConfig,
+  type ContinuityFatalError,
+  type RenderEvent,
+  protocol,
+  writePointer,
+} from "@ai-pa/letta-continuity-core";
 import { CliError, USAGE, parseArgs } from "./cli.js";
 import { sanitize } from "./sanitize.js";
 import { TerminalSession } from "./session.js";
 
+/** What a line typed (or piped) into the session did. */
+export type InputOutcome = "sent" | "ignored" | "failed" | "exit";
+
 /**
- * Read a single message from a non-TTY stdin, or undefined when stdin is interactive.
+ * Everything `run` touches outside itself.
  *
- * Whole-stream, not line-by-line: `echo "..." | letta-continuity` is one message, and the
- * alternative (treating each line as a turn) would fire N turns at a conversation the caller
- * cannot see the replies from.
+ * Injected rather than reached for, so the program can be driven end-to-end against a real core
+ * and a mock App Server without a TTY, a pipe, or a process exit.
  */
-async function readPipedMessage(): Promise<string | undefined> {
-  if (process.stdin.isTTY) return undefined;
-  const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
-  const text = Buffer.concat(chunks).toString("utf-8").trim();
-  return text === "" ? undefined : text;
+export interface TerminalIO {
+  stdout: (text: string) => void;
+  stderr: (text: string) => void;
+  /** The whole of a non-TTY stdin as one message, or undefined when stdin is interactive. */
+  readPipedMessage: () => Promise<string | undefined>;
+  /** Drive the interactive loop. Resolves when the user leaves. */
+  interactive: (onLine: (line: string) => InputOutcome) => Promise<void>;
+  /** Whether stdout is a terminal — decides colour and line editing, nothing else. */
+  isStdoutTTY: boolean;
+  /** Build the core. Overridable so a test can inject a transport or a fault. */
+  createCore?: (config: ContinuityCoreConfig) => ContinuityCore;
 }
 
 /**
- * Send one message, wait for ITS run to finish, return an exit code.
+ * NDJSON line.
  *
- * Keyed on the run this send produced — not on "the next turn_finished", which on a shared
- * conversation is frequently a peer's.
+ * `JSON.stringify` escapes C0 but leaves U+007F and the C1 block (U+0080-U+009F) as raw bytes —
+ * and U+009B is an 8-bit CSI, so a `--json` stream piped into a terminal carried live escape
+ * sequences straight through the one output path that had deliberately skipped sanitization. The
+ * consumer still gets the real characters: they arrive as the two characters \\u009b, which is what a JSON parser
+ * hands back, rather than as something the pipe's other end acts on.
+ */
+export function ndjson(value: unknown): string {
+  return `${JSON.stringify(value).replace(
+    /[\u007f-\u009f]/g,
+    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  )}\n`;
+}
+
+/**
+ * Send one message, wait for the runtime to go idle, return an exit code.
+ *
+ * NOT keyed on "our run finished". A multi-step agentic reply spans several runs and the run our
+ * send started is never closed — captured live: `local-run-320` began, a tool ran, a NEW
+ * `local-run-321` began and finished, and 320 was simply never closed. Waiting for our own run to
+ * finish therefore hangs on every tool-using reply, which is most of them.
  */
 async function runOneShot(
   core: ContinuityCore,
-  session: TerminalSession,
-  message: string,
+  send: () => InputOutcome,
+  io: TerminalIO,
   timeoutSeconds: number,
 ): Promise<number> {
-  const outcome = session.handleInput(message);
-  if (outcome !== "sent") {
-    process.stderr.write("— message was not delivered\n");
+  if (send() !== "sent") {
+    io.stderr("— message was not delivered\n");
     return 1;
   }
 
   return new Promise<number>((resolve) => {
     let settled = false;
-    // Capture OUR run id at turn_start. Ownership is released at turn_finished, so asking there
-    // always reads false and the wait never ends — the same trap that has now bitten this
-    // codebase three times, in ownership tests, in a review assertion, and here.
+    // Capture OUR turn at turn_start. Ownership is released at turn_finished (and at the idle
+    // that precedes it), so asking later always reads false and the wait never ends.
     let sawOurTurn = false;
+    // A reconnect between the send and the reply demotes attribution to `unknown` by design: an
+    // unknown number of runs may have begun and ended across the gap. Waiting for a run we can
+    // still prove is ours therefore hangs FOREVER after a mid-turn reconnect — observed rendering
+    // the full reply and then exiting 1 on the timeout. After a seam, a turn we cannot positively
+    // attribute to a peer counts.
+    let attributionLost = false;
     const finish = (code: number): void => {
       if (settled) return;
       settled = true;
@@ -60,24 +105,22 @@ async function runOneShot(
       resolve(code);
     };
     const timer = setTimeout(() => {
-      process.stderr.write(`— timed out after ${timeoutSeconds}s waiting for a reply\n`);
+      io.stderr(`— timed out after ${timeoutSeconds}s waiting for a reply\n`);
       finish(1);
     }, timeoutSeconds * 1000);
+    core.onConnectionState((state) => {
+      if (state === "reconnecting") attributionLost = true;
+    });
     core.onFatal(() => finish(1));
     core.onRender((e) => {
-      if (e.type === "turn_start" && e.runId && core.ownsRun(e.runId)) {
-        sawOurTurn = true;
+      if (e.type === "turn_start" && e.runId) {
+        const ours =
+          core.ownsRun(e.runId) || (attributionLost && core.attributeRun(e.runId) !== "foreign");
+        if (ours) sawOurTurn = true;
         return;
       }
-      // Terminate on the agent going IDLE, not on our run finishing.
-      //
-      // A multi-step agentic reply spans several runs, and the run our send started never emits
-      // turn_finished at all — captured live: our `local-run-320` began, a tool ran, a NEW
-      // `local-run-321` began and finished, and 320 was simply never closed. Waiting for our own
-      // run to finish therefore hangs on every tool-using reply, which is most of them.
-      //
-      // `sawOurTurn` guards against resolving on the idle that PRECEDES our turn (or that ends a
-      // peer's turn while ours is still queued).
+      // Terminate on the agent going IDLE. `sawOurTurn` guards against resolving on the idle that
+      // PRECEDES our turn, or that ends a peer's while ours is still queued.
       if (
         sawOurTurn &&
         e.type === "loop_status" &&
@@ -95,42 +138,51 @@ async function runOneShot(
  * The human transcript is deliberately lossy — origin labels, `— ` notice prefixes, sanitizer
  * rewrites and continuation indents — so a wrapper parsing it has to reverse all of that, and an
  * agent reply containing a line starting with `— ` breaks the parse. The core already hands us a
- * structured event; this stops throwing it away. Text is NOT sanitized here: the consumer is not
- * a terminal, and it needs the real bytes.
+ * structured event; this stops throwing it away. Text is NOT sanitized: the consumer is not a
+ * terminal and needs the real characters, which is why they are ESCAPED rather than stripped.
  */
-function attachJson(
-  core: ContinuityCore,
-  write: (t: string) => void,
-  writeErr: (t: string) => void,
-): () => void {
-  const emit = (sink: (t: string) => void, obj: Record<string, unknown>): void => {
-    sink(`${JSON.stringify(obj)}\n`);
-  };
+function attachJson(core: ContinuityCore, io: TerminalIO): () => void {
   // Origin is captured at turn_start and held for the run. Asking at turn_finished reads the
   // state AFTER ownership is released, which reported every completed turn of our own as
   // "unknown" — the same trap the human renderer already guards against.
   const originByRun = new Map<string, string>();
   const offs = [
-    core.onRender((e) => {
+    core.onRender((e: RenderEvent) => {
       if (e.type === "turn_start" && e.runId) {
         originByRun.set(e.runId, core.ownsRun(e.runId) ? "self" : core.attributeRun(e.runId));
       }
       const origin = e.runId ? originByRun.get(e.runId) : undefined;
       if (e.type === "turn_finished" && e.runId) originByRun.delete(e.runId);
-      emit(write, {
-        kind: e.type,
-        runId: e.runId,
-        origin,
-        messageId: e.messageId,
-        messageType: e.messageType,
-        text: e.text,
-        stopReason: e.stopReason,
-        eventSeq: e.eventSeq,
-      });
+      io.stdout(
+        ndjson({
+          kind: e.type,
+          runId: e.runId,
+          origin,
+          messageId: e.messageId,
+          messageType: e.messageType,
+          text: e.text,
+          // The loop status was dropped, which is the one field a machine consumer needs to know
+          // the turn is over — this client's own one-shot terminates on it.
+          status: e.status,
+          stopReason: e.stopReason,
+          eventSeq: e.eventSeq,
+        }),
+      );
     }),
-    core.onConnectionState((state) => emit(writeErr, { kind: "connection_state", state })),
-    core.onApproval((a) => emit(writeErr, { kind: "approval", ...a })),
-    core.onError((err) => emit(writeErr, { kind: "error", message: err.message })),
+    core.onConnectionState((state) => io.stderr(ndjson({ kind: "connection_state", state }))),
+    core.onApproval((a) => io.stderr(ndjson({ kind: "approval", ...a }))),
+    core.onFatal((err: ContinuityFatalError) =>
+      io.stderr(
+        ndjson({
+          kind: "fatal",
+          reason: err.reason,
+          requestId: err.requestId,
+          origin: err.origin,
+          message: err.message,
+        }),
+      ),
+    ),
+    core.onError((err) => io.stderr(ndjson({ kind: "error", message: err.message }))),
   ];
   return () => {
     for (const off of offs) off();
@@ -140,76 +192,85 @@ function attachJson(
 async function runConversationsCommand(
   core: ContinuityCore,
   options: ReturnType<typeof parseArgs>,
-  write: (t: string) => void,
-  writeErr: (t: string) => void,
+  io: TerminalIO,
 ): Promise<number> {
   if (options.command === "conversations-list") {
     const conversations = await core.conversationList();
-    if (options.json) {
-      for (const c of conversations) write(`${JSON.stringify(c)}\n`);
-    } else {
-      for (const c of conversations) {
-        write(
-          `${sanitize(c.id, { maxLength: 120 })}\t${c.archived ? "archived" : "active"}\t${sanitize(c.updated_at, { maxLength: 40 })}\n`,
-        );
-      }
+    for (const c of conversations) {
+      io.stdout(
+        options.json
+          ? ndjson(c)
+          : `${sanitize(c.id, { maxLength: 120 })}\t${c.archived ? "archived" : "active"}\t${sanitize(c.updated_at, { maxLength: 40 })}\n`,
+      );
     }
     return 0;
   }
 
   const created = await core.conversationCreate(options.title);
   if (!created) {
-    writeErr("— conversation_create returned no conversation\n");
+    io.stderr("— conversation_create returned no conversation\n");
     return 1;
   }
   const runtime = core.getRuntime();
   if (options.writePointer) {
+    // Keep a copy of whatever was there. This path is how the cutover seeds the pointer every
+    // surface reads, so overwriting it silently retargets every attached client — and the file it
+    // replaces may be the only record of the conversation now orphaned.
+    try {
+      await copyFile(options.writePointer, `${options.writePointer}.bak`);
+      io.stderr(`— previous pointer saved to ${options.writePointer}.bak\n`);
+    } catch {
+      // Nothing there to preserve: the ordinary first-run case.
+    }
     await writePointer(options.writePointer, {
       agentId: runtime.agent_id,
       conversationId: created.id,
       label: options.title,
     });
-    writeErr(`— pointer written to ${options.writePointer}\n`);
+    io.stderr(`— pointer written to ${options.writePointer}\n`);
   }
-  write(
+  io.stdout(
     options.json
-      ? `${JSON.stringify({ agent_id: runtime.agent_id, conversation_id: created.id })}\n`
+      ? ndjson({ agent_id: runtime.agent_id, conversation_id: created.id })
       : `${sanitize(created.id, { maxLength: 120 })}\n`,
   );
   return 0;
 }
 
-async function main(): Promise<number> {
+/** The whole program. Returns the exit code; writes nothing except through `io`. */
+export async function run(
+  argv: readonly string[],
+  env: NodeJS.ProcessEnv,
+  io: TerminalIO,
+): Promise<number> {
   let options: ReturnType<typeof parseArgs>;
   try {
-    options = parseArgs(process.argv.slice(2), process.env);
+    options = parseArgs(argv, env);
   } catch (err) {
-    process.stderr.write(`${err instanceof CliError ? err.message : String(err)}\n`);
+    io.stderr(`${err instanceof CliError ? err.message : String(err)}\n`);
     return 2;
   }
   if (options.help) {
-    process.stdout.write(`${USAGE}\n`);
+    io.stdout(`${USAGE}\n`);
     return 0;
   }
 
-  const color = options.color ?? Boolean(process.stdout.isTTY);
-  const write = (text: string): void => {
-    process.stdout.write(text);
-  };
-  const writeErr = (text: string): void => {
-    process.stderr.write(text);
-  };
-
-  const core = new ContinuityCore({
+  const color = options.color ?? io.isStdoutTTY;
+  const config: ContinuityCoreConfig = {
     ...(options.agentId && options.conversationId
       ? { pointer: { agentId: options.agentId, conversationId: options.conversationId } }
       : { pointerPath: options.pointerPath }),
     ...(options.url ? { url: options.url } : {}),
     versionPolicy: options.strictVersion ? "refuse" : "warn",
+    // The CLI validated the URL, but the CORE is what opens the socket and it applies the same
+    // rule — so without forwarding the opt-in, `--allow-remote` passed the argument parser and
+    // was then refused by the layer it was meant to unlock. The flag simply did not work.
+    allowRemote: options.allowRemote,
     // onWarn payloads embed server strings (snapshot errors, reported versions, capability
     // names). They bypass the Renderer, so they are sanitized here rather than trusted.
-    onWarn: (msg) => process.stderr.write(`— ${sanitize(msg, { maxLength: 512 })}\n`),
-  });
+    onWarn: (msg) => io.stderr(`— ${sanitize(msg, { maxLength: 512 })}\n`),
+  };
+  const core = (io.createCore ?? ((c) => new ContinuityCore(c)))(config);
 
   // A session-fatal condition must reach the EXIT CODE, not only the transcript.
   let exitCode = 0;
@@ -218,8 +279,8 @@ async function main(): Promise<number> {
   });
 
   const session = new TerminalSession(core, {
-    write,
-    writeErr,
+    write: io.stdout,
+    writeErr: io.stderr,
     color,
     showReasoning: options.showReasoning,
   });
@@ -229,7 +290,7 @@ async function main(): Promise<number> {
     options.command !== "attach"
       ? (): void => {}
       : options.json
-        ? attachJson(core, write, writeErr)
+        ? attachJson(core, io)
         : session.attach();
 
   try {
@@ -237,9 +298,7 @@ async function main(): Promise<number> {
   } catch (err) {
     // Pointer problems and version refusals both land here, and both are actionable.
     // Version-gate failures embed server-reported version and capability strings.
-    process.stderr.write(
-      `\nCould not attach: ${sanitize((err as Error).message, { maxLength: 512 })}\n`,
-    );
+    io.stderr(`\nCould not attach: ${sanitize((err as Error).message, { maxLength: 512 })}\n`);
     detach();
     core.stop();
     return 1;
@@ -250,21 +309,40 @@ async function main(): Promise<number> {
   // to seed a conversation via an RPC only reachable by writing TypeScript against an
   // unpublished package.
   if (options.command !== "attach") {
-    const code = await runConversationsCommand(core, options, write, writeErr);
-    detach();
-    core.stop();
-    return code;
+    try {
+      const code = await runConversationsCommand(core, options, io);
+      return code;
+    } catch (err) {
+      io.stderr(`— ${sanitize((err as Error).message, { maxLength: 512 })}\n`);
+      return 1;
+    } finally {
+      detach();
+      core.stop();
+    }
   }
 
   // Read piped stdin only once we know we are attaching and were not given a message. Doing it
   // at startup blocked forever whenever stdin was a non-TTY that never closes — which is every
   // subcommand run from a supervisor, and is how `conversations list` hung.
-  const oneShotMessage = options.message ?? (await readPipedMessage());
-  const oneShot = oneShotMessage !== undefined;
+  const oneShotMessage = options.message ?? (await io.readPipedMessage());
 
   const runtime = core.getRuntime();
-  if (oneShot) {
-    const code = await runOneShot(core, session, oneShotMessage, options.timeoutSeconds);
+  if (oneShotMessage !== undefined) {
+    // In `--json` mode the send must NOT go through the session: its local echo (`you › …`) is
+    // human text on the stdout that is supposed to be nothing but NDJSON, so one line of every
+    // one-shot failed to parse.
+    const send = (): InputOutcome => {
+      if (!options.json) return session.handleInput(oneShotMessage);
+      try {
+        const handle = core.send(oneShotMessage);
+        io.stdout(ndjson({ kind: "sent", requestId: handle.requestId, text: oneShotMessage }));
+        return "sent";
+      } catch (err) {
+        io.stderr(ndjson({ kind: "error", message: (err as Error).message }));
+        return "failed";
+      }
+    };
+    const code = await runOneShot(core, send, io, options.timeoutSeconds);
     session.finish();
     detach();
     core.stop();
@@ -273,46 +351,128 @@ async function main(): Promise<number> {
 
   // Pointer-derived, and the pointer decides which AGENT this attaches to — a swapped pointer
   // silently retargets the session, so show it and do not trust its contents.
-  writeErr(
+  io.stderr(
     `— attached to ${sanitize(runtime.agent_id, { maxLength: 120 })} · conversation ${sanitize(runtime.conversation_id, { maxLength: 120 })}
 — type a message and press Enter; /exit to leave
 `,
   );
 
-  // Line-editing mode is a TTY question, not a colour question. Tying it to `color` meant that
-  // NO_COLOR silently turned raw mode OFF, which is what lets pasted escape sequences reach the
-  // echo path verbatim (render.renderLocalInput now sanitizes, but the coupling was still wrong).
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    terminal: Boolean(process.stdout.isTTY),
-  });
-  const done = new Promise<void>((resolve) => {
-    rl.on("line", (line) => {
-      const outcome = session.handleInput(line);
-      if (outcome === "exit") rl.close();
-      // A message the client could not deliver is a failure the caller must be able to see.
-      if (outcome === "failed") exitCode = 1;
-    });
-    rl.on("close", () => resolve());
+  await io.interactive((line) => {
+    const outcome = session.handleInput(line);
+    // A message the client could not deliver is a failure the caller must be able to see.
+    if (outcome === "failed") exitCode = 1;
+    return outcome;
   });
 
-  // Ctrl-C leaves the client only: the conversation and any running turn continue server-side.
-  process.on("SIGINT", () => rl.close());
-
-  await done;
   session.finish();
   detach();
   core.stop();
-  writeErr("— detached (the conversation continues on the server)\n");
+  io.stderr("— detached (the conversation continues on the server)\n");
   return exitCode;
 }
 
-main().then(
-  (code) => process.exit(code),
-  (err) => {
-    const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
-    process.stderr.write(`fatal: ${sanitize(detail, { maxLength: 4096 })}\n`);
-    process.exit(1);
-  },
-);
+// ── the process-facing shell ────────────────────────────────────────────────
+
+/**
+ * A writer that survives its consumer going away.
+ *
+ * `letta-continuity --json | head -3` killed the client with an unhandled `EPIPE`. The
+ * listener-isolation fix does not cover it and could not: a failed write to a pipe is reported
+ * ASYNCHRONOUSLY, as an `error` event on the socket, long after the `write()` call returned — so
+ * no try/catch around the write can see it, and Node's default policy turns it into an exit with
+ * a stack trace on stderr. Offline tests cannot see it either, because they capture into arrays
+ * and an array never closes. It took a real pipe to find.
+ *
+ * A downstream `head` or `less` closing is the consumer saying "enough", not a failure, so the
+ * response is to stop writing and leave quietly.
+ */
+function guardedWriter(stream: NodeJS.WriteStream, onGone: () => void): (text: string) => void {
+  let gone = false;
+  stream.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code !== "EPIPE") throw err;
+    gone = true;
+    onGone();
+  });
+  return (text: string) => {
+    if (gone) return;
+    stream.write(text);
+  };
+}
+
+function nodeIO(): TerminalIO {
+  return {
+    // Losing STDOUT ends the session: the transcript had one reader and it has gone. Exiting
+    // outright is safe here in a way it is not on the normal path — there is nothing left to
+    // flush, because the stream that would have been flushed is the one that closed.
+    stdout: guardedWriter(process.stdout, () => process.exit(0)),
+    // Losing STDERR is survivable: the conversation is on stdout, so keep going quietly.
+    stderr: guardedWriter(process.stderr, () => {}),
+    isStdoutTTY: Boolean(process.stdout.isTTY),
+    /**
+     * Whole-stream, not line-by-line: `echo "..." | letta-continuity` is one message, and the
+     * alternative (a turn per line) would fire N turns at a conversation the caller cannot see
+     * the replies from.
+     */
+    readPipedMessage: async () => {
+      if (process.stdin.isTTY) return undefined;
+      const chunks: Buffer[] = [];
+      for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
+      const text = Buffer.concat(chunks).toString("utf-8").trim();
+      return text === "" ? undefined : text;
+    },
+    interactive: (onLine) =>
+      new Promise<void>((resolve) => {
+        // Line-editing mode is a TTY question, not a colour question. Tying it to `color` meant
+        // NO_COLOR silently turned raw mode OFF, which is what lets pasted escape sequences reach
+        // the echo path verbatim.
+        const rl = createInterface({
+          input: process.stdin,
+          output: process.stdout,
+          terminal: Boolean(process.stdout.isTTY),
+        });
+        rl.on("line", (line) => {
+          if (onLine(line) === "exit") rl.close();
+        });
+        rl.on("close", () => resolve());
+        // Ctrl-C leaves the client only: the conversation and any running turn continue.
+        process.on("SIGINT", () => rl.close());
+      }),
+  };
+}
+
+/**
+ * True when this module was started as the program, false when a test imported it.
+ *
+ * Without this, `main.ts` could not be imported at all — so the one-shot wait, the timeout, the
+ * exit codes and the NDJSON stream had no tests, and three of this file's defects were found by
+ * reading rather than by running.
+ */
+function isEntrypoint(): boolean {
+  const invoked = process.argv[1];
+  if (!invoked) return false;
+  try {
+    return fileURLToPath(import.meta.url) === invoked;
+  } catch {
+    return false;
+  }
+}
+
+if (isEntrypoint()) {
+  run(process.argv.slice(2), process.env, nodeIO()).then(
+    (code) => {
+      // `process.exitCode`, NOT `process.exit()`. Exiting outright discards whatever is still
+      // buffered for a PIPE: measured at 122 of 20,000 lines delivered, and at exit 0, so a
+      // consumer had no way to tell a truncated stream from a complete one. Letting the process
+      // end on its own flushes first. The bail-out is only for a handle that leaks — a hung
+      // client is a worse failure than a truncated one, but neither should be the normal path.
+      process.exitCode = code;
+      const bail = setTimeout(() => process.exit(code), 2000);
+      bail.unref();
+    },
+    (err) => {
+      const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+      process.stderr.write(`fatal: ${sanitize(detail, { maxLength: 4096 })}\n`);
+      process.exitCode = 1;
+    },
+  );
+}

@@ -101,6 +101,14 @@ describe("agent-native surface", () => {
     expect(() => parseArgs(["--timeout", "-5"], {})).toThrow(/positive number/);
   });
 
+  it("rejects a timeout that would OVERFLOW the timer rather than firing in 4ms", () => {
+    // setTimeout holds a signed 32-bit millisecond count. Past it the delay wraps and the timer
+    // fires almost immediately, so `--timeout 9999999999` — which reads as "no real limit" —
+    // produced a one-shot that gave up after ~4ms and exited 1, blaming the server.
+    expect(() => parseArgs(["--timeout", "9999999999"], {})).toThrow(/overflows the timer/);
+    expect(() => parseArgs(["--timeout", "2147483"], {})).not.toThrow();
+  });
+
   it("requires --agent and --conversation together", () => {
     expect(() => parseArgs(["--agent", "agent-x"], {})).toThrow(/together/);
     expect(() => parseArgs(["--conversation", "conv-x"], {})).toThrow(/together/);

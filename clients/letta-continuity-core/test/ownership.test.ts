@@ -50,17 +50,51 @@ describe("RunOwnership", () => {
     expect(o.attribute("local-run-251")).toBe("mine");
   });
 
-  it("THE MIRROR BUG: we must not answer a foreign approval while our own turn runs", () => {
+  /**
+   * PREMISE CORRECTED, deliberately. This used to feed a second run while ours was in flight and
+   * call it "a peer's run", asserting `unknown`. The server serializes turns per
+   * {agent, conversation} — the assumption this whole module rests on — so a peer's turn CANNOT
+   * start while ours is running; it is queued. A new run there is a continuation of our own turn,
+   * which is what the live tool-using capture shows. The property worth keeping from the original
+   * is the one about the counter: a turn ending must not release the wrong claim.
+   */
+  it("THE MIRROR BUG: a peer's turn_finished must not release our run, and ours stays ours", () => {
     const o = new RunOwnership();
     o.beginSend("REQ-A", "CM-A");
     o.onInputAccepted("REQ-A", true, "started");
     o.onRunObserved("local-run-251");
-    o.onRunObserved("local-run-900"); // a peer's run, unclaimed (no armed claim left)
 
-    // A counter would still be >0 here and would mislabel the peer's turn as ours.
-    // Not "foreign": we had a run in flight when 900 appeared, so it is merely unattributable.
-    expect(o.attribute("local-run-900")).toBe("unknown");
+    // A run the peer finished BEFORE ours started (we simply never saw it begin).
+    o.onTurnFinished("local-run-900");
+
     expect(o.attribute("local-run-251")).toBe("mine");
+    expect(o.owns("local-run-251")).toBe(true);
+  });
+
+  it("once the runtime reports itself IDLE, a new run is a peer's and not a continuation", () => {
+    // The bound on continuation inheritance, and it comes from the wire rather than from a
+    // timeout: WAITING_ON_INPUT is the server stating that no turn is executing.
+    const o = new RunOwnership();
+    o.beginSend("REQ-A", "CM-A", "tab-A");
+    o.onInputAccepted("REQ-A", true, "started");
+    o.onRunObserved("local-run-251");
+    o.onIdle();
+
+    o.onRunObserved("local-run-900");
+    expect(o.attribute("local-run-900")).toBe("foreign");
+    expect(o.originOf("local-run-900")).toBeUndefined();
+  });
+
+  it("a run parked on an approval survives the idle sweep", () => {
+    const o = new RunOwnership();
+    o.beginSend("REQ-A", "CM-A");
+    o.onInputAccepted("REQ-A", true, "started");
+    o.onRunObserved("local-run-700");
+    o.onTurnFinished("local-run-700", "requires_approval");
+
+    o.onIdle(); // the runtime is idle because it is WAITING for the approval
+
+    expect(o.owns("local-run-700")).toBe(true);
   });
 
   it("a `queued` ack waits for OUR dequeue before claiming a run", () => {
@@ -128,6 +162,10 @@ describe("RunOwnership", () => {
       o.onInputAccepted("REQ-A", true, "queued");
       o.onQueueRemovals([{ client_message_id: "CM-A", disposition: "dequeued" }]);
       o.onRunObserved("local-run-1");
+      // Our turn completes and the runtime goes idle, so the next run genuinely is a peer's —
+      // without this the sequence describes a state the serializing server cannot produce.
+      o.onTurnFinished("local-run-1");
+      o.onIdle();
 
       const anomalies: string[] = [];
       o.onQueueRemovals([{ client_message_id: "CM-A", disposition: "dequeued" }], (m) =>
@@ -315,6 +353,198 @@ describe("RunOwnership", () => {
     o.onInputAccepted("REQ-A", true, "submitting");
     o.onRunObserved("local-run-600");
     expect(o.owns("local-run-600")).toBe(true);
+  });
+
+  /**
+   * Properties the mutation table proved were unasserted. Each of these fails against a
+   * one-component revert of the fix it covers — that is the whole point of writing them from the
+   * property rather than from the code.
+   */
+  describe("properties the suite could not previously disprove", () => {
+    it("claims bind to runs in SUBMISSION order, not in reverse", () => {
+      // Reversing the scan (findIndex → findLastIndex) left the suite green, because every test
+      // that had two claims outstanding could not tell which one bound: they carried no identity.
+      // The origin is that identity, and on a bridge binding them backwards hands one browser
+      // another browser's reply.
+      const o = new RunOwnership();
+      o.beginSend("REQ-1", "CM-1", "tab-A");
+      o.onInputAccepted("REQ-1", true, "started");
+      o.beginSend("REQ-2", "CM-2", "tab-B");
+      o.onInputAccepted("REQ-2", true, "started");
+
+      o.onRunObserved("local-run-1");
+      o.onRunObserved("local-run-2");
+
+      expect(o.originOf("local-run-1")).toBe("tab-A");
+      expect(o.originOf("local-run-2")).toBe("tab-B");
+    });
+
+    it("an unrecognised queue disposition HOLDS the claim rather than destroying it", () => {
+      // `else = cancelled` was the wrong default: a renamed or newly-added disposition would
+      // silently destroy a live claim, after which our own turns render under the peer label.
+      const o = new RunOwnership();
+      o.beginSend("REQ-A", "CM-A");
+      o.onInputAccepted("REQ-A", true, "queued");
+
+      const anomalies: string[] = [];
+      o.onQueueRemovals([{ client_message_id: "CM-A", disposition: "deferred" }], (m) =>
+        anomalies.push(m),
+      );
+
+      expect(o.snapshot().pending).toBe(1); // held — a drop would read 0
+      expect(o.snapshot().degraded).toBe(true);
+      expect(anomalies).toHaveLength(1);
+
+      // And it is still resolvable: the claim was parked, not consumed.
+      o.onQueueRemovals([{ client_message_id: "CM-A", disposition: "dequeued" }]);
+      o.onRunObserved("local-run-1");
+      expect(o.owns("local-run-1")).toBe(true);
+    });
+
+    it("ownsAnyMessage answers for the ASKING origin, not for the core as a whole", () => {
+      // One core, N browsers: a queue notice belongs to the browser whose message is in it. An
+      // implementation that ignores the argument tells every browser it is queued.
+      const o = new RunOwnership();
+      o.beginSend("REQ-A", "CM-A", "tab-A");
+
+      expect(o.ownsAnyMessage(["CM-A"], "tab-A")).toBe(true);
+      expect(o.ownsAnyMessage(["CM-A"], "tab-B")).toBe(false);
+      expect(o.ownsAnyMessage(["CM-A"])).toBe(true); // no origin asked: any of ours counts
+    });
+
+    it("a claim demoted by a reconnect is still resolvable by its own dequeue notice", () => {
+      // `lost` was terminal: the demoted claim could never bind and never drain, so `pending`
+      // stayed 1 for the process lifetime and hasOutstanding() pinned the positivelyForeign
+      // branch off. A dequeue naming our own client_message_id is DIRECT evidence, not the
+      // positional inference the reconnect invalidated, so it may re-arm.
+      const o = new RunOwnership();
+      o.beginSend("REQ-A", "CM-A");
+      o.onInputAccepted("REQ-A", true, "queued");
+      o.onQueueRemovals([{ client_message_id: "CM-A", disposition: "dequeued" }]);
+      o.onReconnect(); // armed → lost
+
+      const anomalies: string[] = [];
+      o.onQueueRemovals([{ client_message_id: "CM-A", disposition: "dequeued" }], (m) =>
+        anomalies.push(m),
+      );
+      o.onRunObserved("local-run-after-gap");
+
+      expect(o.owns("local-run-after-gap")).toBe(true);
+      expect(anomalies).toEqual([]);
+      expect(o.snapshot().pending).toBe(0);
+    });
+
+    it("a cancel resolves a claim the reconnect demoted, instead of stranding it", () => {
+      const o = new RunOwnership();
+      o.beginSend("REQ-A", "CM-A");
+      o.onInputAccepted("REQ-A", true, "queued");
+      o.onQueueRemovals([{ client_message_id: "CM-A", disposition: "dequeued" }]);
+      o.onReconnect();
+
+      o.onQueueRemovals([{ client_message_id: "CM-A", disposition: "cancelled" }]);
+      expect(o.hasOutstanding()).toBe(false);
+    });
+
+    it("a stranded claim is reaped even while PEER traffic keeps the stream busy", () => {
+      // The reaper measured from a SINGLE global `lastActivity`, which every peer frame bumped.
+      // On a shared conversation — M1's entire target state — that is the normal case, so the
+      // reaper could not fire on the only deployment where a stranded claim actually hurts.
+      let now = 1_000;
+      const o = new RunOwnership({ clock: () => now });
+      o.beginSend("REQ-A", "CM-A"); // its ack died in a socket drop
+
+      for (let i = 0; i < 12; i += 1) {
+        now += 10_000; // a peer turn every 10s, well inside the 30s idle budget
+        o.onRunObserved(`peer-run-${i}`);
+        o.onTurnFinished(`peer-run-${i}`);
+      }
+
+      expect(o.reapIdle(30_000, now)).toEqual({ claims: 1, runs: 0 });
+      expect(o.hasOutstanding()).toBe(false);
+    });
+
+    it("an owned run that IS still streaming survives the same sweep", () => {
+      // The other half of the property: per-item ageing must not reap live work.
+      let now = 1_000;
+      const o = new RunOwnership({ clock: () => now });
+      o.beginSend("REQ-A", "CM-A");
+      o.onInputAccepted("REQ-A", true, "started");
+      o.onRunObserved("local-run-800");
+
+      for (let i = 0; i < 12; i += 1) {
+        now += 10_000;
+        o.onRunObserved("local-run-800"); // still streaming
+      }
+
+      expect(o.reapIdle(30_000, now)).toEqual({ claims: 0, runs: 0 });
+      expect(o.owns("local-run-800")).toBe(true);
+    });
+  });
+
+  /**
+   * A multi-step agentic reply spans SEVERAL runs and the run our send starts is never closed —
+   * captured live on 0.30.20. The server serializes turns per {agent, conversation}, so a new run
+   * appearing while one of ours is still active is a CONTINUATION of our turn, not a peer's.
+   * That inference is exactly as strong as "an armed claim takes the next new run", which this
+   * module already depends on.
+   */
+  describe("continuation runs (the tool-using shape)", () => {
+    it("a run that starts while ours is still active inherits our attribution and origin", () => {
+      const o = new RunOwnership();
+      o.beginSend("REQ-A", "CM-A", "tab-A");
+      o.onInputAccepted("REQ-A", true, "started");
+      o.onRunObserved("local-run-320"); // ours
+
+      o.onRunObserved("local-run-321"); // the continuation carrying the reply
+
+      expect(o.attribute("local-run-321")).toBe("mine");
+      expect(o.originOf("local-run-321")).toBe("tab-A");
+    });
+
+    it("finishing the continuation releases the orphaned parent too", () => {
+      // 320 never emits turn_finished, on this turn or any later one. Without releasing it here
+      // the only thing that ever clears it is the idle reaper, 15 minutes later — during which
+      // hasOutstanding() stays true and every peer turn attributes as `unknown`.
+      const o = new RunOwnership();
+      o.beginSend("REQ-A", "CM-A", "tab-A");
+      o.onInputAccepted("REQ-A", true, "started");
+      o.onRunObserved("local-run-320");
+      o.onRunObserved("local-run-321");
+
+      o.onTurnFinished("local-run-321", "end_turn");
+
+      expect(o.hasOutstanding()).toBe(false);
+      expect(o.snapshot().owned).toEqual([]);
+    });
+
+    it("a run seen while we own NOTHING is still positively foreign", () => {
+      // The inheritance must not swallow the foreign case: it is conditioned on our own run
+      // being active, which is what the server's per-conversation serialization guarantees.
+      const o = new RunOwnership();
+      o.beginSend("REQ-A", "CM-A");
+      o.onInputAccepted("REQ-A", true, "started");
+      o.onRunObserved("local-run-1");
+      o.onTurnFinished("local-run-1");
+
+      o.onRunObserved("local-run-2");
+      expect(o.attribute("local-run-2")).toBe("foreign");
+    });
+
+    it("inheritance is refused when it would be a guess between two of our own runs", () => {
+      // Two owned runs means we cannot tell which one the continuation belongs to, and on a
+      // bridge a wrong answer routes one consumer's reply to another. Say unknown instead.
+      const o = new RunOwnership();
+      o.beginSend("REQ-1", "CM-1", "tab-A");
+      o.onInputAccepted("REQ-1", true, "started");
+      o.beginSend("REQ-2", "CM-2", "tab-B");
+      o.onInputAccepted("REQ-2", true, "started");
+      o.onRunObserved("run-1");
+      o.onRunObserved("run-2");
+
+      o.onRunObserved("run-3");
+      expect(o.attribute("run-3")).toBe("unknown");
+      expect(o.originOf("run-3")).toBeUndefined();
+    });
   });
 
   it("an UNKNOWN future disposition PARKS rather than arms", () => {

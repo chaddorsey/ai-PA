@@ -347,6 +347,137 @@ describe("TerminalSession", () => {
     expect(tracked.renderer).toBeLessThanOrEqual(MAX_TRACKED_ORIGINS);
   });
 
+  describe("the transcript sink carries only the transcript", () => {
+    // An automation reading the last `agent ›` line, or capturing the conversation to a file, must
+    // not have client chatter interleaved into it — and `2>/dev/null` must actually suppress that
+    // chatter. With one shared sink there was nothing to assert and nothing to suppress.
+    function split(): { out: string[]; err: string[]; core: StubCore; session: TerminalSession } {
+      const out: string[] = [];
+      const err: string[] = [];
+      const core = new StubCore();
+      const session = new TerminalSession(core, {
+        write: (t) => out.push(t),
+        writeErr: (t) => err.push(t),
+        color: false,
+      });
+      session.attach();
+      return { out, err, core, session };
+    }
+
+    it("connection-state changes go to stderr, not into the transcript", () => {
+      const { out, err, core } = split();
+      core.setState("reconnecting");
+      core.setState("connected");
+      expect(err.join("")).toContain("reconnecting…");
+      expect(out.join("")).toBe("");
+    });
+
+    it("errors go to stderr, not into the transcript", () => {
+      const { out, err, core } = split();
+      core.fail("something went wrong");
+      expect(err.join("")).toContain("something went wrong");
+      expect(out.join("")).toBe("");
+    });
+
+    it("approval notices go to stderr, not into the transcript", () => {
+      const { out, err, core } = split();
+      core.approval("Bash");
+      expect(err.join("")).toContain("tool approval requested");
+      expect(out.join("")).toBe("");
+    });
+
+    it("an undelivered message is reported on stderr, not echoed into the transcript", () => {
+      const { out, err, core, session } = split();
+      core.sendImpl = () => {
+        throw new Error("cannot send `input`: socket not open");
+      };
+      expect(session.handleInput("during a reconnect")).toBe("failed");
+      expect(err.join("")).toContain("not sent");
+      expect(out.join("")).toBe("");
+    });
+
+    it("subagent activity is chatter, not conversation", () => {
+      // Found LIVE, after the offline suite went green: a piped one-shot's stdout read
+      //   you › …
+      //   — subagents idle
+      //   agent › OK
+      // The tests could not see it because they gave the session ONE sink, so `writeErr` defaulted
+      // back to `write` and every routing assertion was vacuous.
+      const { out, err, core } = split();
+      core.subagents(2);
+      core.subagents(0);
+      expect(err.join("")).toContain("subagents active: 2");
+      expect(err.join("")).toContain("subagents idle");
+      expect(out.join("")).toBe("");
+    });
+
+    it("a queue indicator and an abnormal turn ending are chatter too", () => {
+      const { out, err, core, session } = split();
+      session.handleInput("me next please");
+      out.length = 0; // drop the echo; this test is about what follows it
+      core.queueDepth(1);
+      core.emit({ type: "turn_start", runId: "r" });
+      core.emit({ type: "turn_finished", runId: "r", stopReason: "error" });
+      expect(err.join("")).toContain("queued behind 1 turn");
+      expect(err.join("")).toContain("turn ended: error");
+      expect(out.join("")).toBe("");
+    });
+
+    it("a peer's turn announcement is chatter; the peer's WORDS are conversation", () => {
+      const { out, err, core, session } = split();
+      core.turn("run-web", ["from ", "the web"], { own: false });
+      session.finish();
+      expect(err.join("")).toContain("a turn from another surface is starting");
+      expect(out.join("")).toContain("peer › from the web");
+      expect(out.join("")).not.toContain("another surface");
+    });
+
+    it("a notice arriving mid-reply closes the transcript's line ON THE TRANSCRIPT", () => {
+      // The newline that terminates an open `agent › …` line belongs to the stream that line is
+      // on. Sending it to stderr would leave the transcript's last line unterminated forever.
+      const { out, err, core } = split();
+      core.ownedRuns.add("r");
+      core.emit({ type: "turn_start", runId: "r" });
+      core.emit({
+        type: "delta",
+        runId: "r",
+        messageId: "m",
+        messageType: "assistant_message",
+        text: "partial",
+      });
+      core.setState("reconnecting");
+
+      expect(out.join("")).toBe("agent › partial\n");
+      expect(err.join("")).toContain("reconnecting…");
+    });
+
+    it("the reply and the local echo DO go to the transcript", () => {
+      // The other half: routing everything to stderr would satisfy the four assertions above.
+      const { out, err, core, session } = split();
+      session.handleInput("what is on today?");
+      core.turn("run-1", ["Two meetings."], { own: true });
+      expect(out.join("")).toContain("you › what is on today?");
+      expect(out.join("")).toContain("agent › Two meetings.");
+      expect(err.join("")).toBe("");
+    });
+  });
+
+  it("a delta for a run we never saw START is hedged, not claimed as our own", () => {
+    // No turn_start means no origin was ever decided — a turn already in flight when we attached,
+    // or one whose opening frames were lost across a reconnect. Treating a missing map entry as
+    // `self` printed another surface's turn under our own label.
+    core.emit({
+      type: "delta",
+      runId: "run-already-running",
+      messageId: "m1",
+      messageType: "assistant_message",
+      text: "mid-flight",
+    });
+    session.finish();
+    expect(text()).toContain("agent? › mid-flight");
+    expect(text()).not.toContain("agent › mid-flight");
+  });
+
   it("detaching stops all rendering", () => {
     const detach = session.attach();
     detach();

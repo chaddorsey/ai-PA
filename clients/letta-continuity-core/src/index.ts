@@ -27,8 +27,10 @@ import {
   type ConversationCreateResponseFrame,
   type ConversationListResponseFrame,
   type ConversationSummary,
+  LoopStatuses,
   type MessagesListResponseFrame,
   Outbound,
+  ProtocolError,
   type Runtime,
   type ServerFrame,
   type VersionPolicy,
@@ -41,6 +43,7 @@ import {
   frameRunId,
   isControlRequest,
   isInputAccepted,
+  isLoopStatus,
   isQueue,
   isStreamDelta,
   isTurnFinished,
@@ -50,7 +53,7 @@ import {
   queuedClientMessageIds,
 } from "./protocol.js";
 import { type RenderListener, StreamAssembler } from "./stream.js";
-import { WsConnection } from "./ws.js";
+import { WsConnection, type WsConnectionOptions } from "./ws.js";
 
 const WS_URL = "ws://127.0.0.1:4577/ws";
 
@@ -73,6 +76,15 @@ const MAX_ANSWERED_APPROVALS = 512;
 const REAP_INTERVAL_MS = 60_000;
 const REAP_IDLE_MS = 900_000;
 
+/** Trim a Set to `max`, oldest first. Sets preserve insertion order, so this is FIFO. */
+function evictOldest(set: Set<string>, max: number): void {
+  while (set.size > max) {
+    const oldest = set.values().next().value;
+    if (oldest === undefined) break;
+    set.delete(oldest);
+  }
+}
+
 /**
  * The reason attached to every M1 auto-deny. The server requires a string message on a deny, and
  * this one is written for the human who finds it in a transcript, not for a log parser.
@@ -89,12 +101,23 @@ const APPROVAL_DENY_MESSAGE =
  * 0, and a library consumer could only tell dead from closed-on-purpose by string-matching.
  */
 export class ContinuityFatalError extends Error {
+  /**
+   * Which send this is about, when the cause is one. A bridge fanning out to N consumers has to
+   * fail the one that asked — telling all of them, or none, are both wrong — and neither the
+   * message text nor the reason code identifies a submitter.
+   */
+  readonly requestId?: string;
+  readonly origin?: string;
+
   constructor(
     message: string,
     readonly reason: "reconnect-exhausted" | "input-rejected",
+    context: { requestId?: string; origin?: string } = {},
   ) {
     super(message);
     this.name = "ContinuityFatalError";
+    this.requestId = context.requestId;
+    this.origin = context.origin;
   }
 }
 
@@ -129,6 +152,12 @@ export interface ContinuityCoreConfig {
   versionPolicy?: VersionPolicy;
   maxReconnectAttempts?: number;
   reconnectDelayMs?: number;
+  /**
+   * How long a connection must survive before it restores the reconnect budget. Defaults to the
+   * longest backoff delay. See connection.ts — a server that accepts and then dies must not be
+   * able to rearm the bound that exists for exactly that shape.
+   */
+  connectionStabilityMs?: number;
   openTimeoutMs?: number;
   helloTimeoutMs?: number;
   rpcTimeoutMs?: number;
@@ -149,6 +178,19 @@ export interface ContinuityCoreConfig {
    * conversation history. See trust.ts.
    */
   allowRemote?: boolean;
+  /**
+   * Transport factory. Defaults to `new WsConnection(options)`.
+   *
+   * Two reasons it is a seam rather than a hard-wired `new`. M1 Unit 6's browser client cannot use
+   * the `ws` package and will need to supply its own implementation of the same surface. And a
+   * write fault — `send` throwing because the socket is no longer OPEN — is the one condition a
+   * real loopback socket cannot be made to produce on cue: the frame that triggers the send and
+   * the send itself happen in the same tick, so no server-side action can separate them. The
+   * approval path's send-then-record ordering guards exactly that condition, and without a way to
+   * inject it the ordering is unassertable — which is how the pre-fix "nobody answers" hang came
+   * back with a green suite.
+   */
+  createConnection?: (options: WsConnectionOptions) => WsConnection;
 }
 
 /**
@@ -216,6 +258,9 @@ export class ContinuityCore {
         ? { baseDelayMs: config.reconnectDelayMs, maxDelayMs: config.reconnectDelayMs }
         : {}),
       ...(config.jitter !== undefined ? { jitter: config.jitter } : {}),
+      ...(config.connectionStabilityMs !== undefined
+        ? { stabilityMs: config.connectionStabilityMs }
+        : {}),
     });
   }
 
@@ -257,6 +302,17 @@ export class ContinuityCore {
   /** Resolve the pointer, connect, and begin streaming. */
   async start(): Promise<void> {
     this.stopped = false;
+    // Everything below is PER-CONNECTION and must not survive into a new session.
+    //
+    // `event_seq` restarts at 1 on every connection, and the assembler drops anything at or below
+    // its watermark. Resetting it only in reconnect() meant a core that was stopped and started
+    // again carried the previous session's high-water mark into a stream that begins at 1 — so it
+    // dropped every frame of the new session while reporting itself connected and accepting
+    // input. A total blackout, and a silent one.
+    this.assembler.reset();
+    this.liveDedup = null;
+    this.answeredApprovals = new Set();
+    this.sentApprovalResponses = new Set();
     this.pointer = await this.resolvePointer();
     this.runtime = {
       agent_id: this.pointer.agentId,
@@ -340,7 +396,17 @@ export class ContinuityCore {
       (rid) => buildConversationList(rid, agentId),
       Outbound.conversationList,
     );
-    return resp.conversations;
+    // The validator checks that `conversations` is an ARRAY; it says nothing about the entries.
+    // Returning them under a `ConversationSummary[]` annotation is a claim the wire has not made,
+    // and the consumer prints `c.id` — so a renamed field reached the user as `undefined` rather
+    // than as the drift signal this layer exists to raise.
+    return resp.conversations.filter((c): c is ConversationSummary => {
+      const ok = typeof (c as { id?: unknown })?.id === "string";
+      if (!ok) {
+        this.config.onWarn?.("conversation_list returned an entry with no string `id` — skipped");
+      }
+      return ok;
+    });
   }
 
   /** Create a conversation for the pointer's agent (rail primitive; also the Unit 8 seed op). */
@@ -351,7 +417,14 @@ export class ContinuityCore {
       (rid) => buildConversationCreate(rid, agentId, title),
       Outbound.conversationCreate,
     );
-    return resp.conversation ? { id: resp.conversation.id } : undefined;
+    const id = (resp.conversation as { id?: unknown } | undefined)?.id;
+    if (typeof id !== "string" || id === "") {
+      // Unit 8's seed step writes this id into the pointer every surface then attaches to. A cast
+      // that let `undefined` through would have produced a pointer nothing can open, reported as
+      // success.
+      throw new ProtocolError("conversation_create returned no usable `conversation.id`");
+    }
+    return { id };
   }
 
   /** Close the connection and cancel any pending reconnect. Idempotent. */
@@ -383,7 +456,9 @@ export class ContinuityCore {
    */
   private newConnection(): WsConnection {
     if (!this.runtime) throw new Error("runtime not resolved");
-    const ws = new WsConnection({
+    const create =
+      this.config.createConnection ?? ((o: WsConnectionOptions) => new WsConnection(o));
+    const ws = create({
       url: this.config.url ?? WS_URL,
       runtime: this.runtime,
       pinnedVersion: this.config.pinnedVersion,
@@ -398,6 +473,15 @@ export class ContinuityCore {
     });
     ws.onFrame((f) => this.routeFrame(f));
     ws.onError((e) => this.emitError(e));
+    // `close` alone carries its connection. A politely-closed socket can emit it long after it
+    // was replaced (the ws package waits for the handshake, up to 30s), and the event says
+    // nothing about the connection that is CURRENT — which is what the identity-free version
+    // consulted, so it saw a healthy connection, decided it had dropped, and scheduled a
+    // reconnect that replaced it WITHOUT closing it.
+    //
+    // Frames and errors need no such guard: close() detaches those listeners, so a connection we
+    // have finished with stops delivering to anyone. Two guards for one hazard means neither can
+    // be held honest by a test — reverting either leaves the other covering for it.
     ws.onClose(() => this.handleClose(ws));
     return ws;
   }
@@ -439,6 +523,14 @@ export class ContinuityCore {
       // must not depend on every consumer remembering to.
       ws.close();
       this.ws = null;
+      // A socket that dies DURING connect() runs handleClose before connect() rejects, so a
+      // bounded reconnect is already queued by the time we get here. Left alone, start() reports
+      // failure to its caller while the core quietly keeps dialling — a session nobody holds a
+      // handle to, reconnecting on its own.
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
       this.connectionState.disconnected();
       throw err;
     }
@@ -462,12 +554,16 @@ export class ContinuityCore {
         }
         return;
       }
+      // Read the origin BEFORE applying the ack: a rejection drops the claim, and with it the
+      // only record of who submitted the turn being rejected.
+      const origin = this.ownership.originOfRequest(frame.request_id);
       this.ownership.onInputAccepted(frame.request_id, frame.accepted, frame.disposition);
       if (!frame.accepted) {
         this.emitFatal(
           new ContinuityFatalError(
             `input rejected by the server: ${frame.error ?? "unknown"}`,
             "input-rejected",
+            { requestId: frame.request_id, origin },
           ),
         );
       }
@@ -503,6 +599,7 @@ export class ContinuityCore {
         // a mislabelled turn.
         try {
           this.sentApprovalResponses.add(responseId);
+          evictOldest(this.sentApprovalResponses, MAX_ANSWERED_APPROVALS);
           this.ws.send(buildApprovalDeny(responseId, this.runtime, id, APPROVAL_DENY_MESSAGE));
         } catch (err) {
           this.sentApprovalResponses.delete(responseId);
@@ -511,11 +608,7 @@ export class ContinuityCore {
           return;
         }
         this.answeredApprovals.add(id);
-        while (this.answeredApprovals.size > MAX_ANSWERED_APPROVALS) {
-          const oldest = this.answeredApprovals.values().next().value;
-          if (oldest === undefined) break;
-          this.answeredApprovals.delete(oldest);
-        }
+        evictOldest(this.answeredApprovals, MAX_ANSWERED_APPROVALS);
         this.emitApproval(frame, "denied");
       }
       return;
@@ -537,6 +630,12 @@ export class ContinuityCore {
     if (runId !== undefined) this.ownership.onRunObserved(runId);
     if (isTurnFinished(frame) && typeof frame.run_id === "string") {
       this.ownership.onTurnFinished(frame.run_id, frame.stop_reason);
+    }
+    // The runtime stating that nothing is executing. It bounds continuation inheritance and
+    // releases the orphaned first run of a tool-using turn, which never emits a turn_finished of
+    // its own — see RunOwnership.onIdle.
+    if (isLoopStatus(frame) && frame.loop_status.status === LoopStatuses.waitingOnInput) {
+      this.ownership.onIdle();
     }
     this.assembler.ingest(frame);
   }
@@ -579,27 +678,42 @@ export class ContinuityCore {
 
   private async reconnect(): Promise<void> {
     if (this.stopped || !this.runtime) return;
+    // Held outside the try so the catch can close THIS attempt rather than `this.ws`, which by
+    // then may already be a newer connection that a concurrent attempt installed — closing it
+    // would take down the recovery in progress and start another.
+    let attempt: WsConnection | null = null;
     try {
       const ws = this.newConnection();
+      attempt = ws;
       // New connection ⇒ event_seq restarts; forget the per-connection ordering watermark.
       this.assembler.reset();
       // The gap may have hidden an ack, a dequeue, or a turn_finished — so run attribution is no
       // longer trustworthy and armed claims are demoted. Approvals are unaffected: they do not
       // consult attribution.
       this.ownership.onReconnect();
-      // Per-connection state: an answer we believe we sent may have died with the old socket, and
-      // an ack for it can no longer arrive. Both sets must not outlive the connection.
+      // An entry in `answeredApprovals` means "we put a deny on the wire", which is not the same
+      // as "the server received it": a socket that died between the two leaves the approval
+      // unanswered while this set claims otherwise, and the server's redelivery on the new
+      // connection would then be skipped. Nobody answers, and the turn parks on every surface.
+      // Since the server settles duplicates itself, re-answering after a seam is free.
       this.answeredApprovals = new Set();
-      this.sentApprovalResponses = new Set();
+      // `sentApprovalResponses` is deliberately NOT cleared here. Its entries are ids we minted,
+      // unique for the life of the process, so a stale one can never match a later ack — clearing
+      // it would only bound memory, and it is bounded where it is written instead. A line whose
+      // removal no test could ever detect is not a fix.
       // Drop the previous snapshot's watermark NOW, not when the next one arrives. Between
       // connect() and fetchSnapshot() resolving — up to rpcTimeoutMs — live frames were being
       // filtered against the PREVIOUS reconnect's id set. Harmless only while the live and
       // snapshot id namespaces stay disjoint, which is exactly what M1 Unit 7 will change.
       this.liveDedup = null;
-      // Tear down the outgoing connection explicitly; overwriting the field alone leaks it.
-      const previous = this.ws;
+      // The outgoing connection is not closed here. Every path that reaches a reconnect has
+      // already closed it — handleClose only fires for a socket that went away, and the catch
+      // below closes the attempt it failed on. A second `close()` here looked like belt and
+      // braces but could not be reached by any sequence, so no test could hold it honest; it was
+      // removed rather than kept as an unfalsifiable guard. What stops a closed connection
+      // talking to a consumer that has moved on is WsConnection.close() detaching its listeners,
+      // which IS reachable and IS asserted (test/ws.listeners.test.ts).
       this.ws = ws;
-      if (previous && previous !== ws) previous.close();
       await ws.connect();
       // Snapshot BEFORE resuming live so the message-id watermark bridges the seam.
       const snapshot = await this.fetchSnapshot(ws);
@@ -616,10 +730,10 @@ export class ContinuityCore {
       this.connectionState.connected();
     } catch (e) {
       this.emitError(e as Error);
-      // Close the failed socket so it can't leak or fire a second handleClose (marks it
+      // Close the failed attempt so it can't leak or fire a second handleClose (marks it
       // closedByUs → its later 'close' event is ignored), then schedule the next bounded
       // attempt directly (bypassing the closedByUs guard that handleClose would trip on).
-      this.ws?.close();
+      attempt?.close();
       this.scheduleReconnect();
     }
   }
@@ -681,4 +795,6 @@ export type { ContinuityPointer } from "./pointer.js";
 export { readPointer, writePointer, PointerError } from "./pointer.js";
 export { assertLoopbackUrl, TrustBoundaryError } from "./trust.js";
 export type { Attribution, OwnershipSnapshot } from "./ownership.js";
+export { WsConnection } from "./ws.js";
+export type { WsConnectionOptions } from "./ws.js";
 export * as protocol from "./protocol.js";

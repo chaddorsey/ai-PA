@@ -106,7 +106,19 @@ the App Server process, and duplicating them into a viewer would only widen the 
 | `src/session.ts` | The render loop, against a `SessionCore` seam a stub can implement. |
 | `src/sanitize.ts` | Makes server-derived text safe for a TTY. Pure, table-tested. |
 | `src/cli.ts` | Argument/env resolution, incl. loopback endpoint validation. |
-| `src/main.ts` | Wires the real `ContinuityCore` to readline and stdout. |
+| `src/main.ts` | The whole program as `run(argv, env, io)`, plus the process shell that supplies the real argv, streams and readline. |
+
+### stdout is the conversation; stderr is the client
+
+The transcript — the local echo and the agent's words — goes to **stdout**. Everything the client
+says about itself — connection state, approvals, an abnormal turn ending, subagent activity, a
+message it could not deliver — goes to **stderr**. So `letta-continuity > transcript.txt` captures
+a conversation and nothing else, and `2>/dev/null` genuinely silences the chatter.
+
+`--json` replaces the transcript with NDJSON on stdout, one event per line and nothing else on that
+stream. Control characters are ESCAPED rather than stripped: a machine consumer needs the real
+bytes, and `\uXXXX` gives it them without handing live escape sequences to whatever terminal the
+pipe ends at.
 
 ## Tests
 
@@ -119,10 +131,25 @@ attribution surviving the release of ownership at turn end, visible reconnect, q
 indicators, subagent activity, stream/line-break correctness, output sanitization, and endpoint
 validation.
 
-Two behaviours here are regressions from bugs the live run caught, and the stub reproduces the
+`test/main.test.ts` drives the whole program against a real core and a mock App Server: one-shot
+termination on a tool-using reply, the timeout, every exit code, `--json` purity, and the
+subcommands. Two of its cases spawn the CLI as a **process, through a real pipe**, because two
+defects were invisible to every in-process test by construction — an array-backed sink never
+closes, never fills and never reports a write error.
+
+Behaviours here that are regressions from bugs a live run caught, with the doubles reproducing the
 real server's shape so they stay caught:
 
 - every delta chunk carries a **distinct** `delta.id`, so lines are keyed on run + message type
   (keying on message id printed `agent › HE` / `agent › LL` / `agent › O`);
 - a turn's stream ends with control deltas (`usage_statistics`, `stop_reason`), and `stop_reason`
-  carries **no** `delta.id`.
+  carries **no** `delta.id`;
+- a tool-using reply spans SEVERAL runs and the run our send starts is **never closed**, so a
+  one-shot waiting for its own `turn_finished` hangs on most real replies. It terminates on the
+  runtime going idle instead;
+- `--json | head -3` used to die on an unhandled `EPIPE`. A failed pipe write is reported
+  asynchronously, so no try/catch around the write can see it; the streams carry an error handler
+  and a closed stdout ends the session quietly.
+
+Every fix in this package has an entry in `../tools/mutations.mjs` — a revert of exactly that
+component, and the test that must fail when it is applied. Run `node ../tools/mutate.mjs`.

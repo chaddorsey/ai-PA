@@ -252,6 +252,13 @@ export class WsConnection {
       pend.reject(new Error("connection closed"));
     }
     this.pending.clear();
+    // Detach the consumers BEFORE closing. A polite close is a handshake, not an instant: this
+    // socket keeps receiving until the peer answers, and `ws` will wait up to 30s for that. Every
+    // frame arriving in the meantime would otherwise still be routed to a consumer that has moved
+    // on to a different connection. The close listeners stay attached deliberately — the owner
+    // needs to know this connection finally went away.
+    this.frameListeners.clear();
+    this.errorListeners.clear();
     this.socket?.close();
   }
 
