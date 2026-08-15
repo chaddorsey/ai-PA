@@ -186,6 +186,64 @@ async function main() {
     console.log(`Q2 ANSWER: ${live.length >= 2 ? "YES — two concurrent inputs were BOTH acked live (queue is not the only path)" : "NO — the second was queued or refused; serialization holds"}`);
   }
 
+  if (scenario === "detach-cancels") {
+    // Does detaching the ONLY subscribed client cancel the running turn?
+    //
+    // The docs say: "If no other subscribed client can take over an active runtime, App Server
+    // requests cancellation of its active turn." Our terminal prints the opposite on exit —
+    // "detached (the conversation continues on the server)" — and its --help says Ctrl-C leaves
+    // the client while "the conversation and any running turn continue". In M1 terminal usage the
+    // terminal usually IS the only subscribed client, so if the docs are right that message is
+    // false at the moment it is printed.
+    console.log("\n--- starting a genuinely LONG turn as the only subscribed client ---");
+    // A text-generation prompt is NOT long enough: measured, the model counted to 60 in 2.4s and
+    // the turn was over before the socket could be dropped, which proves nothing. A sleeping
+    // shell command holds the runtime in EXECUTING_CLIENT_SIDE_TOOL for a known duration, so the
+    // drop is guaranteed to land mid-turn.
+    input(ws, "Run this exact shell command with the Bash tool: sleep 25; echo finished", 1);
+    await waitFor(
+      ws,
+      (f) =>
+        f.type === "update_loop_status" &&
+        f.loop_status?.status === "EXECUTING_CLIENT_SIDE_TOOL",
+      45_000,
+      "the tool to start executing",
+    );
+    console.log("\n--- tool is executing; DROPPING the only client mid-turn ---");
+    ws.terminate();
+    await sleep(6000);
+
+    const ws2 = connect();
+    await new Promise((r) => ws2.on("open", r));
+    const before = log.length;
+    record("out", { type: "runtime_start", request_id: "rpc-hello-2", ...runtime });
+    ws2.send(JSON.stringify({ type: "runtime_start", request_id: "rpc-hello-2", ...runtime }));
+    console.log("\n--- reconnected; watching 20s to see whether the turn survived ---");
+    await sleep(20_000);
+
+    const after = log.slice(before);
+    const statuses = after
+      .filter((e) => e.type === "update_loop_status")
+      .map((e) => e.frame.loop_status?.status);
+    const resumedDeltas = after.filter(
+      (e) => e.type === "stream_delta" && e.frame.delta?.message_type === "assistant_message",
+    ).length;
+    const stillRunning = statuses.some((s) => s && s !== "WAITING_ON_INPUT");
+    console.log(`\nRESULT: statuses after reconnect = ${JSON.stringify([...new Set(statuses)])}`);
+    console.log(`        assistant deltas after reconnect = ${resumedDeltas}`);
+    console.log(
+      `ANSWER: ${
+        stillRunning || resumedDeltas > 0
+          ? "the turn SURVIVED the detach — our --help/exit message is correct"
+          : "the turn did NOT survive — the runtime is idle, so detaching the only client ENDED it, and the shipped message is FALSE"
+      }`,
+    );
+    ws2.close();
+    dump();
+    console.log(`\n=== ${log.length} frames captured ===`);
+    process.exit(0);
+  }
+
   if (scenario === "queue-control") {
     // CONTROL for the Q3 result: identical to queue-replay2 except B's socket is never dropped.
     // If cm-b is `dequeued` and runs here, then the `cancelled` seen in queue-replay2 was caused

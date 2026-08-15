@@ -96,9 +96,10 @@ EXIT CODES
   2  bad arguments
 
 IN-SESSION
-  Type a message and press Enter to send it. Ctrl-C (or /exit) leaves; the conversation and
-  any running turn continue on the server — this client is only a viewer/injector, never the
-  owner of the runtime.`;
+  Type a message and press Enter to send it. Ctrl-C (or /exit) leaves. The CONVERSATION
+  persists on the server, but a turn that is still running does NOT necessarily survive: if
+  no other client is attached, the App Server cancels the active turn when the last one
+  detaches. Leave a second surface attached if a long turn must finish.`;
 
 /**
  * Loopback binding IS the trust boundary for this design — the App Server takes no client auth

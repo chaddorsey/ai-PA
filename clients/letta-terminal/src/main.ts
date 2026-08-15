@@ -454,7 +454,12 @@ export async function run(
   session.finish();
   detach();
   core.stop();
-  io.stderr("— detached (the conversation continues on the server)\n");
+  // NOT "the conversation continues on the server". The conversation persists, but the App
+  // Server "requests cancellation of its active turn" when no other subscribed client can take
+  // over — and in ordinary terminal use this IS the only client. Verified live: a turn executing
+  // a 25s tool was dead within 6s of detaching, runtime back to WAITING_ON_INPUT with no output.
+  // The old message told the operator the opposite of what happens at the moment it printed.
+  io.stderr("— detached (a turn still running may have been cancelled; the conversation remains)\n");
   return exitCode;
 }
 
@@ -553,7 +558,9 @@ function nodeIO(): TerminalIO {
           if (onLine(line) === "exit") rl.close();
         });
         rl.on("close", () => resolve());
-        // Ctrl-C leaves the client only: the conversation and any running turn continue.
+        // Ctrl-C leaves the CLIENT. The conversation persists, but a running turn may not: the
+        // App Server cancels the active turn when the last subscribed client detaches, and in
+        // ordinary terminal use this is the only one. See the detach notice below.
         process.on("SIGINT", () => rl.close());
       }),
   };

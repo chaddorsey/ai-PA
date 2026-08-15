@@ -1,5 +1,9 @@
 ---
-status: for-review
+status: reviewed-and-corrected
+review: Fable adversarial review, 2026-08-15. Verdict — "trustworthy enough to base a design
+  conversation on", with three required corrections (A4's mechanism, A2's dismissal of A6, A1's
+  inference) and two material omissions (D2.1, D2.2). All are applied inline and marked
+  **CORRECTED AFTER REVIEW** / **TEMPERED AFTER REVIEW**; nothing was silently rewritten.
 audience: adversarial reviewer (Fable) — please challenge the readings, not just the conclusions
 branch: feat/msc-app-server-sole-owner
 packages: clients/letta-continuity-core, clients/letta-terminal, clients/tools
@@ -107,9 +111,42 @@ A wrinkle for the reviewer: run-574 reported `requires_approval` even though **n
 `requires_approval` marks a tool-call continuation boundary, not necessarily a human approval.
 Any implementation keying on it must not assume a pending approval exists.
 
-If this reading holds, a large part of root cause A is **self-inflicted**: we inferred turn
-completion from a shared idle because we did not know a per-run signal existed, and then built an
-attribution model to compensate for the ambiguity that choice created.
+> **TEMPERED AFTER REVIEW.** The facts above all survived checking. My *inference* did not, and the
+> corrected version is materially less exciting:
+>
+> - **It replaces the termination EDGE, not the attribution model.** The `stop_reason` delta fires
+>   for every turn on the conversation, including a peer's. Distinguishing ours still needs the
+>   `input_accepted` → disposition → dequeue → run-adoption machinery that exists today. Part F
+>   question 1 has a deflationary answer: not much of the attribution model exists only to
+>   compensate for this.
+> - **The completing delta belongs to a run we do not own** — `end_turn` arrives on run-575 while
+>   our send started run-574. That is the *identical* objection round 4 raised against
+>   `turn_finished`. What the delta genuinely adds is the `requires_approval` marker on 574, which
+>   lets a client *chain* runs — and that chaining is sound only because the server serialises
+>   turns per conversation. It is inference from serialisation, not a wire-level link. Nothing on
+>   run-575 names run-574.
+> - **The signal is ephemeral and dies at the seam.** It carries no `delta.id`, so it can never
+>   appear in the `conversation_messages_list` snapshot, and the reconnect replay contains only
+>   status frames (verified in `q3-queue-replay.jsonl`). A client that disconnects between emission
+>   and receipt never sees it. **Loop-status idle IS in the replay** — so idle-based termination
+>   must be RETAINED as the seam-safe fallback, and "we invented idle-based termination" should
+>   read "we used only the fallback and missed the precise live signal".
+> - **An errored turn may never emit it.** `main.ts` records that no idle follows an error on one
+>   server path, and `LoopErrorMessage` carries its own `stop_reason` plus `is_terminal`. A rule of
+>   "stop_reason delta ≠ requires_approval" alone plausibly hangs on the commonest real fault. The
+>   rule must be a disjunction with `loop_error.is_terminal`.
+> - **Subagents could forge it.** `StreamDeltaMessage` has an optional `subagent_id`
+>   (`protocol_v2.d.ts:437`) that neither `protocol.ts` nor `stream.ts` reads. If subagent streams
+>   are forwarded, a subagent finishing mid-turn delivers an `end_turn` that a naive implementation
+>   takes as completion. Any adoption must filter on `subagent_id`.
+>
+> **Corrected claim:** the wire distinguishes continuation from completion per run, and we ignored
+> it. Use it to chain runs and terminate promptly on the live path; keep loop-status idle for
+> seams; add `loop_error.is_terminal` for faults; keep attribution for peers. Round 4's sentence is
+> still falsified — a per-run signal exists — but the discovery does not collapse the redesign.
+
+Part of root cause A is still **self-inflicted**: we inferred turn completion from a shared idle
+without knowing a per-run signal existed. But "part", not "a large part".
 
 **Reviewer, please attack this specifically.** It is the single highest-impact claim in this
 document, and it is the one I most want a second opinion on before a redesign is planned around it.
@@ -130,12 +167,20 @@ export type LoopStatus = "SENDING_API_REQUEST" | "WAITING_FOR_API_RESPONSE"
 auto-denies every approval, so any client-side-tool reply exits 0 with the reply missing."
 
 There is a dedicated `WAITING_ON_APPROVAL` status. A parked turn has its own state and is not
-reported as `WAITING_ON_INPUT`. A6's premise is therefore probably wrong — though note it was
-listed as verified by "RAN binary: exit 0, reply absent", so **something** produced that
-observation and it deserves explaining rather than dismissing. My best guess is that the
-observation was real but misattributed: the exit-0-with-missing-reply is fully explained by A1
-(terminating on a shared idle that fires between runs of a multi-run reply) without any approval
-being involved.
+reported as `WAITING_ON_INPUT`. A6's premise is therefore **suspect**, but —
+
+> **CORRECTED AFTER REVIEW.** I originally guessed that A6's "exit 0, reply absent" observation was
+> "fully explained by A1". **My own capture contradicts that.** In `q1-approval-park.jsonl` the
+> statuses between run-574 and run-575 run
+> `EXECUTING_CLIENT_SIDE_TOOL → SENDING_API_REQUEST → WAITING_FOR_API_RESPONSE →
+> PROCESSING_API_RESPONSE` — with **no `WAITING_ON_INPUT` between the runs at all**. No shared idle
+> fires mid-reply in the captured shape, so the alternative explanation I offered does not work.
+>
+> A6 was recorded as verified by running the binary against an auto-**denied** approval. No capture
+> on disk reproduces that shape: our runtime is `unrestricted`, which auto-**ran** the tool and
+> never sent a `control_request`. **A6 cannot be retired on this evidence.** It needs one capture of
+> a genuinely parked or denied approval, which requires a permission mode we have pinned as an M1
+> precondition — see P2 in the design brief.
 
 Our `LoopStatuses` constant declares only `waitingOnInput`, `sendingApiRequest`,
 `executingClientSideTool` — three of the eight. We never see the other five as anything but
@@ -172,21 +217,33 @@ export interface QueueUpdateMessage extends RuntimeEnvelope {
 }
 ```
 
-My live capture (`docs/followups/2026-08-15-continuity-ownership-live-captures.md`) showed that
-when a peer's socket drops while its message is queued, the message is **cancelled**, the
-transition is delivered **only to the dying socket**, and the reconnecting client sees
-`queue: [] removed: []`.
+My live capture showed that when a peer's socket drops while its message is queued, the message is
+**cancelled**, and the reconnecting client sees `queue: [] removed: []`.
 
-The declaration says transitions **cannot be inferred from absence**. So the reconnecting client
-is not merely under-informed — it is in a state the protocol explicitly says is not recoverable by
-inspection. Combined, these give a hard requirement rather than a design preference:
+> **CORRECTED AFTER REVIEW.** I originally wrote that the transition is delivered "only to the
+> dying socket". That is **not supported by the capture and is probably false**: the `cancelled`
+> frame is logged at 869ms, ~3ms *after* peer B terminated at ~866ms, so a live socket — the
+> surviving peer A — received it. My capture format carries no per-socket labels, so it cannot
+> actually attribute a line to a socket. The defensible rule is narrower: **the transition is not
+> replayed to a client that subscribes later.** A peer that stays attached throughout does see it.
+> A re-capture with per-socket labels would settle it in minutes and has not been done.
+>
+> **Also corrected:** I presented the cancellation as an undocumented discovery. It is documented.
+> Protocol-lifecycle states: *"Disconnect cleanup removes that connection's pending approvals, tool
+> callbacks, terminals, and queued input."* The behaviour is specified; only our ignorance of it
+> was novel.
 
-> **A client that reconnects with an outstanding queued message cannot learn its fate from the
-> wire.** Either it must not keep such a claim across a seam, or the server must replay the
-> transition (see B1 below — `sync` may be exactly that mechanism, untested).
+The declaration still says transitions **cannot be inferred from absence**, and the reconnecting
+client still sees nothing. But the hazard is smaller and better-founded than I first wrote:
 
-This is the strongest input available to the design conversation, and unlike most of root cause A
-it is corroborated by both a live capture and a vendor declaration.
+> **A client that reconnects with an outstanding queued message is not told what happened to it.**
+> It does not need to be told, because the fate is deterministic *a priori* from the documented
+> cleanup rule: a queued, not-yet-started message whose submitting connection drops is cancelled.
+> The design question is therefore not "how do we recover the unknowable" but **"does the client
+> assume cancellation and resubmit, or drop the claim?"** — and resubmission is a product decision
+> about duplicate turns on a shared conversation.
+
+This is still a real input to the design conversation. It is no longer the dramatic one.
 
 ---
 
@@ -211,11 +268,25 @@ necessarily wrong to have built, but all were built without knowing the alternat
 `conversation_messages_list` and builds a `LiveDedup` over message ids (`catchup.ts`). `sync`
 appears nowhere in `clients/` (verified by grep).
 
-`sync` is the documented answer to the exact problem `catchup.ts` was written to solve, and its
-`recover_approvals` flag is the documented answer to the approval-redelivery problem that
-`answeredApprovals` and mutations 1/19c exist for. **Whether `sync` also replays a missed queue
-transition (A4) is the single most valuable thing to test next** — if it does, the "unknowable
-cancellation" hazard has a documented remedy and root cause A shrinks again.
+> **CORRECTED AFTER REVIEW.** I wrote that "`sync` is the documented answer to the exact problem
+> `catchup.ts` was written to solve". **That is wrong.** `catchup.ts` solves *transcript* dedup
+> across a seam; `sync` replays *runtime state*. The distinction is visible in my own capture: the
+> reconnect replay carried device_status, loop_status, queue and subagent_state — **zero stream
+> deltas, zero messages**. The `conversation_messages_list` snapshot remains the only transcript
+> source, so it is not redundant and B3 below is wrong to hint that it might be.
+>
+> My "single most valuable thing to test next" (does `sync` replay a missed queue transition) also
+> has a predictable answer: transitions are emitted *on mutation*, the replay is a *snapshot*, and
+> the observed replay carried `removed: []`. Expect **no**. Still worth one capture, but it is not
+> the linchpin I called it.
+>
+> **And a correction that cuts the other way:** `recover_approvals` **defaults to `true` on
+> `runtime_start`** (`protocol_v2.d.ts:631`, and the docs' runtime-state table says "Defaults to
+> `true`"). So approval recovery on reconnect is *already happening* without our asking — which
+> bears directly on what `answeredApprovals` and mutations 1/19c are actually protecting against.
+
+What survives: `sync` exists, we do not implement it, and it is the documented way to force a state
+replay and to recover approvals on an established connection without reconnecting.
 
 ### B2 ⚠️ `idempotency_key` is the documented dedup mechanism. We ignore it and dedup on message ids.
 
@@ -239,9 +310,17 @@ start from `idempotency_key`.
 current state after its response." And for recovery: "After transport loss, open a new WebSocket
 and send `runtime_start` again to restore subscriptions."
 
-Our reconnect does `runtime_start` **and then** `conversation_messages_list`. If the automatic
-replay already delivers current state, the snapshot RPC may be redundant — and it is not free: it
-is the thing that made the `liveDedup` window (mutation 19b) reachable at all.
+Our reconnect does `runtime_start` **and then** `conversation_messages_list`.
+
+> **CORRECTED AFTER REVIEW — this item pointed the wrong way.** I suggested the snapshot RPC "may
+> be redundant". It is not: the automatic replay carries **no transcript** (verified in my own
+> capture — status frames only). `conversation_messages_list` is the sole transcript source and
+> must stay.
+>
+> What is genuinely worth having here is `runtime_start.wait_for_replay`
+> (`protocol_v2.d.ts:635`), which resolves the hello only *after* the initial replay is emitted.
+> That bears directly on the replay↔snapshot race that the `liveDedup` window (mutation 19b)
+> exists to absorb — a documented way to close the window rather than defend against it.
 
 ### B4 ❓ `abort_message` exists; we cannot cancel a turn.
 
@@ -362,6 +441,71 @@ snapshot is better.
 
 ---
 
+## Part D2 — What this document MISSED, found by adversarial review
+
+Added after a Fable review of the first draft. These were not in the original at all. The first is
+the most consequential thing on this page.
+
+### D2.1 ⚠️ Detaching the last client CANCELS the running turn — and we ship the opposite claim
+
+**Documented** (protocol-lifecycle, verified verbatim):
+
+> "Disconnect cleanup removes that connection's pending approvals, tool callbacks, terminals, and
+> queued input. **If no other subscribed client can take over an active runtime, App Server
+> requests cancellation of its active turn.**"
+
+**What we shipped:** `main.ts` printed `— detached (the conversation continues on the server)` and
+`cli.ts`'s `--help` said Ctrl-C leaves "the conversation and any running turn continue on the
+server". In ordinary terminal use, our client **is** the only subscribed client.
+
+**Verified live** (`captures/q5-detach-cancels.jsonl`): a turn executing `sleep 25` via the Bash
+tool, confirmed running (`EXECUTING_CLIENT_SIDE_TOOL`, `active_run_ids: ["local-run-8"]`), socket
+dropped, reconnected 6 seconds later — runtime `WAITING_ON_INPUT`, `active_run_ids: []`, no further
+output over 20s. The turn was dead with ~19s of its tool left to run.
+
+A first attempt at this capture was **inconclusive and is worth recording as method**: a
+"count to 60" prompt finished in 2.4s, so the socket was dropped after `turn_finished` and nothing
+was cancelled. The scenario had to force a genuinely long turn before it proved anything.
+
+This is a user-facing correctness bug, not a design question: the client told the operator the
+opposite of what was happening at the moment it printed. Both strings are corrected.
+
+It also deflates A4 — the queue cancellation I treated as a discovery is the same documented
+cleanup rule, applied to queued input rather than an active turn.
+
+### D2.2 ⚠️ A browser cannot connect to the App Server at all without a proxy — a hard Unit 6 constraint
+
+**Documented:** "HTTP requests carrying an `Origin` header are rejected" unless auth is configured,
+and **"The standard browser WebSocket API cannot set the required `Authorization` header, so
+authenticated browser applications need a trusted backend or WebSocket proxy."**
+
+A browser `WebSocket` always sends `Origin`. So the "browser talks directly to loopback" option
+that E1's transport re-typing was partly meant to enable **does not exist**. A bridge or proxy is
+mandated by the vendor's transport rules, not merely preferred on design grounds.
+
+This should be settled *before* Unit 6 architecture is chosen, and it makes C1's correction sharper:
+remote access is supported, but never directly from page JavaScript.
+
+### D2.3 ❓ Other declarations we do not read
+
+- **`stream_delta.subagent_id`** (`protocol_v2.d.ts:437`) — absent from our `StreamDeltaFrame`. See
+  the A1 caveat: unfiltered, a subagent's completion could be mistaken for the turn's.
+- **`recover_approvals` defaults to `true` on `runtime_start`** (`protocol_v2.d.ts:631`).
+- **`remove_queue_item`** (`protocol_v2.d.ts:2190`) — clients can withdraw a queued item, which is
+  directly relevant to any queue-claim lifecycle in the redesign.
+- **`abort_message` takes an optional `run_id`**, and `abort_message_response.aborted` distinguishes
+  "interrupted something" from a no-op.
+- **`LoopState.active_run_ids` is plural**; `frameRunId` reads only `[0]`. The vendor's comment on
+  `executing_tool_call_ids` — that it is authoritative and self-healing, unlike pairing
+  start/end lifecycle events which are "unrecoverable if a frame is lost" — is design guidance
+  aimed squarely at our seam problem.
+- **`@letta-ai/letta-code/app-server-client`** ships a *runtime* client with `browser`, `import`
+  and `require` entries. Whatever the round-4 SDK rejection covered, Part D should weigh this when
+  deciding bind-to-vendor-types versus a committed snapshot.
+- **Unexplained doubled frames** in single-socket captures (q1: two identical
+  `EXECUTING_CLIENT_SIDE_TOOL` at 1354ms). Unexplained, and it is the same ambiguity that makes
+  A4's socket attribution undecidable from these files.
+
 ## Part E — What holds up
 
 Not everything needs revisiting, and the reviewer should not spend time here:
@@ -371,8 +515,10 @@ Not everything needs revisiting, and the reviewer should not spend time here:
 - **`event_seq` handling.** Documented as "monotonically increasing per connection" — exactly what
   `StreamAssembler` implements, including the reset-per-connection rule that mutation 19a binds.
 - **Loopback as the default trust boundary.** Correct posture; only the stated reason is wrong (C1).
-- **The multi-run tool shape.** Our captures match the documented model of lifecycle deltas, and
-  `is_terminal` on `LoopErrorMessage` (found today) is a genuine per-run signal.
+- **`is_terminal` on `LoopErrorMessage`** is a genuine per-run signal we do not read. (An earlier
+  draft also listed "the multi-run tool shape — our captures match the documented model" here.
+  That was self-contradictory: A1 says we render that shape's completion signal as nothing. The
+  *captures* match the documented model; the *client* does not.)
 - **`disposition: "dequeued" | "cancelled"`** matches `QueueRemovalTransition` exactly.
 - **The instrument** (mutation harness, process-level spawn tests, double-fidelity gate). None of
   this document's findings suggest the tooling is wrong — they suggest it was pointed at the wrong
