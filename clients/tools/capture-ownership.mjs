@@ -3,12 +3,22 @@
  * needs answered. Raw WS against the sole-owner App Server — a pure client, never a second
  * writer on the backend.
  *
- *   node capture.mjs approval-park <agent-id>
- *   node capture.mjs two-inputs    <agent-id>
- *   node capture.mjs queue-replay  <agent-id>
+ *   node tools/capture-ownership.mjs two-inputs     <agent-id>   # Q2
+ *   node tools/capture-ownership.mjs queue-replay2  <agent-id>   # Q3 — peer's socket dropped
+ *   node tools/capture-ownership.mjs queue-control  <agent-id>   # Q3 control — peer stays up
+ *   node tools/capture-ownership.mjs approval-park  <agent-id>   # Q1
+ *
+ * `CAPTURE_OUT=<file>.jsonl` keeps the raw frames. Results and what they mean:
+ * docs/followups/2026-08-15-continuity-ownership-live-captures.md
  *
  * Every frame is logged with an elapsed-ms stamp so ORDERING — which is the whole question in
  * two of the three — is readable rather than inferred.
+ *
+ * `queue-replay` (single-socket) is superseded by `queue-replay2` and kept only because it is
+ * what demonstrated that a single socket NEVER queues: the server defers the second ack instead.
+ * That negative result is half of Q2's answer, so the scenario that produced it stays.
+ *
+ * Always run against a DISPOSABLE agent (tools/scratch-agent.mjs) and delete it afterwards.
  */
 import fs from "node:fs";
 import { createRequire } from "node:module";
