@@ -559,14 +559,114 @@ export const MUTATIONS = [
     expect: /never saw START is hedged/,
   },
   {
-    id: 37,
+    // ── 37a-37j: ONE introducer at a time ───────────────────────────────
+    //
+    // This was a single entry that emptied the whole 8-bit set, so it was satisfied as long as ANY
+    // one of the five was covered — and only one was. Four of the five 8-bit introducers and
+    // `ESC X` were individually unbound: dropping any of them left the suite green while a real
+    // OSC-52 clipboard write or an APC payload went straight to the terminal.
+    //
+    // The sanitizer CODE is sound (fuzzed live, 200k control-heavy inputs, zero escapes). What was
+    // wrong was the coverage, which is why these mutations remove members rather than rewriting
+    // logic.
+    id: "37a",
     pkg: TERMINAL,
     file: "src/sanitize.ts",
-    label: "the sequence scanner forgets the 8-bit (C1) introducers",
+    label: "the scanner forgets the 8-bit DCS introducer (U+0090)",
     tests: ["test/sanitize.test.ts"],
     find: `const SEQ_INTRODUCERS_8BIT = "\\u0090\\u0098\\u009d\\u009e\\u009f";`,
-    replace: `const SEQ_INTRODUCERS_8BIT = "";`,
-    expect: /8-BIT C1 forms/,
+    replace: `const SEQ_INTRODUCERS_8BIT = "\\u0098\\u009d\\u009e\\u009f";`,
+    expect: /strips the 8-bit DCS \(U\+0090\)/,
+  },
+  {
+    id: "37b",
+    pkg: TERMINAL,
+    file: "src/sanitize.ts",
+    label: "the scanner forgets the 8-bit SOS introducer (U+0098)",
+    tests: ["test/sanitize.test.ts"],
+    find: `const SEQ_INTRODUCERS_8BIT = "\\u0090\\u0098\\u009d\\u009e\\u009f";`,
+    replace: `const SEQ_INTRODUCERS_8BIT = "\\u0090\\u009d\\u009e\\u009f";`,
+    expect: /strips the 8-bit SOS \(U\+0098\)/,
+  },
+  {
+    id: "37c",
+    pkg: TERMINAL,
+    file: "src/sanitize.ts",
+    label: "the scanner forgets the 8-bit OSC introducer (U+009D) — the clipboard one",
+    tests: ["test/sanitize.test.ts"],
+    find: `const SEQ_INTRODUCERS_8BIT = "\\u0090\\u0098\\u009d\\u009e\\u009f";`,
+    replace: `const SEQ_INTRODUCERS_8BIT = "\\u0090\\u0098\\u009e\\u009f";`,
+    expect: /strips the 8-bit OSC \(U\+009D\)/,
+  },
+  {
+    id: "37d",
+    pkg: TERMINAL,
+    file: "src/sanitize.ts",
+    label: "the scanner forgets the 8-bit PM introducer (U+009E)",
+    tests: ["test/sanitize.test.ts"],
+    find: `const SEQ_INTRODUCERS_8BIT = "\\u0090\\u0098\\u009d\\u009e\\u009f";`,
+    replace: `const SEQ_INTRODUCERS_8BIT = "\\u0090\\u0098\\u009d\\u009f";`,
+    expect: /strips the 8-bit PM \(U\+009E\)/,
+  },
+  {
+    id: "37e",
+    pkg: TERMINAL,
+    file: "src/sanitize.ts",
+    label: "the scanner forgets the 8-bit APC introducer (U+009F)",
+    tests: ["test/sanitize.test.ts"],
+    find: `const SEQ_INTRODUCERS_8BIT = "\\u0090\\u0098\\u009d\\u009e\\u009f";`,
+    replace: `const SEQ_INTRODUCERS_8BIT = "\\u0090\\u0098\\u009d\\u009e";`,
+    expect: /strips the 8-bit APC \(U\+009F\)/,
+  },
+  {
+    id: "37f",
+    pkg: TERMINAL,
+    file: "src/sanitize.ts",
+    label: "the scanner forgets the 7-bit OSC introducer (ESC ]) — clipboard and hyperlinks",
+    tests: ["test/sanitize.test.ts"],
+    find: `const SEQ_INTRODUCERS_7BIT = "]P^_X";`,
+    replace: `const SEQ_INTRODUCERS_7BIT = "P^_X";`,
+    expect: /strips the 7-bit OSC \(\]\)/,
+  },
+  {
+    id: "37g",
+    pkg: TERMINAL,
+    file: "src/sanitize.ts",
+    label: "the scanner forgets the 7-bit DCS introducer (ESC P)",
+    tests: ["test/sanitize.test.ts"],
+    find: `const SEQ_INTRODUCERS_7BIT = "]P^_X";`,
+    replace: `const SEQ_INTRODUCERS_7BIT = "]^_X";`,
+    expect: /strips the 7-bit DCS \(P\)/,
+  },
+  {
+    id: "37h",
+    pkg: TERMINAL,
+    file: "src/sanitize.ts",
+    label: "the scanner forgets the 7-bit PM introducer (ESC ^)",
+    tests: ["test/sanitize.test.ts"],
+    find: `const SEQ_INTRODUCERS_7BIT = "]P^_X";`,
+    replace: `const SEQ_INTRODUCERS_7BIT = "]P_X";`,
+    expect: /strips the 7-bit PM \(\^\)/,
+  },
+  {
+    id: "37i",
+    pkg: TERMINAL,
+    file: "src/sanitize.ts",
+    label: "the scanner forgets the 7-bit APC introducer (ESC _)",
+    tests: ["test/sanitize.test.ts"],
+    find: `const SEQ_INTRODUCERS_7BIT = "]P^_X";`,
+    replace: `const SEQ_INTRODUCERS_7BIT = "]P^X";`,
+    expect: /strips the 7-bit APC \(_\)/,
+  },
+  {
+    id: "37j",
+    pkg: TERMINAL,
+    file: "src/sanitize.ts",
+    label: "the scanner forgets the 7-bit SOS introducer (ESC X)",
+    tests: ["test/sanitize.test.ts"],
+    find: `const SEQ_INTRODUCERS_7BIT = "]P^_X";`,
+    replace: `const SEQ_INTRODUCERS_7BIT = "]P^_";`,
+    expect: /strips the 7-bit SOS \(X\)/,
   },
   {
     id: 38,
@@ -769,5 +869,85 @@ export const MUTATIONS = [
     gone = true;
     onGone(err);`,
     expect: /does not throw out of the error listener on a NON-EPIPE fault/,
+  },
+
+  // ── 52-55: the instrument-adjacent fixes (root cause C) ────────────────
+  {
+    id: 52,
+    pkg: CORE,
+    file: "src/connection.ts",
+    label: "C2: the crash-loop guard is disabled by its own default",
+    tests: ["test/core.properties.test.ts"],
+    // The mutation the round-4 review ran by hand and watched survive. It survived because the
+    // ONLY tests exercising the guard passed `connectionStabilityMs` explicitly; nothing ran the
+    // shipped default, so a default of 0 — restore the budget the instant a hello completes — was
+    // indistinguishable from a correct one.
+    find: `    this.stabilityMs = opts.stabilityMs ?? DEFAULT_STABILITY_MS;`,
+    replace: `    this.stabilityMs = opts.stabilityMs ?? 0;`,
+    expect: /the crash-loop bound holds on the DEFAULT stability window/,
+  },
+  {
+    id: 53,
+    pkg: CORE,
+    file: "src/connection.ts",
+    label: "C2: stabilityMs is coupled back to the retry delay",
+    tests: ["test/core.properties.test.ts"],
+    // The original defect, not just its symptom: defaulting to maxDelayMs means a consumer tuning
+    // `reconnectDelayMs` silently shrinks the crash-loop guard. Every test here sets it to 20ms.
+    find: `    this.stabilityMs = opts.stabilityMs ?? DEFAULT_STABILITY_MS;`,
+    replace: `    this.stabilityMs = opts.stabilityMs ?? this.maxDelayMs;`,
+    expect: /the crash-loop bound holds on the DEFAULT stability window/,
+  },
+  {
+    id: 54,
+    pkg: CORE,
+    file: "src/connection.ts",
+    label: "C3: disconnected() no longer returns the budget",
+    tests: ["test/core.properties.test.ts"],
+    find: `  disconnected(): void {
+    this.cancelStability();
+    this.attempts = 0;`,
+    replace: `  disconnected(): void {
+    this.cancelStability();`,
+    expect: /restarted after exhausting its budget gets a FRESH one/,
+  },
+  {
+    id: 55,
+    pkg: CORE,
+    file: "src/index.ts",
+    label: "C3: openConnection() orphans the incumbent socket instead of closing it",
+    tests: ["test/core.properties.test.ts"],
+    find: `    if (this.ws) {
+      const previous = this.ws;
+      this.ws = null;
+      previous.close();
+    }
+    const ws = this.newConnection();`,
+    replace: `    const ws = this.newConnection();`,
+    expect: /does not leave the old socket wired/,
+  },
+  {
+    id: 56,
+    pkg: CORE,
+    file: "src/protocol.ts",
+    label: "C8: frameEventSeq lets a non-counter latch the ordering watermark",
+    tests: ["test/protocol.contract.test.ts"],
+    // C8 called this an equivalent mutant, and through the PIPELINE it is — validateInboundFrame
+    // has already range-checked the same six types. It is bound rather than retired because
+    // `frameEventSeq` is EXPORTED: its contract is owed to every caller, and the coupling that
+    // makes it redundant today is invisible and one allowlist entry away from breaking.
+    find: `  return isEventSeq(s) ? s : undefined;`,
+    replace: `  return typeof s === "number" ? s : undefined;`,
+    expect: /refuses a counter that is not a counter/,
+  },
+  {
+    id: 57,
+    pkg: CORE,
+    file: "src/protocol.ts",
+    label: "C8: frameEventSeq lets an UNORDERED frame type latch the watermark",
+    tests: ["test/protocol.contract.test.ts"],
+    find: `  if (!ORDERED_BROADCAST_TYPES.has(f.type)) return undefined;`,
+    replace: ``,
+    expect: /excludes frames that take no part in the ordered stream/,
   },
 ];

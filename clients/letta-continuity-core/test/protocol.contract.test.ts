@@ -284,6 +284,60 @@ describe("contract: inbound frames round-trip through parse + validate", () => {
   });
 });
 
+describe("contract: frameEventSeq gates what may latch the ordering watermark", () => {
+  // Both conditions in `frameEventSeq` were flagged as equivalent mutants — on the PRODUCTION
+  // path they are, because `validateInboundFrame` has already applied the same range check to
+  // exactly the six ordered types before any frame reaches the stream layer. That makes the
+  // guard unreachable *through the pipeline*, and the round-4 review was right that no
+  // pipeline-level test could ever fail on reverting it.
+  //
+  // It is bound HERE instead of retired, because unlike the reverts that were retired (ids 6, 21)
+  // this one is an EXPORTED function: its contract belongs to every caller, not just to the one
+  // call site in stream.ts. The coupling that makes it redundant today is also invisible — add a
+  // type to ORDERED_BROADCAST_TYPES that the validator does not range-check, and the guard is
+  // load-bearing again with nothing to say so. The watermark is a one-way latch, so the cost of
+  // being wrong is a client that is connected, accepting input, and permanently silent.
+
+  it("refuses a counter that is not a counter, even on an ordered type", () => {
+    for (const notACounter of [
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      -1,
+      1.5,
+      Number.MAX_SAFE_INTEGER + 1,
+      "3",
+      null,
+      undefined,
+      {},
+    ]) {
+      const frame = { type: Inbound.streamDelta, event_seq: notACounter } as unknown as ServerFrame;
+      expect(frameEventSeq(frame)).toBeUndefined();
+    }
+    // …and a real one still passes through, or the guard would be a blanket refusal.
+    expect(frameEventSeq({ type: Inbound.streamDelta, event_seq: 0 } as ServerFrame)).toBe(0);
+    expect(frameEventSeq({ type: Inbound.streamDelta, event_seq: 12 } as ServerFrame)).toBe(12);
+  });
+
+  it("excludes frames that take no part in the ordered stream", () => {
+    // An RPC response carrying an event_seq must not raise the watermark…
+    expect(
+      frameEventSeq({
+        type: Inbound.conversationListResponse,
+        event_seq: 99,
+      } as unknown as ServerFrame),
+    ).toBeUndefined();
+    // …and neither may a forward-compatible type this client does not even render. This is the
+    // case the allowlist exists for: one unknown frame carrying MAX_SAFE_INTEGER would otherwise
+    // silence the connection for good.
+    expect(
+      frameEventSeq({
+        type: "some_future_broadcast",
+        event_seq: Number.MAX_SAFE_INTEGER,
+      } as unknown as ServerFrame),
+    ).toBeUndefined();
+  });
+});
+
 describe("contract: the approval control request", () => {
   const CR = FIXTURES.control_request;
 

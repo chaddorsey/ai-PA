@@ -33,7 +33,14 @@ export interface ReconnectPolicy {
    * That is precisely the crash-loop the bound exists for, and the client hammers the recovering
    * server through it while showing the user "connected".
    *
-   * Defaults to `maxDelayMs`: a connection that outlives the longest backoff has proven itself.
+   * Defaults to `DEFAULT_STABILITY_MS`, INDEPENDENTLY of the delay schedule.
+   *
+   * It used to default to `maxDelayMs`, which coupled the crash-loop guard to a knob that means
+   * something else entirely. `ContinuityCore` maps its `reconnectDelayMs` onto both `baseDelayMs`
+   * and `maxDelayMs`, so a consumer tuning the retry delay silently shrank the guard — and every
+   * test in this suite sets `reconnectDelayMs: 20`, so the whole suite ran a 20ms stability window
+   * and the real default was executed by exactly zero tests. Tie it to nothing: "long enough to
+   * count as a recovery" is not the same question as "how long before retrying".
    */
   stabilityMs?: number;
 }
@@ -46,6 +53,15 @@ export interface ReconnectPolicy {
 const DEFAULT_MAX_ATTEMPTS = 10;
 const DEFAULT_BASE_DELAY_MS = 500;
 const DEFAULT_MAX_DELAY_MS = 15_000;
+/**
+ * How long a connection must survive to count as a recovery rather than an attempt.
+ *
+ * Numerically the same as the delay cap and deliberately a SEPARATE constant: they answer
+ * different questions and must be free to diverge. The value remains reasoned rather than
+ * measured — it is "about as long as a `letta server` boot" — and a live watchdog-restart profile
+ * would settle it. Recorded as an accepted open risk rather than presented as a measured figure.
+ */
+const DEFAULT_STABILITY_MS = 15_000;
 
 export class ConnectionStateMachine {
   private state: ConnectionState = "disconnected";
@@ -64,7 +80,7 @@ export class ConnectionStateMachine {
     this.maxReconnectAttempts = opts.maxReconnectAttempts ?? DEFAULT_MAX_ATTEMPTS;
     this.baseDelayMs = opts.baseDelayMs ?? DEFAULT_BASE_DELAY_MS;
     this.maxDelayMs = opts.maxDelayMs ?? DEFAULT_MAX_DELAY_MS;
-    this.stabilityMs = opts.stabilityMs ?? this.maxDelayMs;
+    this.stabilityMs = opts.stabilityMs ?? DEFAULT_STABILITY_MS;
     // Injectable so the jitter is testable: with Math.random the schedule assertion would be
     // either flaky or vacuous.
     this.jitter = opts.jitter ?? Math.random;

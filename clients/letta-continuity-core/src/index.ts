@@ -511,6 +511,19 @@ export class ContinuityCore {
 
   private async openConnection(): Promise<void> {
     this.connectionState.connecting();
+    // Close the incumbent BEFORE replacing it. `start()` on a core that already holds a live
+    // socket simply overwrote the reference, and the old socket was then orphaned: still open,
+    // still wired to this core's handlers, still receiving broadcasts for a session nobody holds a
+    // handle to. On a server whose entire premise is SOLE ownership of the backend, quietly
+    // keeping a second wired socket per restart is the one thing a client here must not do.
+    //
+    // `close()` marks the connection closed-by-us, so the handleClose identity guard ignores it
+    // and no reconnect loop is started for the connection we are deliberately retiring.
+    if (this.ws) {
+      const previous = this.ws;
+      this.ws = null;
+      previous.close();
+    }
     const ws = this.newConnection();
     this.ws = ws;
     try {

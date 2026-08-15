@@ -265,6 +265,37 @@ describe("ContinuityCore properties", () => {
       expect(core.state).not.toBe("connected");
     });
 
+    it("the crash-loop bound holds on the DEFAULT stability window, with none configured", async () => {
+      // The test above passes `connectionStabilityMs: 500`, and it and one sibling were the only
+      // two tests in either package that set it at all. Everything else inherited the default —
+      // and the default used to be `maxDelayMs`, which `ContinuityCore` sets from
+      // `reconnectDelayMs`. Since every test here sets `reconnectDelayMs: 20`, the whole suite ran
+      // a 20ms stability window and the real default was executed by NO test, while a consumer
+      // tuning their retry delay silently shrank the crash-loop guard to match.
+      //
+      // So this one configures NO stability window on purpose. It is the only test that exercises
+      // the shipped default, and the thing it proves is that a server which accepts, answers, and
+      // dies still exhausts the budget rather than being hammered forever.
+      server = new MockAppServer();
+      url = await server.start();
+      const MAX_ATTEMPTS = 2;
+      const { core } = await makeCore({
+        reconnectDelayMs: 20,
+        maxReconnectAttempts: MAX_ATTEMPTS,
+        // connectionStabilityMs deliberately absent.
+      });
+      core.onError(() => {});
+      await core.start();
+
+      const killer = setInterval(() => server.dropAllConnections(), 60);
+      await sleep(1200);
+      clearInterval(killer);
+
+      const handshakes = server.received.filter((m) => m.type === "runtime_start").length;
+      expect(handshakes).toBeLessThanOrEqual(MAX_ATTEMPTS + 1);
+      expect(core.state).not.toBe("connected");
+    });
+
     it("a connection that PROVES itself does restore the budget", async () => {
       // The other side of the same property: a real recovery must not be punished for an earlier
       // outage, or a long-lived client eventually exhausts its budget on unrelated blips.
@@ -284,6 +315,63 @@ describe("ContinuityCore properties", () => {
         await sleep(120); // longer than the stability window: this connection proved itself
       }
       expect(core.state).toBe("connected");
+    });
+
+    it("a core restarted after exhausting its budget gets a FRESH one", async () => {
+      // `disconnected()`'s `attempts = 0` is the ONLY path back from exhaustion, and nothing
+      // asserted it — so a core that had given up stayed given-up across a restart, and `start()`
+      // returned a core that looked connected but would abandon the session on its first blip.
+      server = new MockAppServer();
+      url = await server.start();
+      const fatals: string[] = [];
+      const { core } = await makeCore({
+        reconnectDelayMs: 20,
+        maxReconnectAttempts: 2,
+        // Long enough that no connection in this test can ever prove itself, so every drop really
+        // does spend budget — otherwise the exhaustion below would be a race.
+        connectionStabilityMs: 60_000,
+      });
+      core.onError(() => {});
+      core.onFatal((e) => fatals.push(e.reason));
+      await core.start();
+
+      const killer = setInterval(() => server.dropAllConnections(), 60);
+      await waitFor(() => fatals.includes("reconnect-exhausted"), 8000);
+      clearInterval(killer);
+
+      core.stop();
+      await waitFor(() => server.connectionCount === 0, 3000);
+      await core.start();
+      expect(core.state).toBe("connected");
+
+      // Connecting again proves nothing on its own — an exhausted core still connects, it just
+      // never RETRIES. The budget is only demonstrably fresh if it survives another drop.
+      const before = server.received.filter((m) => m.type === "runtime_start").length;
+      server.dropAllConnections();
+      // Wait on the new HANDSHAKE, not on `state === "connected"`: the state is still "connected"
+      // at the instant of the drop, so waiting on it returns immediately and asserts nothing.
+      await waitFor(
+        () => server.received.filter((m) => m.type === "runtime_start").length > before,
+        8000,
+      );
+      expect(core.state).toBe("connected");
+    }, 30_000);
+
+    it("start() on a core that is already connected does not leave the old socket wired", async () => {
+      // `openConnection()` overwrote `this.ws` without closing what was there, so a second
+      // `start()` orphaned a socket that stayed open and kept receiving this conversation's
+      // broadcasts. The App Server sole-owns its backend; a client that accumulates wired sockets
+      // per restart is exactly the second-writer shape this whole milestone exists to prevent.
+      server = new MockAppServer();
+      url = await server.start();
+      const { core } = await makeCore();
+      await core.start();
+      await waitFor(() => server.connectionCount === 1, 3000);
+
+      await core.start(); // no stop() in between
+
+      await waitFor(() => server.connectionCount === 1, 3000);
+      expect(server.connectionCount).toBe(1);
     });
 
     it("a server that shuts down POLITELY is recovered from like one that vanishes", async () => {

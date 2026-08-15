@@ -141,6 +141,123 @@ describe("sanitize", () => {
   });
 });
 
+/**
+ * Per-member coverage of the three classes the sanitizer is built from.
+ *
+ * The suite above tests each CLASS through one representative member, which is how the coverage
+ * came to be thinner than 47/47 made it look: dropping four of the five 8-bit introducers, or all
+ * but one branch of the invisible set, left it green. The code is sound — this closes the gap
+ * between what it does and what is ASSERTED, so a future edit to any one member fails here rather
+ * than in a terminal.
+ *
+ * Table-driven on purpose: adding an introducer or an invisible range to the source without adding
+ * it here leaves an obvious hole in a list, rather than a silent one in a regex.
+ */
+describe("sanitize — every member of every class", () => {
+  const PAYLOAD = "payload";
+  const ST = `${ESC}\\`;
+
+  // ── string-sequence introducers (the SCANNER, sanitize.ts SEQ_INTRODUCERS_*) ──
+  const SEVEN_BIT: Array<[string, string]> = [
+    ["OSC (]) — clipboard, hyperlinks, window title", "]"],
+    ["DCS (P)", "P"],
+    ["PM (^)", "^"],
+    ["APC (_)", "_"],
+    ["SOS (X)", "X"],
+  ];
+  for (const [name, introducer] of SEVEN_BIT) {
+    it(`strips the 7-bit ${name} sequence`, () => {
+      // Terminated by BEL and by the 7-bit ST: a scanner that handles one and not the other
+      // leaves the payload visible for the other half of real inputs.
+      expect(sanitize(`before${ESC}${introducer}${PAYLOAD}${BEL}after`)).toBe("beforeafter");
+      expect(sanitize(`before${ESC}${introducer}${PAYLOAD}${ST}after`)).toBe("beforeafter");
+      // Unterminated runs to end-of-input, which is what a terminal would do too.
+      expect(sanitize(`before${ESC}${introducer}${PAYLOAD}`)).toBe("before");
+    });
+  }
+
+  const EIGHT_BIT: Array<[string, string]> = [
+    ["DCS (U+0090)", ""],
+    ["SOS (U+0098)", ""],
+    ["OSC (U+009D)", ""],
+    ["PM (U+009E)", ""],
+    ["APC (U+009F)", ""],
+  ];
+  for (const [name, introducer] of EIGHT_BIT) {
+    it(`strips the 8-bit ${name} sequence, which no ESC-anchored pattern can see`, () => {
+      expect(sanitize(`before${introducer}${PAYLOAD}${BEL}after`)).toBe("beforeafter");
+      // U+009C is the 8-bit string terminator, the form that pairs with these introducers.
+      expect(sanitize(`before${introducer}${PAYLOAD}after`)).toBe("beforeafter");
+      expect(sanitize(`before${introducer}${PAYLOAD}`)).toBe("before");
+    });
+  }
+
+  // ── the invisible/bidi class (sanitize.ts INVISIBLE) ──
+  //
+  // One representative per BRANCH of the alternation, so deleting any single branch fails here.
+  const INVISIBLE_MEMBERS: Array<[string, string]> = [
+    ["soft hyphen U+00AD", "­"],
+    ["combining grapheme joiner U+034F", "͏"],
+    ["Arabic letter mark U+061C", "؜"],
+    ["Hangul filler U+3164", "ㅤ"],
+    ["Khmer inherent vowel U+17B4", "឴"],
+    ["Mongolian vowel separator U+180E", "᠎"],
+    ["zero-width space U+200B", "​"],
+    ["right-to-left override U+202E", "‮"],
+    ["word joiner U+2060", "⁠"],
+    ["left-to-right isolate U+2066", "⁦"],
+    ["variation selector U+FE0F", "️"],
+    ["interlinear annotation anchor U+FFF9", "￹"],
+    ["BOM U+FEFF", "﻿"],
+    ["TAG block U+E0001", "\u{e0001}"],
+    ["variation selectors supplement U+E0100", "\u{e0100}"],
+  ];
+  for (const [name, ch] of INVISIBLE_MEMBERS) {
+    it(`strips ${name}`, () => {
+      // Between two visible characters, so a failure cannot be masked by trimming.
+      expect(sanitize(`a${ch}b`)).toBe("ab");
+    });
+  }
+
+  // ── the final per-codepoint backstop (sanitize.ts, the C0/DEL and C1 filters) ──
+  //
+  // This runs LAST and catches whatever survived the passes above — a truncated sequence, a bare
+  // introducer, a lone C1 byte that never introduced anything. It is the layer that makes
+  // "nothing actionable is left" true rather than merely intended, and it was unbound.
+  it("leaves no C1 code point renderable — every one is consumed or dropped", () => {
+    // The C1 block splits three ways, and saying so is the point: a flat "all become ab" would be
+    // FALSE for six of the 32 and would have to be weakened until it asserted almost nothing.
+    //
+    //   · the five string introducers swallow to end-of-input when unterminated (a terminal does
+    //     the same), so the trailing "b" goes with them;
+    //   · U+009B is the 8-bit CSI and consumes its final byte, which here is the "b";
+    //   · the other 26 introduce nothing and are dropped by the final per-codepoint backstop —
+    //     that backstop is what this test exists for, and it was previously unbound.
+    const SWALLOWS_REST = new Set([0x90, 0x98, 0x9d, 0x9e, 0x9f]);
+    const CSI_8BIT = 0x9b;
+
+    for (let code = 0x80; code <= 0x9f; code += 1) {
+      const ch = String.fromCodePoint(code);
+      const label = `U+00${code.toString(16).toUpperCase()}`;
+      const expected = SWALLOWS_REST.has(code) || code === CSI_8BIT ? "a" : "ab";
+      expect(sanitize(`a${ch}b`), `${label} rendered unexpectedly`).toBe(expected);
+      // Whatever the disposal route, the byte itself must never reach the terminal.
+      expect(sanitize(`a${ch}b`), `${label} survived`).not.toContain(ch);
+    }
+  });
+
+  it("drops every C0 code point and DEL, keeping only newline and tab", () => {
+    for (let code = 0x00; code <= 0x1f; code += 1) {
+      const ch = String.fromCodePoint(code);
+      const expected = ch === "\n" || ch === "\t" ? `a${ch}b` : "ab";
+      expect(sanitize(`a${ch}b`), `U+00${code.toString(16).toUpperCase()} mishandled`).toBe(
+        expected,
+      );
+    }
+    expect(sanitize("ab")).toBe("ab");
+  });
+});
+
 describe("indentContinuation", () => {
   it("indents continuation lines so content cannot occupy the label column", () => {
     // Newline is legitimate content and survives sanitization, so this is the second half of the
