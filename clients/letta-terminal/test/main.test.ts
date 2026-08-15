@@ -11,15 +11,24 @@
  */
 
 import { spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ContinuityCoreConfig } from "@ai-pa/letta-continuity-core";
 import { ContinuityCore } from "@ai-pa/letta-continuity-core";
+import type { RenderEvent } from "@ai-pa/letta-continuity-core";
 import { FaultyWsConnection, MockAppServer } from "@ai-pa/letta-continuity-core/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { EventEmitter } from "node:events";
-import { type InputOutcome, type TerminalIO, guardedWriter, run } from "../src/main.js";
+import {
+  type InputOutcome,
+  type JsonBridgeCore,
+  type TerminalIO,
+  attachJson,
+  guardedWriter,
+  run,
+} from "../src/main.js";
+import { MAX_TRACKED_ORIGINS } from "../src/render.js";
 
 const AGENT = "agent-local-3898b33a";
 const CONV = "local-conv-continuity-uuid";
@@ -315,6 +324,37 @@ describe("run()", () => {
       expect(code).toBe(0);
       expect(h.out.join("")).toBe("c-1\tactive\ty\n");
     }, 20_000);
+
+    it("emits ONE record per conversation even when the server supplies the delimiters", async () => {
+      // D2. The output is tab-separated and newline-delimited, and `sanitize` deliberately
+      // PRESERVES `\t` and `\n` because they are ordinary content in a transcript. Here they are
+      // the delimiters — and `id`/`updated_at` come from the server, validated only as
+      // `typeof === "string"`. So a hostile id injects extra columns and extra RECORDS into
+      // whatever parses this, which in Unit 8 is the cutover script.
+      server = new MockAppServer({
+        conversations: [
+          {
+            id: "c-1\tactive\tinjected\nc-evil",
+            agent_id: AGENT,
+            archived: false,
+            archived_at: null,
+            created_at: "x",
+            updated_at: "y\nz",
+          },
+        ],
+      });
+      const url = await server.start();
+      const h = harness();
+
+      const code = await run(["conversations", "list", ...target(url)], {}, h.io);
+
+      expect(code).toBe(0);
+      const out = h.out.join("");
+      const records = out.split("\n").filter(Boolean);
+      expect(records).toHaveLength(1);
+      // Exactly three columns: id, state, updated_at. Not six.
+      expect(records[0]?.split("\t")).toHaveLength(3);
+    }, 20_000);
   });
 
   describe("as a real process, through a real pipe", () => {
@@ -386,6 +426,86 @@ describe("run()", () => {
       expect(new Set(deltas.map((d) => d.runId)).size).toBe(400);
       expect(stdout.length).toBeGreaterThan(64 * 1024);
     }, 90_000);
+  });
+
+  describe("the --json bridge", () => {
+    it("bounds its origin map, which a tool-using reply grows forever", () => {
+      // Entries normally leave at `turn_finished` — but the FIRST run of a tool-using reply is
+      // never closed (captured live: local-run-320 began, a tool ran, local-run-321 carried the
+      // answer, and 320 was never finished). So on the `--json` path this map gained one entry per
+      // tool-using turn and never gave one back, on the path a long-lived bridge actually uses.
+      // Both origin caches on the HUMAN path were bounded and asserted; this one was neither.
+      const origins = new Map<string, string>();
+      const renderCbs: Array<(e: RenderEvent) => void> = [];
+      const core: JsonBridgeCore = {
+        onRender: (cb) => {
+          renderCbs.push(cb);
+          return () => {};
+        },
+        onConnectionState: () => () => {},
+        onApproval: () => () => {},
+        onFatal: () => () => {},
+        onError: () => () => {},
+        ownsRun: () => true,
+        attributeRun: () => "self",
+      };
+      const io = harness().io;
+
+      attachJson(core, io, origins);
+      // Every one of these opens a run that is never closed — the tool-using shape.
+      for (let i = 0; i < MAX_TRACKED_ORIGINS + 250; i += 1) {
+        for (const cb of renderCbs) {
+          cb({ type: "turn_start", runId: `local-run-${i}` } as RenderEvent);
+        }
+      }
+
+      expect(origins.size).toBeLessThanOrEqual(MAX_TRACKED_ORIGINS);
+      // Still useful, not merely small: the most recent runs are the ones still being rendered.
+      expect(origins.has(`local-run-${MAX_TRACKED_ORIGINS + 249}`)).toBe(true);
+    });
+
+    it("reads a line the same way the human path does", async () => {
+      // The `--json` one-shot re-implemented the send path to keep its echo off stdout, and in
+      // doing so dropped the two rules `classifyInput` owns: it sent `/exit` to the agent as
+      // literal text instead of leaving, and sent a blank message as a real turn. Same client,
+      // same input, two meanings, decided by an OUTPUT flag.
+      server = new MockAppServer();
+      const url = await server.start();
+
+      // `/exit` is a command, not a message. On the human path it leaves; on `--json` it used to
+      // be sent to the agent as literal text.
+      const jsonExit = await run(
+        [...target(url), "--json", "--message", "/exit", "--timeout", "5"],
+        {},
+        harness().io,
+      );
+      // A blank line starts no turn. On `--json` it used to start an empty one.
+      const jsonBlank = await run(
+        [...target(url), "--json", "--message", "   ", "--timeout", "5"],
+        {},
+        harness().io,
+      );
+
+      // Neither reached the wire — the property that matters.
+      expect(server.received.filter((m) => m.type === "input")).toHaveLength(0);
+
+      // And both report the SAME outcome the human path reports for the same input: nothing was
+      // delivered, so the one-shot has nothing to wait for. Asserting the agreement rather than a
+      // fixed number is the point — the defect was two paths disagreeing about one input.
+      const humanExit = await run(
+        [...target(url), "--message", "/exit", "--timeout", "5"],
+        {},
+        harness().io,
+      );
+      const humanBlank = await run(
+        [...target(url), "--message", "   ", "--timeout", "5"],
+        {},
+        harness().io,
+      );
+      expect(jsonExit).toBe(humanExit);
+      expect(jsonBlank).toBe(humanBlank);
+      expect(server.received.filter((m) => m.type === "input")).toHaveLength(0);
+    }, 30_000);
   });
 
   describe("guardedWriter", () => {

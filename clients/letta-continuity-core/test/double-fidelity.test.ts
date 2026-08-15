@@ -125,10 +125,12 @@ describe("the test double's fidelity to protocol.ts", () => {
     // "declare it non-wire", and the reader should not have to work out which strings are meant.
     expect(
       unexplained,
-      `mockServer.ts contains string literals that are neither exported by protocol.ts nor declared non-wire.\n` +
-        `If these are values the server sends or receives, add them to protocol.ts (its single-home rule).\n` +
-        `If they are fixture data, add them to NOT_WIRE_VOCABULARY in this file.\n` +
+      [
+        "mockServer.ts contains string literals that are neither exported by protocol.ts nor declared non-wire.",
+        "If these are values the server sends or receives, add them to protocol.ts (its single-home rule).",
+        "If they are fixture data, add them to NOT_WIRE_VOCABULARY in this file.",
         `Unexplained: ${JSON.stringify(unexplained)}`,
+      ].join("\n"),
     ).toEqual([]);
   });
 

@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { ContinuityCore } from "../src/index.js";
 import { TrustBoundaryError, assertLoopbackUrl } from "../src/trust.js";
 import { WsConnection } from "../src/ws.js";
 
@@ -58,5 +59,41 @@ describe("WsConnection", () => {
     expect(
       () => new WsConnection({ url: "ws://evil.example/ws", runtime: RT, allowRemote: true }),
     ).not.toThrow();
+  });
+});
+
+describe("ContinuityCore enforces the boundary itself, not via the transport", () => {
+  // The check lived ONLY inside `WsConnection` — which is exactly the class `createConnection`
+  // exists to replace. So any consumer supplying a transport bypassed the boundary entirely, and
+  // the M1 Unit 6 browser client is precisely such a consumer. On a server with NO client
+  // authentication, loopback is the whole of the access control, so it cannot be delegated to a
+  // component the caller is invited to swap out.
+  //
+  // Driven through a substituted transport ON PURPOSE: with the real `WsConnection` these would
+  // pass whether or not the core checked anything, which is how the gap stayed invisible.
+  function coreWithSubstituteTransport(url: string, allowRemote?: boolean): ContinuityCore {
+    return new ContinuityCore({
+      pointer: { agentId: RT.agent_id, conversationId: RT.conversation_id },
+      url,
+      ...(allowRemote === undefined ? {} : { allowRemote }),
+      // A transport that would happily dial anywhere. If the core does not check, nothing does.
+      createConnection: () => {
+        throw new Error("the transport was reached — the boundary was NOT enforced by the core");
+      },
+    });
+  }
+
+  it("refuses a non-loopback URL before the transport factory is called", async () => {
+    const core = coreWithSubstituteTransport("ws://evil.example/ws");
+    await expect(core.start()).rejects.toThrow(/non-loopback/);
+    core.stop();
+  });
+
+  it("still honours an explicit allowRemote opt-out", async () => {
+    // The other half: the boundary must be a gate, not a wall. This reaches the factory, which
+    // proves the check passed rather than that it merely failed differently.
+    const core = coreWithSubstituteTransport("ws://evil.example/ws", true);
+    await expect(core.start()).rejects.toThrow(/the transport was reached/);
+    core.stop();
   });
 });

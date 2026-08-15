@@ -475,10 +475,7 @@ describe("ContinuityCore properties", () => {
         // One chunk, so the delta id is exactly the id seeded into the dead session's snapshot.
         { id: "letta-msg-recycled", messageType: "assistant_message", text: "Z" },
       ]);
-      await waitFor(
-        () => events.some((e) => e.type === "delta" && e.text === "Z"),
-        3000,
-      );
+      await waitFor(() => events.some((e) => e.type === "delta" && e.text === "Z"), 3000);
     });
   });
 
@@ -718,7 +715,17 @@ describe("ContinuityCore properties", () => {
     it("a conversation_list entry with no id is dropped with a warning, not printed as undefined", async () => {
       server = new MockAppServer({
         conversations: [
-          { id: "c-1", agent_id: AGENT, archived: false, updated_at: "y" },
+          // The COMPLETE captured shape. It was abbreviated here, which mattered once the
+          // predicate started checking what it asserts: a fixture that omits fields the server
+          // really sends turns a correct validator into a failing test.
+          {
+            id: "c-1",
+            agent_id: AGENT,
+            archived: false,
+            archived_at: null,
+            created_at: "x",
+            updated_at: "y",
+          },
           { thread_id: "c-2", agent_id: AGENT },
         ],
       });
@@ -728,7 +735,45 @@ describe("ContinuityCore properties", () => {
 
       const list = await core.conversationList();
       expect(list.map((c) => c.id)).toEqual(["c-1"]);
-      expect(warnings.some((w) => /no string `id`/.test(w))).toBe(true);
+      expect(warnings.some((w) => /no valid `id`/.test(w))).toBe(true);
+    });
+
+    it("a conversation_list entry that drops a NON-id field is caught and the field is named", async () => {
+      // The predicate asserted six fields on the evidence of one, so deleting the other five from
+      // every entry left the suite green while `ConversationSummary` went on promising them —
+      // strictly worse than a cast, because it reads as validation.
+      //
+      // The field NAME in the warning is part of the fix: if this check is ever stricter than the
+      // server, an operator sees which field to look at instead of "the agent has no
+      // conversations".
+      server = new MockAppServer({
+        conversations: [
+          {
+            id: "c-good",
+            agent_id: AGENT,
+            archived: false,
+            archived_at: null,
+            created_at: "x",
+            updated_at: "y",
+          },
+          // Renamed `updated_at` — the shape a server-side field rename actually produces.
+          {
+            id: "c-drifted",
+            agent_id: AGENT,
+            archived: false,
+            archived_at: null,
+            created_at: "x",
+            last_updated_at: "y",
+          },
+        ],
+      });
+      url = await server.start();
+      const { core, warnings } = await makeCore();
+      await core.start();
+
+      const list = await core.conversationList();
+      expect(list.map((c) => c.id)).toEqual(["c-good"]);
+      expect(warnings.some((w) => /no valid `updated_at`/.test(w))).toBe(true);
     });
   });
 

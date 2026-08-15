@@ -13,6 +13,7 @@ import type {
   RenderEvent,
   protocol,
 } from "@ai-pa/letta-continuity-core";
+import { evictOldest } from "@ai-pa/letta-continuity-core";
 import {
   MAX_TRACKED_ORIGINS,
   type RenderOutput,
@@ -67,6 +68,26 @@ export interface SessionOptions extends RendererOptions {
   writeErr?: (text: string) => void;
 }
 
+/** What a typed or piped line MEANS, decided before anything is sent or echoed. */
+export type InputIntent = { kind: "ignored" } | { kind: "exit" } | { kind: "send"; text: string };
+
+/**
+ * Interpret one input line. The SINGLE place that decides what a line means.
+ *
+ * The `--json` one-shot re-implemented the send path so its local echo would not pollute an
+ * NDJSON stdout — and in re-implementing it, it dropped the two rules that live here. `--json`
+ * would send a blank message as a turn, and would send the literal text `/exit` to the agent
+ * rather than leaving. Same client, same input, two different meanings, depending on an output
+ * flag. The echo is what legitimately differs between the two paths; the meaning of the line is
+ * not, so only the echo is duplicated now.
+ */
+export function classifyInput(line: string): InputIntent {
+  const trimmed = line.trim();
+  if (trimmed === "") return { kind: "ignored" };
+  if (trimmed === "/exit" || trimmed === "/quit") return { kind: "exit" };
+  return { kind: "send", text: trimmed };
+}
+
 export class TerminalSession {
   private readonly core: SessionCore;
   private readonly renderer: Renderer;
@@ -112,18 +133,10 @@ export class TerminalSession {
         if (runId === undefined) return "unknown";
         return this.originCache.get(runId) ?? this.attribute(runId);
       },
-      isOwnRun: (runId) => {
-        if (runId === undefined) return false;
-        return (this.originCache.get(runId) ?? this.attribute(runId)) === "self";
-      },
     });
     if (event.type === "turn_finished" && event.runId) this.originCache.delete(event.runId);
     // A turn_finished lost across a reconnect would otherwise leak an entry per interrupted turn.
-    while (this.originCache.size > MAX_TRACKED_ORIGINS) {
-      const oldest = this.originCache.keys().next().value;
-      if (oldest === undefined) break;
-      this.originCache.delete(oldest);
-    }
+    evictOldest(this.originCache, MAX_TRACKED_ORIGINS);
     this.emit(out);
   }
 
@@ -167,9 +180,9 @@ export class TerminalSession {
    * Blank lines are ignored so a stray Enter does not start an empty turn.
    */
   handleInput(line: string): "sent" | "ignored" | "failed" | "exit" {
-    const trimmed = line.trim();
-    if (trimmed === "") return "ignored";
-    if (trimmed === "/exit" || trimmed === "/quit") return "exit";
+    const intent = classifyInput(line);
+    if (intent.kind !== "send") return intent.kind;
+    const trimmed = intent.text;
     // Submit FIRST, echo second. `core.send()` throws when the socket is not open, and echoing
     // before the send would print the line as though it had been delivered — the transcript would
     // claim something that never happened. A throw here also used to escape the readline handler

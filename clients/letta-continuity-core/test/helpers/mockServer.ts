@@ -372,7 +372,8 @@ export class MockAppServer {
       // approval_response the server additionally requires payload.request_id and a decision.
       const p = isObj(msg.payload) ? msg.payload : null;
       const okCreate =
-        p?.kind === InputKinds.createMessage && Array.isArray((p as { messages?: unknown }).messages);
+        p?.kind === InputKinds.createMessage &&
+        Array.isArray((p as { messages?: unknown }).messages);
       const okApproval =
         p?.kind === InputKinds.approvalResponse &&
         typeof (p as { request_id?: unknown }).request_id === "string" &&
@@ -451,7 +452,11 @@ export class MockAppServer {
     conn.socket.send(JSON.stringify(hello));
     // initial loop status like the real server
     this.sendBroadcast(conn, Inbound.updateLoopStatus, {
-      loop_status: { status: LoopStatuses.waitingOnInput, active_run_ids: [], executing_tool_call_ids: [] },
+      loop_status: {
+        status: LoopStatuses.waitingOnInput,
+        active_run_ids: [],
+        executing_tool_call_ids: [],
+      },
     });
   }
 
@@ -585,7 +590,11 @@ export class MockAppServer {
     const item = q.shift() as { conn: ConnState; text: string; clientMessageId: string };
     const runId = `local-run-${this.bump()}`;
     const messages: TurnMessage[] = [
-      { id: `letta-msg-${1000 + this.runCounter}`, messageType: DeltaMessageTypes.assistant, text: "OK" },
+      {
+        id: `letta-msg-${1000 + this.runCounter}`,
+        messageType: DeltaMessageTypes.assistant,
+        text: "OK",
+      },
     ];
     // Announce the dequeue by the client's own id BEFORE the run starts — this is the order the
     // live server was captured using, and it is how a QUEUED client learns which run to claim.
@@ -603,7 +612,9 @@ export class MockAppServer {
           kind: WireEnvelope.message,
           source: QueueSources.user,
         })),
-        removed: [{ client_message_id: item.clientMessageId, disposition: QueueDispositions.dequeued }],
+        removed: [
+          { client_message_id: item.clientMessageId, disposition: QueueDispositions.dequeued },
+        ],
       });
     };
 

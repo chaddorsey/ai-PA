@@ -19,6 +19,7 @@ import {
   type ConnectionState,
   ConnectionStateMachine,
 } from "./connection.js";
+import { evictOldest } from "./evict.js";
 import { fanOut } from "./fanout.js";
 import { type Attribution, type OwnershipSnapshot, RunOwnership } from "./ownership.js";
 import { type ContinuityPointer, readPointer } from "./pointer.js";
@@ -53,7 +54,8 @@ import {
   queuedClientMessageIds,
 } from "./protocol.js";
 import { type RenderListener, StreamAssembler } from "./stream.js";
-import { WsConnection, type WsConnectionOptions } from "./ws.js";
+import { assertLoopbackUrl } from "./trust.js";
+import { type ContinuityTransport, WsConnection, type WsConnectionOptions } from "./ws.js";
 
 const WS_URL = "ws://127.0.0.1:4577/ws";
 
@@ -76,13 +78,22 @@ const MAX_ANSWERED_APPROVALS = 512;
 const REAP_INTERVAL_MS = 60_000;
 const REAP_IDLE_MS = 900_000;
 
-/** Trim a Set to `max`, oldest first. Sets preserve insertion order, so this is FIFO. */
-function evictOldest(set: Set<string>, max: number): void {
-  while (set.size > max) {
-    const oldest = set.values().next().value;
-    if (oldest === undefined) break;
-    set.delete(oldest);
+/**
+ * The first field of `ConversationSummary` that `entry` does not actually supply, or null.
+ *
+ * Returning the field NAME rather than a boolean is the whole point: every caller of this needs to
+ * tell the operator which part of the contract the server broke, and a `false` cannot.
+ */
+function missingSummaryField(entry: unknown): string | null {
+  const c = entry as Record<string, unknown> | null | undefined;
+  if (c === null || typeof c !== "object") return "id";
+  for (const field of ["id", "agent_id", "created_at", "updated_at"] as const) {
+    if (typeof c[field] !== "string") return field;
   }
+  if (typeof c.archived !== "boolean") return "archived";
+  // Nullable by contract, so `null` is a valid value rather than a missing one.
+  if (c.archived_at !== null && typeof c.archived_at !== "string") return "archived_at";
+  return null;
 }
 
 /**
@@ -182,15 +193,21 @@ export interface ContinuityCoreConfig {
    * Transport factory. Defaults to `new WsConnection(options)`.
    *
    * Two reasons it is a seam rather than a hard-wired `new`. M1 Unit 6's browser client cannot use
-   * the `ws` package and will need to supply its own implementation of the same surface. And a
-   * write fault — `send` throwing because the socket is no longer OPEN — is the one condition a
-   * real loopback socket cannot be made to produce on cue: the frame that triggers the send and
-   * the send itself happen in the same tick, so no server-side action can separate them. The
-   * approval path's send-then-record ordering guards exactly that condition, and without a way to
-   * inject it the ordering is unassertable — which is how the pre-fix "nobody answers" hang came
-   * back with a green suite.
+   * the `ws` package and needs to supply its own implementation of the same surface. And a write
+   * fault — `send` throwing because the socket is no longer OPEN — is the one condition a real
+   * loopback socket cannot be made to produce on cue: the frame that triggers the send and the
+   * send itself happen in the same tick, so no server-side action can separate them. The approval
+   * path's send-then-record ordering guards exactly that condition, and without a way to inject it
+   * the ordering is unassertable — which is how the pre-fix "nobody answers" hang came back with a
+   * green suite.
+   *
+   * The return type is the structural `ContinuityTransport`, NOT the concrete `WsConnection`.
+   * `WsConnection` has private members, which make its type nominal, so typing this to the class
+   * meant only that class or a subclass could satisfy it — and a subclass imports `ws`. The first
+   * of the two reasons above did not actually work; a browser transport failed to compile against
+   * this seam (TS2322). Anything a browser can implement now satisfies it.
    */
-  createConnection?: (options: WsConnectionOptions) => WsConnection;
+  createConnection?: (options: WsConnectionOptions) => ContinuityTransport;
 }
 
 /**
@@ -213,7 +230,7 @@ export class ContinuityCore {
   private readonly assembler = new StreamAssembler();
   private pointer: ContinuityPointer | null = null;
   private runtime: Runtime | null = null;
-  private ws: WsConnection | null = null;
+  private ws: ContinuityTransport | null = null;
   private liveDedup: LiveDedup | null = null;
   /** Which runs on the shared conversation are ours — drives ORIGIN LABELLING, not approvals. */
   private readonly ownership = new RunOwnership();
@@ -400,12 +417,23 @@ export class ContinuityCore {
     // Returning them under a `ConversationSummary[]` annotation is a claim the wire has not made,
     // and the consumer prints `c.id` — so a renamed field reached the user as `undefined` rather
     // than as the drift signal this layer exists to raise.
+    //
+    // The predicate checks EVERY field it asserts. It used to check `id` alone and then claim all
+    // six, which is strictly worse than a bare cast: a cast is visibly an assumption, whereas
+    // `c is ConversationSummary` reads as validation. Deleting the other five fields from every
+    // entry left the suite green while the annotation went on promising them.
     return resp.conversations.filter((c): c is ConversationSummary => {
-      const ok = typeof (c as { id?: unknown })?.id === "string";
-      if (!ok) {
-        this.config.onWarn?.("conversation_list returned an entry with no string `id` — skipped");
+      const missing = missingSummaryField(c);
+      if (missing !== null) {
+        // Name the FIELD, not just the entry. If this check is ever stricter than the server, the
+        // warning says which field to look at — otherwise an over-strict predicate silently drops
+        // real conversations and presents as "the agent has none".
+        this.config.onWarn?.(
+          `conversation_list returned an entry with no valid \`${missing}\` — skipped`,
+        );
+        return false;
       }
-      return ok;
+      return true;
     });
   }
 
@@ -445,7 +473,7 @@ export class ContinuityCore {
 
   // ── internals ────────────────────────────────────────────────────────────
 
-  private requireWs(): WsConnection {
+  private requireWs(): ContinuityTransport {
     if (!this.ws) throw new Error("ContinuityCore not connected");
     return this.ws;
   }
@@ -454,12 +482,23 @@ export class ContinuityCore {
    * Build a wired WsConnection. Single construction point so the initial connect and the
    * reconnect path can never drift in their options (notably the version-gate settings).
    */
-  private newConnection(): WsConnection {
+  private newConnection(): ContinuityTransport {
     if (!this.runtime) throw new Error("runtime not resolved");
+    const url = this.config.url ?? WS_URL;
+    // Enforce the trust boundary HERE, before the factory — not only inside the object the factory
+    // is allowed to replace.
+    //
+    // This server has NO client authentication: loopback is the entire access control story, so it
+    // is the one rule that must not be delegated. It was checked only in `WsConnection`, which is
+    // precisely the class `createConnection` exists to substitute — so any consumer passing a
+    // transport bypassed the boundary completely, and the Unit 6 browser transport is exactly such
+    // a consumer. Checking in both places is deliberate: the core owns the policy, and
+    // `WsConnection` keeps its own check so it stays safe when used directly.
+    assertLoopbackUrl(url, this.config.allowRemote ?? false);
     const create =
       this.config.createConnection ?? ((o: WsConnectionOptions) => new WsConnection(o));
     const ws = create({
-      url: this.config.url ?? WS_URL,
+      url,
       runtime: this.runtime,
       pinnedVersion: this.config.pinnedVersion,
       versionPolicy: this.config.versionPolicy,
@@ -661,7 +700,7 @@ export class ContinuityCore {
    * replaced `this.ws` WITHOUT closing it, leaving two sockets wired to routeFrame and every
    * broadcast rendered twice on two independent event_seq sequences.
    */
-  private handleClose(source: WsConnection): void {
+  private handleClose(source: ContinuityTransport): void {
     if (this.stopped || source !== this.ws || source.isClosedByUs) return;
     this.scheduleReconnect();
   }
@@ -694,7 +733,7 @@ export class ContinuityCore {
     // Held outside the try so the catch can close THIS attempt rather than `this.ws`, which by
     // then may already be a newer connection that a concurrent attempt installed — closing it
     // would take down the recovery in progress and start another.
-    let attempt: WsConnection | null = null;
+    let attempt: ContinuityTransport | null = null;
     try {
       const ws = this.newConnection();
       attempt = ws;
@@ -751,7 +790,7 @@ export class ContinuityCore {
     }
   }
 
-  private async fetchSnapshot(ws: WsConnection): Promise<CatchupSnapshot | null> {
+  private async fetchSnapshot(ws: ContinuityTransport): Promise<CatchupSnapshot | null> {
     if (!this.runtime) return null;
     try {
       const resp = await ws.request<MessagesListResponseFrame>(
@@ -808,6 +847,19 @@ export type { ContinuityPointer } from "./pointer.js";
 export { readPointer, writePointer, PointerError } from "./pointer.js";
 export { assertLoopbackUrl, TrustBoundaryError } from "./trust.js";
 export type { Attribution, OwnershipSnapshot } from "./ownership.js";
-export { WsConnection } from "./ws.js";
+/**
+ * Exported because BOTH clients keep bounded id caches and each had rolled its own loop. The
+ * terminal's two origin caches were the third and fourth copies; Unit 6 would have been the fifth.
+ */
+export { evictOldest, type BoundedCollection } from "./evict.js";
+/**
+ * The transport CONTRACT is public; the Node implementation of it is not.
+ *
+ * `export { WsConnection }` had no consumer in either package — every internal user imports it
+ * from `./ws.js` directly — and exporting it pinned the Node-only `ws` package into the public
+ * module graph of a package whose next consumer is a browser. What Unit 6 needs from this barrel
+ * is the interface it must satisfy, not the implementation it cannot use.
+ */
+export type { ContinuityTransport } from "./ws.js";
 export type { WsConnectionOptions } from "./ws.js";
 export * as protocol from "./protocol.js";

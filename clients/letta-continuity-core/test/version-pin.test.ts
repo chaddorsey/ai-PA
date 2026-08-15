@@ -79,7 +79,7 @@ function versionFrom(packageJsonPath: string): string | null {
   }
 }
 
-export function probeInstalledLettaVersion(): VersionProbe {
+function probeInstalledLettaVersion(): VersionProbe {
   const probed: string[] = [];
   const override = process.env.LETTA_INSTALLED_VERSION;
   if (override) return { version: override, source: "LETTA_INSTALLED_VERSION", probed };
@@ -118,12 +118,15 @@ describe("server version pin", () => {
     // gate that checked and found nothing wrong, and those are opposite facts. If letta really is
     // absent, say so deliberately; do not let the tripwire turn itself off.
     const acknowledged = process.env[ABSENT_ACKNOWLEDGEMENT] === "1";
+    const probedList = probe.probed.map((p) => `  - ${p}`).join("\n");
     expect(
       probe.version !== null || acknowledged,
-      `Could not resolve the installed ${PACKAGE} version, so the server/on-disk drift gate did NOT run.\n` +
-        `Probed:\n${probe.probed.map((p) => `  - ${p}`).join("\n")}\n` +
-        `Fix the install, set LETTA_INSTALLED_VERSION=<version>, or — if this machine deliberately\n` +
+      [
+        `Could not resolve the installed ${PACKAGE} version, so the server/on-disk drift gate did NOT run.`,
+        `Probed:\n${probedList}`,
+        "Fix the install, set LETTA_INSTALLED_VERSION=<version>, or — if this machine deliberately",
         `has no letta — set ${ABSENT_ACKNOWLEDGEMENT}=1 to record that choice.`,
+      ].join("\n"),
     ).toBe(true);
   });
 
@@ -136,9 +139,11 @@ describe("server version pin", () => {
     }
     expect(
       VALIDATED_SERVER_VERSIONS as readonly string[],
-      `Installed ${PACKAGE} is ${probe.version} (from ${probe.source}), which is not contract-verified.\n` +
-        `Do NOT just add it to VALIDATED_SERVER_VERSIONS — run \`npm run check:live\` against a CLONED\n` +
-        `backend first (never a second writer on the live one).`,
+      [
+        `Installed ${PACKAGE} is ${probe.version} (from ${probe.source}), which is not contract-verified.`,
+        "Do NOT just add it to VALIDATED_SERVER_VERSIONS — run `npm run check:live` against a CLONED",
+        "backend first (never a second writer on the live one).",
+      ].join("\n"),
     ).toContain(probe.version);
   });
 

@@ -11,7 +11,12 @@
  * state (am I mid-stream? whose turn is this?) to insert newlines correctly.
  */
 
-import { type ConnectionState, type RenderEvent, protocol } from "@ai-pa/letta-continuity-core";
+import {
+  type ConnectionState,
+  type RenderEvent,
+  evictOldest,
+  protocol,
+} from "@ai-pa/letta-continuity-core";
 import { indentContinuation, sanitize } from "./sanitize.js";
 
 const { DeltaMessageTypes, ERROR_DELTA_TYPES, StopReasons } = protocol;
@@ -76,9 +81,12 @@ export interface RenderOutput {
 }
 
 export interface RenderContext {
-  /** Did THIS client start `runId`? Backed by the core's run-ownership attribution. */
-  isOwnRun(runId: string | undefined): boolean;
-  /** Three-way attribution; `isOwnRun` is the collapsed form and loses the `unknown` case. */
+  // `isOwnRun` used to sit here — the two-way collapse of `attributeRun`, which loses the
+  // `unknown` case. Nothing in the renderer called it (round 4 "fixed" its last dead branch), yet
+  // every implementer had to supply it, and having a two-way answer available next to the
+  // three-way one is an invitation to reach for the one that cannot say "I don't know". On a
+  // shared conversation the origin label is a security signal, so the hedge is the point.
+  /** Three-way attribution: which surface started this run, or `unknown` when we cannot tell. */
   attributeRun(runId: string | undefined): TurnOrigin;
   queueHasMine(frame: protocol.ServerFrame): boolean;
 }
@@ -309,11 +317,7 @@ export class Renderer {
   }
 
   private evictOldOrigins(): void {
-    while (this.originByRun.size > MAX_TRACKED_ORIGINS) {
-      const oldest = this.originByRun.keys().next().value;
-      if (oldest === undefined) break;
-      this.originByRun.delete(oldest);
-    }
+    evictOldest(this.originByRun, MAX_TRACKED_ORIGINS);
   }
 
   /** Flush any open streamed line (e.g. before exiting). */

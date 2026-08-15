@@ -170,7 +170,11 @@ export async function runCli(
       return "";
     }
   };
-  const [stdout, stderr, rawCode] = await Promise.all([read(outPath), read(errPath), read(codePath)]);
+  const [stdout, stderr, rawCode] = await Promise.all([
+    read(outPath),
+    read(errPath),
+    read(codePath),
+  ]);
   await rm(dir, { recursive: true, force: true });
 
   const parsed = Number.parseInt(rawCode.trim(), 10);
@@ -221,12 +225,16 @@ export async function runCliOnPty(
   // `script`'s OWN stderr is kept, not discarded. Discarding it turned a usage error into a bare
   // "exit 1 after 6ms" with nothing to diagnose — the failure mode this whole file exists to
   // prevent, committed by the file itself.
-  const child = spawn(SHELL, ["-c", `${scriptCmd}${stdin} >/dev/null 2>${shellQuote(diagnosticPath)}`], {
-    cwd: PACKAGE_ROOT,
-    detached: true,
-    stdio: ["inherit", "ignore", "ignore"],
-    env: { ...process.env, ...options.env },
-  });
+  const child = spawn(
+    SHELL,
+    ["-c", `${scriptCmd}${stdin} >/dev/null 2>${shellQuote(diagnosticPath)}`],
+    {
+      cwd: PACKAGE_ROOT,
+      detached: true,
+      stdio: ["inherit", "ignore", "ignore"],
+      env: { ...process.env, ...options.env },
+    },
+  );
 
   let timedOut = false;
   const timer = setTimeout(() => {

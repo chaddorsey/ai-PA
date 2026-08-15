@@ -51,6 +51,49 @@ export interface WsConnectionOptions {
   onWarn?: (msg: string) => void;
 }
 
+/**
+ * What `ContinuityCore` needs from a transport — and NOTHING about how it is implemented.
+ *
+ * The `createConnection` seam was typed to the concrete `WsConnection` class, which has eight
+ * private members. Private members make a class type NOMINAL in TypeScript, so the only thing that
+ * can satisfy it is `WsConnection` itself or a subclass — and a subclass drags the Node-only `ws`
+ * package into whatever imports it. The seam's stated purpose is that "M1 Unit 6's browser client
+ * cannot use the `ws` package and will need to supply its own implementation of the same surface",
+ * and that was simply false: a browser transport failed to compile against it (TS2322, verified).
+ * Half of the seam's reason for existing did not work, and would have been discovered by Unit 6
+ * rather than by Unit 5.
+ *
+ * So this is the surface, stated structurally. Note what is absent: no `ws` types, no `Buffer`, no
+ * `RawData` — a browser `WebSocket` and a `MessageEvent` can satisfy every member. The core uses
+ * exactly these nine and nothing else; `identity` is deliberately not here, because the core never
+ * reads it.
+ *
+ * Members are PROPERTIES holding function types rather than methods, for the same reason
+ * `SessionCore` is: TypeScript compares method parameters bivariantly, so a method-shaped
+ * declaration would accept an implementation that narrowed a parameter and failed at runtime.
+ * A class whose members are methods still satisfies this — assignability runs the other way.
+ */
+export interface ContinuityTransport {
+  /** Subscribe to validated inbound frames. Returns an unsubscribe function. */
+  onFrame: (cb: (frame: ServerFrame) => void) => () => void;
+  onError: (cb: (err: Error) => void) => () => void;
+  onClose: (cb: (code: number, reason: string) => void) => () => void;
+  /** Open the socket and complete the hello. Rejects if either fails. */
+  connect: () => Promise<RuntimeStartResponseFrame>;
+  /** Issue an RPC and await its correlated response. */
+  request: <T extends ServerFrame = ServerFrame>(
+    build: (requestId: string) => ServerFrame,
+    requestType: string,
+    timeoutMs?: number,
+  ) => Promise<T>;
+  /** Fire-and-forget. Throws synchronously when the socket cannot carry the frame. */
+  send: (frame: ServerFrame) => void;
+  close: () => void;
+  /** INTENT: we closed it. Distinct from `isClosed`, which is the socket's actual state. */
+  readonly isClosedByUs: boolean;
+  readonly isClosed: boolean;
+}
+
 interface Pending {
   responseType: string;
   resolve: (frame: ServerFrame) => void;
@@ -72,7 +115,11 @@ function rawToString(data: RawData): string {
   return (data as Buffer).toString("utf-8");
 }
 
-export class WsConnection {
+/**
+ * `implements` is the point, not decoration: without it the interface and the class could drift
+ * and only Unit 6 would find out.
+ */
+export class WsConnection implements ContinuityTransport {
   private socket: WebSocket | null = null;
   private readonly pending = new Map<string, Pending>();
   private readonly frameListeners = new Set<(frame: ServerFrame) => void>();

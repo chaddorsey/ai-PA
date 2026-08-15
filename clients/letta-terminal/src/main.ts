@@ -23,12 +23,14 @@ import {
   type ContinuityCoreConfig,
   type ContinuityFatalError,
   type RenderEvent,
+  evictOldest,
   protocol,
   writePointer,
 } from "@ai-pa/letta-continuity-core";
 import { CliError, USAGE, parseArgs } from "./cli.js";
+import { MAX_TRACKED_ORIGINS } from "./render.js";
 import { sanitize } from "./sanitize.js";
-import { TerminalSession } from "./session.js";
+import { TerminalSession, classifyInput } from "./session.js";
 
 /** What a line typed (or piped) into the session did. */
 export type InputOutcome = "sent" | "ignored" | "failed" | "exit";
@@ -146,6 +148,25 @@ async function runOneShot(
 }
 
 /**
+ * The slice of the core the `--json` bridge uses.
+ *
+ * Structural rather than the concrete `ContinuityCore` so the bridge's own bounds and origin
+ * handling can be driven frame-by-frame by a stub — the same seam reasoning as `SessionCore`.
+ * Without it, the only way to reach this code is a real socket and a real server, which is why
+ * the unbounded map here went unnoticed while both caches on the human path were bounded AND
+ * asserted.
+ */
+export interface JsonBridgeCore {
+  onRender: (cb: (e: RenderEvent) => void) => () => void;
+  onConnectionState: (cb: (state: string) => void) => () => void;
+  onApproval: (cb: (a: { requestId: string; outcome: string }) => void) => () => void;
+  onFatal: (cb: (err: ContinuityFatalError) => void) => () => void;
+  onError: (cb: (err: Error) => void) => () => void;
+  ownsRun: (runId: string | undefined) => boolean;
+  attributeRun: (runId: string | undefined) => string;
+}
+
+/**
  * NDJSON output for machine consumers.
  *
  * The human transcript is deliberately lossy — origin labels, `— ` notice prefixes, sanitizer
@@ -154,11 +175,16 @@ async function runOneShot(
  * structured event; this stops throwing it away. Text is NOT sanitized: the consumer is not a
  * terminal and needs the real characters, which is why they are ESCAPED rather than stripped.
  */
-function attachJson(core: ContinuityCore, io: TerminalIO): () => void {
+export function attachJson(
+  core: JsonBridgeCore,
+  io: TerminalIO,
+  // Injected so the BOUND is assertable rather than merely intended — the same reason
+  // `Renderer.trackedOriginCount` exists. A caller that does not care omits it.
+  originByRun: Map<string, string> = new Map<string, string>(),
+): () => void {
   // Origin is captured at turn_start and held for the run. Asking at turn_finished reads the
   // state AFTER ownership is released, which reported every completed turn of our own as
   // "unknown" — the same trap the human renderer already guards against.
-  const originByRun = new Map<string, string>();
   const offs = [
     core.onRender((e: RenderEvent) => {
       if (e.type === "turn_start" && e.runId) {
@@ -166,6 +192,11 @@ function attachJson(core: ContinuityCore, io: TerminalIO): () => void {
       }
       const origin = e.runId ? originByRun.get(e.runId) : undefined;
       if (e.type === "turn_finished" && e.runId) originByRun.delete(e.runId);
+      // Entries normally leave at turn_finished — but a tool-using reply's FIRST run is never
+      // closed (captured live), so on the `--json` bridge path this map gained one entry per
+      // tool-using turn and never gave it back. Both origin caches on the human path are bounded;
+      // this one was not, on the path a long-lived bridge actually uses.
+      evictOldest(originByRun, MAX_TRACKED_ORIGINS);
       io.stdout(
         ndjson({
           kind: e.type,
@@ -202,6 +233,20 @@ function attachJson(core: ContinuityCore, io: TerminalIO): () => void {
   };
 }
 
+/**
+ * One field of the `conversations list` TSV.
+ *
+ * `sanitize` deliberately PRESERVES `\t` and `\n` — they are legitimate content in a transcript.
+ * In a tab-separated, newline-delimited record they are the delimiters, and the fields here are
+ * server-supplied and validated only as `typeof === "string"`. A conversation id containing a
+ * newline therefore injects whole extra records into whatever parses this — Unit 8's cutover
+ * script among them. The two escapes that are safe everywhere else are exactly the two that are
+ * not safe here, which is why this cannot be left to the sanitizer.
+ */
+function tsvField(value: string, maxLength: number): string {
+  return sanitize(value, { maxLength }).replace(/[\t\n]+/g, " ");
+}
+
 async function runConversationsCommand(
   core: ContinuityCore,
   options: ReturnType<typeof parseArgs>,
@@ -213,7 +258,7 @@ async function runConversationsCommand(
       io.stdout(
         options.json
           ? ndjson(c)
-          : `${sanitize(c.id, { maxLength: 120 })}\t${c.archived ? "archived" : "active"}\t${sanitize(c.updated_at, { maxLength: 40 })}\n`,
+          : `${tsvField(c.id, 120)}\t${c.archived ? "archived" : "active"}\t${tsvField(c.updated_at, 40)}\n`,
       );
     }
     return 0;
@@ -231,7 +276,11 @@ async function runConversationsCommand(
     // replaces may be the only record of the conversation now orphaned.
     try {
       await copyFile(options.writePointer, `${options.writePointer}.bak`);
-      io.stderr(`— previous pointer saved to ${options.writePointer}.bak\n`);
+      // The PATH is argv, so it echoes back whatever was passed — sanitized like every other
+      // string this process did not author.
+      io.stderr(
+        `— previous pointer saved to ${sanitize(options.writePointer, { maxLength: 512 })}.bak\n`,
+      );
     } catch {
       // Nothing there to preserve: the ordinary first-run case.
     }
@@ -240,7 +289,7 @@ async function runConversationsCommand(
       conversationId: created.id,
       label: options.title,
     });
-    io.stderr(`— pointer written to ${options.writePointer}\n`);
+    io.stderr(`— pointer written to ${sanitize(options.writePointer, { maxLength: 512 })}\n`);
   }
   io.stdout(
     options.json
@@ -260,7 +309,17 @@ export async function run(
   try {
     options = parseArgs(argv, env);
   } catch (err) {
-    io.stderr(`${err instanceof CliError ? err.message : String(err)}\n`);
+    // Sanitized like every sibling diagnostic — this one was the exception, and it is the FIRST
+    // thing the program can print, before any socket opens.
+    //
+    // The message embeds argv and env verbatim: `letta-continuity $'\x1b]52;c;…\x07'` comes back
+    // as `unknown option: <ESC>]52;…`, which is an OSC-52 clipboard write executed by the
+    // operator's terminal, and `--url $'\x1b]0;…\x07'` spoofs the window title through
+    // TrustBoundaryError. Agents write this repo's env and invoke this binary, so "the input is
+    // the operator's own" does not hold here.
+    io.stderr(
+      `${sanitize(err instanceof CliError ? err.message : String(err), { maxLength: 512 })}\n`,
+    );
     return 2;
   }
   if (options.help) {
@@ -353,11 +412,17 @@ export async function run(
     // In `--json` mode the send must NOT go through the session: its local echo (`you › …`) is
     // human text on the stdout that is supposed to be nothing but NDJSON, so one line of every
     // one-shot failed to parse.
+    // What the line MEANS is decided in one place (`classifyInput`) for both paths; only the ECHO
+    // differs. This path used to re-implement the whole thing and had already diverged: `--json`
+    // sent a blank message as a turn, and sent the literal text `/exit` to the agent instead of
+    // leaving.
     const send = (): InputOutcome => {
       if (!options.json) return session.handleInput(oneShotMessage);
+      const intent = classifyInput(oneShotMessage);
+      if (intent.kind !== "send") return intent.kind;
       try {
-        const handle = core.send(oneShotMessage);
-        io.stdout(ndjson({ kind: "sent", requestId: handle.requestId, text: oneShotMessage }));
+        const handle = core.send(intent.text);
+        io.stdout(ndjson({ kind: "sent", requestId: handle.requestId, text: intent.text }));
         return "sent";
       } catch (err) {
         io.stderr(ndjson({ kind: "error", message: (err as Error).message }));

@@ -35,6 +35,7 @@
  * hung conversation.
  */
 
+import { evictOldest } from "./evict.js";
 import { InputDispositions, QueueDispositions, StopReasons } from "./protocol.js";
 
 /**
@@ -72,15 +73,15 @@ interface Claim {
 
 /** A run we are attributing to ourselves, and how it got here. */
 interface OwnedRun {
-  /** The claim that produced this run. Runs of one turn share it — see `parent`. */
+  /** The claim that produced this run. Runs of one turn share it. */
   requestId: string;
   origin?: string;
   lastActivity: number;
-  /**
-   * Set when this run is a CONTINUATION of an earlier run of ours rather than the run a claim
-   * bound directly. A tool-using reply spans several runs and the first one is never closed.
-   */
-  parent?: string;
+  // `parent` — the id of the run this one continued — was written here and read by nothing, so it
+  // recorded a fact no behaviour depended on while reading as though attribution used it. Removed
+  // rather than kept: a field that is never read cannot be wrong, which means it also cannot be
+  // right, and it made the continuation path look better-tracked than it is. If the ownership
+  // redesign needs run lineage it should add it deliberately, with a reader.
   /**
    * True once `turn_finished{requires_approval}` has parked this run. A parked turn is alive but
    * idle, so it must survive `onIdle` — otherwise a late approval reads as somebody else's.
@@ -273,7 +274,6 @@ export class RunOwnership {
         requestId: continued.requestId,
         origin: continued.origin,
         lastActivity: now,
-        parent: continued.runId,
       });
       return;
     }
@@ -451,11 +451,7 @@ export class RunOwnership {
   /** Record a consumed message id, evicting oldest-first so the set cannot grow without bound. */
   private consume(clientMessageId: string): void {
     this.consumedMessageIds.add(clientMessageId);
-    while (this.consumedMessageIds.size > MAX_REMEMBERED_RUNS) {
-      const oldest = this.consumedMessageIds.values().next().value;
-      if (oldest === undefined) break;
-      this.consumedMessageIds.delete(oldest);
-    }
+    evictOldest(this.consumedMessageIds, MAX_REMEMBERED_RUNS);
   }
 
   snapshot(): OwnershipSnapshot {
@@ -476,12 +472,9 @@ export class RunOwnership {
    */
   private remember(runId: string): void {
     this.seenRuns.add(runId);
-    while (this.seenRuns.size > MAX_REMEMBERED_RUNS) {
-      const oldest = this.seenRuns.values().next().value;
-      if (oldest === undefined) break;
-      this.seenRuns.delete(oldest);
-      this.foreignRuns.delete(oldest);
-    }
+    // foreignRuns is keyed by the same ids, so it has to shrink with seenRuns or it becomes the
+    // leak this cap exists to prevent.
+    evictOldest(this.seenRuns, MAX_REMEMBERED_RUNS, (id) => this.foreignRuns.delete(id));
   }
 
   private drop(claim: Claim): void {

@@ -950,4 +950,73 @@ export const MUTATIONS = [
     replace: ``,
     expect: /excludes frames that take no part in the ordered stream/,
   },
+
+  // ── 58-63: injection paths and the Unit-6 seam (root causes D and E) ───
+  {
+    id: 58,
+    pkg: TERMINAL,
+    file: "src/main.ts",
+    label: "D1: the arg-parse error path echoes argv to the terminal unsanitized",
+    // A SPAWN test: argv only really is argv once it has crossed a shell.
+    tests: ["test/process.test.ts"],
+    find: `    io.stderr(`+"`"+`\${sanitize(err instanceof CliError ? err.message : String(err), { maxLength: 512 })}\\n`+"`"+`);`,
+    replace: `    io.stderr(`+"`"+`\${err instanceof CliError ? err.message : String(err)}\\n`+"`"+`);`,
+    expect: /never echoes a control sequence back to the terminal from the arg-parse error path/,
+  },
+  {
+    id: 59,
+    pkg: TERMINAL,
+    file: "src/main.ts",
+    label: "D2: `conversations list` lets server text supply its own delimiters",
+    tests: ["test/main.test.ts"],
+    find: `  return sanitize(value, { maxLength }).replace(/[\\t\\n]+/g, " ");`,
+    replace: `  return sanitize(value, { maxLength });`,
+    expect: /emits ONE record per conversation even when the server supplies the delimiters/,
+  },
+  {
+    id: 60,
+    pkg: CORE,
+    file: "src/index.ts",
+    label: "E2: the loopback boundary is left to the transport the caller can replace",
+    tests: ["test/trust.test.ts"],
+    find: `    assertLoopbackUrl(url, this.config.allowRemote ?? false);`,
+    replace: ``,
+    expect: /refuses a non-loopback URL before the transport factory is called/,
+  },
+  {
+    id: 61,
+    pkg: CORE,
+    file: "src/index.ts",
+    label: "E3: the ConversationSummary predicate asserts six fields on the evidence of one",
+    tests: ["test/core.properties.test.ts"],
+    find: `  for (const field of ["id", "agent_id", "created_at", "updated_at"] as const) {`,
+    replace: `  for (const field of ["id"] as const) {`,
+    expect: /drops a NON-id field is caught and the field is named/,
+  },
+  {
+    id: 62,
+    pkg: TERMINAL,
+    file: "src/main.ts",
+    label: "E4: the --json bridge's origin map grows without bound again",
+    tests: ["test/main.test.ts"],
+    find: `      evictOldest(originByRun, MAX_TRACKED_ORIGINS);`,
+    replace: ``,
+    expect: /bounds its origin map, which a tool-using reply grows forever/,
+  },
+  {
+    id: 63,
+    pkg: TERMINAL,
+    file: "src/main.ts",
+    label: "E4: the --json send path re-implements what a line MEANS, and diverges",
+    tests: ["test/main.test.ts"],
+    find: `      const intent = classifyInput(oneShotMessage);
+      if (intent.kind !== "send") return intent.kind;
+      try {
+        const handle = core.send(intent.text);
+        io.stdout(ndjson({ kind: "sent", requestId: handle.requestId, text: intent.text }));`,
+    replace: `      try {
+        const handle = core.send(oneShotMessage);
+        io.stdout(ndjson({ kind: "sent", requestId: handle.requestId, text: oneShotMessage }));`,
+    expect: /reads a line the same way the human path does/,
+  },
 ];
