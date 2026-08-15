@@ -303,19 +303,67 @@ export const MUTATIONS = [
     replace: `      if (claim.state !== "queued") {`,
     expect: /demoted by a reconnect is still resolvable/,
   },
+  // ── 19a-19d: one entry per `start()` reset ─────────────────────────────
+  //
+  // This was ONE mutation reverting all four resets at once, with an `expect` bound only to the
+  // watermark. So it was "caught" as long as the watermark test failed, and the other three
+  // resets — including `answeredApprovals`, whose loss reproduces the nobody-answers hang on a
+  // third path — were asserted by nothing at all. A mutation that reverts four components proves
+  // one of them is load-bearing and says nothing about the rest.
   {
-    id: 19,
+    id: "19a",
     pkg: CORE,
     file: "src/index.ts",
     label: "start() no longer resets the per-connection ordering watermark",
     tests: ["test/core.properties.test.ts"],
     find: `    this.assembler.reset();
-    this.liveDedup = null;
-    this.answeredApprovals = new Set();
-    this.sentApprovalResponses = new Set();
-    this.pointer = await this.resolvePointer();`,
-    replace: `    this.pointer = await this.resolvePointer();`,
-    expect: /stopped and started again renders/,
+    this.liveDedup = null;`,
+    replace: `    this.liveDedup = null;`,
+    expect: /stopped and started again renders the new session's stream/,
+  },
+  {
+    id: "19b",
+    pkg: CORE,
+    file: "src/index.ts",
+    label: "start() no longer drops the previous session's catch-up watermark",
+    tests: ["test/core.properties.test.ts"],
+    find: `    this.liveDedup = null;
+    this.answeredApprovals = new Set();`,
+    replace: `    this.answeredApprovals = new Set();`,
+    expect: /does not filter live frames through the OLD snapshot/,
+  },
+  {
+    id: "19c",
+    pkg: CORE,
+    file: "src/index.ts",
+    label: "start() no longer forgets which approvals it answered (nobody-answers hang, 3rd path)",
+    tests: ["test/core.properties.test.ts"],
+    find: `    this.answeredApprovals = new Set();
+    this.sentApprovalResponses = new Set();`,
+    replace: `    this.sentApprovalResponses = new Set();`,
+    expect: /ANSWERS an approval it already answered/,
+  },
+  {
+    id: "19d",
+    pkg: CORE,
+    file: "src/index.ts",
+    label: "start() no longer clears the ids of approval responses it minted",
+    retired: `No mutation of this line can fail, by the codebase's own stated rule — and the rule is
+      applied here rather than quietly excepted.
+
+      \`reconnect()\` deliberately does NOT clear \`sentApprovalResponses\`, and says why at
+      src/index.ts:700: the entries are request ids this process minted, unique for the life of
+      the process, so a stale one can never match a later ack. Clearing it would only bound
+      memory, and memory is bounded where the set is WRITTEN (evictOldest / MAX_ANSWERED_APPROVALS).
+
+      Exactly the same argument applies to the copy in \`start()\`: a restart does not reset the
+      id counter or the client nonce, so no id from the dead session can ever collide with one
+      from the new session. The line is therefore unobservable, and a test written to catch its
+      removal could only be a test of the line's existence.
+
+      Kept rather than deleted because it costs nothing and reads as intentional alongside its
+      three load-bearing neighbours; recorded here so that "19d has no test" is a decision on the
+      record rather than a gap someone finds again in round 6. Same treatment as ids 6 and 21.`,
   },
   {
     id: 20,
@@ -592,5 +640,134 @@ export const MUTATIONS = [
     find: `    "[\\\\u{e0100}-\\\\u{e01ef}]",`,
     replace: `    "[\\\\u{e0200}-\\\\u{e0200}]",`,
     expect: /invisible characters that are not bidi/,
+  },
+
+  // ── 44-45: the DOUBLE is now under mutation too ────────────────────────
+  //
+  // `mockServer.ts` had no mutation of any kind, and it is a second transcription of the wire
+  // vocabulary — so drifting the double's `tool_call_message` left the suite green (measured).
+  // The double is test infrastructure, but it is the infrastructure every other assertion in
+  // both packages is made against, so an unfalsifiable double makes 200 green tests worth less
+  // than they look.
+  //
+  // The chain that makes the double trustworthy has TWO links, and they need separate mutations:
+  //   45  the double agrees with protocol.ts   (offline, always runs)
+  //   44  protocol.ts agrees with the SERVER   (live, needs a real App Server)
+  // Neither alone is sufficient and neither can stand in for the other.
+  {
+    id: 44,
+    pkg: CORE,
+    file: "src/protocol.ts",
+    label: "protocol.ts drifts a wire string away from the real server (live gate)",
+    // The live contract test does NOT import the double — it speaks to a real App Server through
+    // protocol.ts's builders. That is exactly why the mutation belongs HERE and not on
+    // mockServer.ts: a mockServer mutation bound to `check:live` could never fail, because the
+    // live test never loads the file. Drifting protocol.ts is what the live gate can actually see.
+    tests: ["test/live.contract.test.ts"],
+    live: true,
+    env: { LETTA_LIVE_WS: "1" },
+    find: `  conversationMessagesList: "conversation_messages_list",`,
+    replace: `  conversationMessagesList: "conversation_messages_list_DRIFTED",`,
+    expect: /round-trip the pinned frames/,
+  },
+  {
+    id: 45,
+    pkg: CORE,
+    file: "test/helpers/mockServer.ts",
+    label: "the double invents its own copy of a wire string again",
+    tests: ["test/double-fidelity.test.ts"],
+    find: `          message_type: DeltaMessageTypes.toolCall,`,
+    replace: `          message_type: "tool_call_message",`,
+    // Note the mutation restores a string that is still CORRECT today. That is the point: the
+    // defect was never a wrong value, it was a value with no single home, so the next rename
+    // could silently disagree. The gate fires on the un-sourced literal, not on its contents —
+    // which is why the binding is the "sources the three strings it used to invent" assertion
+    // and NOT "invents no wire vocabulary of its own": the latter compares against protocol.ts's
+    // VALUES, and this value is still one of them. (The harness's new failing-test-id matching is
+    // what surfaced the difference; against whole-output matching the two were indistinguishable.)
+    expect: /sources the three strings it used to invent from protocol\.ts/,
+  },
+
+  // ── 46-51: the round-4 S1 set (root cause B) ───────────────────────────
+  //
+  // Every one of these was found by RUNNING THE BINARY, and none by the 287 in-process tests —
+  // so four of the six are bound to tests that spawn the CLI. An array sink never closes, never
+  // fills and never ends a process, so it cannot observe a hang, an exit code, or a closed pipe
+  // no matter how the assertion is written.
+  {
+    id: 46,
+    pkg: TERMINAL,
+    file: "src/render.ts",
+    label: "B1: the renderer drops error_message/loop_error again (the silent blackout)",
+    tests: ["test/main.test.ts"],
+    find: `        if (event.messageType && ERROR_DELTA_TYPES.has(event.messageType)) {
+          return this.renderTurnError(event);
+        }`,
+    replace: `        if (false) {
+          return this.renderTurnError(event);
+        }`,
+    expect: /is shown and exits nonzero/,
+  },
+  {
+    id: 47,
+    pkg: TERMINAL,
+    file: "src/main.ts",
+    label: "B1: a failed turn no longer reaches the EXIT CODE",
+    tests: ["test/main.test.ts"],
+    find: `    if (e.type === "delta" && e.messageType && protocol.ERROR_DELTA_TYPES.has(e.messageType)) {
+      exitCode = 1;
+    }`,
+    replace: `    void e;`,
+    expect: /is shown and exits nonzero/,
+  },
+  {
+    id: 48,
+    pkg: TERMINAL,
+    file: "src/main.ts",
+    label: "B2: headless attach hangs forever on an ended stdin",
+    // Bound to a test that SPAWNS the CLI. In-process, a promise that never settles is
+    // indistinguishable from a slow test, which is exactly how this shipped.
+    tests: ["test/process.test.ts"],
+    find: `        if (process.stdin.readableEnded) return resolve();`,
+    replace: `        if (false) return resolve();`,
+    expect: /exits instead of hanging when stdin is \/dev\/null/,
+  },
+  {
+    id: 49,
+    pkg: TERMINAL,
+    file: "src/main.ts",
+    label: "B3: a closed stdout launders a failing run into exit 0",
+    tests: ["test/process.test.ts"],
+    find: `      if (err.code !== "EPIPE") process.exitCode = 1;
+      process.exit(process.exitCode ?? 0);`,
+    replace: `      void err;
+      process.exit(0);`,
+    expect: /does not launder a failing run into exit 0/,
+  },
+  {
+    id: 50,
+    pkg: TERMINAL,
+    file: "src/main.ts",
+    label: "B4: the one-shot waits out its full timeout on a turn that ended in error",
+    tests: ["test/main.test.ts"],
+    find: `      if (sawOurTurn && e.type === "turn_finished" && e.stopReason === protocol.StopReasons.error) {
+        finish(1);
+        return;
+      }`,
+    replace: ``,
+    expect: /exits promptly when it ends on turn_finished\{error\}/,
+  },
+  {
+    id: 51,
+    pkg: TERMINAL,
+    file: "src/main.ts",
+    label: "B5: guardedWriter rethrows a non-EPIPE fault out of an error listener",
+    tests: ["test/main.test.ts"],
+    find: `    gone = true;
+    onGone(err);`,
+    replace: `    if (err.code !== "EPIPE") throw err;
+    gone = true;
+    onGone(err);`,
+    expect: /does not throw out of the error listener on a NON-EPIPE fault/,
   },
 ];

@@ -18,7 +18,8 @@ import type { ContinuityCoreConfig } from "@ai-pa/letta-continuity-core";
 import { ContinuityCore } from "@ai-pa/letta-continuity-core";
 import { FaultyWsConnection, MockAppServer } from "@ai-pa/letta-continuity-core/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { type InputOutcome, type TerminalIO, run } from "../src/main.js";
+import { EventEmitter } from "node:events";
+import { type InputOutcome, type TerminalIO, guardedWriter, run } from "../src/main.js";
 
 const AGENT = "agent-local-3898b33a";
 const CONV = "local-conv-continuity-uuid";
@@ -147,6 +148,49 @@ describe("run()", () => {
 
       expect(await pending).toBe(0);
       expect(h.out.join("")).toContain("answered anyway");
+    }, 30_000);
+  });
+
+  describe("an errored turn", () => {
+    // The error path had NO fixture, which is why a provider outage — the commonest real fault —
+    // rendered as an empty successful turn and exited 0. Both shapes below were captured live.
+    it("is shown and exits nonzero, instead of rendering as an empty SUCCESSFUL turn", async () => {
+      // The shape captured against a 404-model agent: a `loop_error` and an `error_message` delta,
+      // then WAITING_ON_INPUT and no `turn_finished` at all. `renderDelta` dropped both for not
+      // being assistant/reasoning, and the abnormal-ending notice keys on a stop reason that never
+      // arrived — so the client showed nothing, said nothing, and reported success.
+      server = new MockAppServer({ erroredTurn: "deltas" });
+      const url = await server.start();
+      const h = harness();
+
+      const code = await run([...target(url), "--message", "hi", "--timeout", "10"], {}, h.io);
+
+      expect(code).toBe(1);
+      // The failure is a NOTICE: the agent did not say this, the client is reporting the turn
+      // failed. stdout stays clean for automation reading the transcript.
+      expect(h.err.join("")).toContain("turn failed");
+      // The provider's actual message reaches the operator, not just "something went wrong".
+      expect(h.err.join("")).toContain("404");
+      expect(h.out.join("")).not.toContain("turn failed");
+    }, 20_000);
+
+    it("exits promptly when it ends on turn_finished{error} with no following idle", async () => {
+      // The OTHER server path. Nothing wakes a wait keyed only on the shared idle, so the one-shot
+      // sat out its entire timeout and then reported `— timed out …`, blaming a server that had
+      // answered immediately. Measured at 20.32s against `--timeout 20`; the default is 180s.
+      server = new MockAppServer({ erroredTurn: "turn-finished" });
+      const url = await server.start();
+      const h = harness();
+
+      const startedAt = Date.now();
+      const code = await run([...target(url), "--message", "hi", "--timeout", "20"], {}, h.io);
+      const elapsed = Date.now() - startedAt;
+
+      expect(code).toBe(1);
+      // The assertion is about TERMINATION, not speed: anything under the timeout proves it woke
+      // on the error rather than on the clock. The margin is wide so this cannot flake.
+      expect(elapsed).toBeLessThan(10_000);
+      expect(h.err.join("")).not.toContain("timed out");
     }, 30_000);
   });
 
@@ -342,6 +386,56 @@ describe("run()", () => {
       expect(new Set(deltas.map((d) => d.runId)).size).toBe(400);
       expect(stdout.length).toBeGreaterThan(64 * 1024);
     }, 90_000);
+  });
+
+  describe("guardedWriter", () => {
+    /** A stream that records writes and can be made to emit any error on cue. */
+    function fakeStream(): {
+      stream: Pick<NodeJS.WriteStream, "on" | "write">;
+      written: string[];
+      emitter: EventEmitter;
+    } {
+      const emitter = new EventEmitter();
+      const written: string[] = [];
+      const stream = Object.assign(emitter, {
+        write: (text: string) => {
+          written.push(text);
+          return true;
+        },
+      }) as unknown as Pick<NodeJS.WriteStream, "on" | "write">;
+      return { stream, written, emitter };
+    }
+
+    it("does not throw out of the error listener on a NON-EPIPE fault", () => {
+      // It used to `throw err` for anything that was not EPIPE — from inside an EventEmitter
+      // `error` listener, so the throw became an uncaughtException and killed the process. That
+      // applied to stderr too, whose contract is explicitly that losing it is survivable, and the
+      // crash report would have had to be written to the stream that just failed.
+      // EIO/ECONNRESET/ENOSPC on a detached tty or a full disk all reach here.
+      const { stream, emitter } = fakeStream();
+      const seen: NodeJS.ErrnoException[] = [];
+      guardedWriter(stream, (err) => seen.push(err));
+
+      const fault: NodeJS.ErrnoException = Object.assign(new Error("input/output error"), {
+        code: "EIO",
+      });
+      expect(() => emitter.emit("error", fault)).not.toThrow();
+      // The caller is TOLD which error it was, so it can decide (stdout records a failure, stderr
+      // stays quiet) — the classification belongs there, not in the writer.
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.code).toBe("EIO");
+    });
+
+    it("stops writing once the stream is gone, whatever killed it", () => {
+      const { stream, written, emitter } = fakeStream();
+      const write = guardedWriter(stream, () => {});
+
+      write("before\n");
+      emitter.emit("error", Object.assign(new Error("broken pipe"), { code: "EPIPE" }));
+      write("after\n");
+
+      expect(written).toEqual(["before\n"]);
+    });
   });
 
   describe("argument plumbing", () => {

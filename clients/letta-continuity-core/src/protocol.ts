@@ -64,7 +64,7 @@ export const REQUIRED_CAPABILITIES = ["runtime_start", "conversation_management"
  * loudly. A future control type not listed here will fail too — which is the intended
  * upgrade-gate behaviour, not an oversight.
  */
-export const CONTROL_DELTA_TYPES: ReadonlySet<string> = new Set(["stop_reason"]);
+export const CONTROL_DELTA_TYPES: ReadonlySet<string> = new Set(["stop_reason", "loop_error"]);
 
 /**
  * `stream_delta.delta.message_type` values consumers switch on.
@@ -81,7 +81,35 @@ export const DeltaMessageTypes = {
   approvalRequest: "approval_request_message",
   usage: "usage_statistics",
   stopReason: "stop_reason",
+  /**
+   * A tool call. Emitted on the run our send starts, which is then suspended and never closed —
+   * see `broadcastToolUsingTurn`. Previously a bare literal in the test double ONLY, so drifting
+   * it there left the whole suite green while the double stopped resembling the server.
+   */
+  toolCall: "tool_call_message",
+  /**
+   * The two deltas an ERRORED turn is carried on, captured live against a 404-model agent.
+   *
+   * Both were on the wire and both were dropped by `renderDelta`, so a provider outage — the
+   * commonest real fault there is — rendered as an empty SUCCESSFUL turn and exited 0. They are
+   * named here because the renderer must switch on them, and this file is the single home of
+   * every wire string precisely so that switch cannot drift from the server.
+   */
+  loopError: "loop_error",
+  errorMessage: "error_message",
 } as const;
+
+/**
+ * Delta types that mean "this turn failed", for consumers that must show it and exit nonzero.
+ *
+ * A set rather than two comparisons because an errored turn emits BOTH — a machine-readable
+ * `loop_error` and a human-readable `error_message` — and a consumer that handles one and not the
+ * other still blacks out half the failures.
+ */
+export const ERROR_DELTA_TYPES: ReadonlySet<string> = new Set([
+  DeltaMessageTypes.loopError,
+  DeltaMessageTypes.errorMessage,
+]);
 
 /** `turn_finished.stop_reason` values with behavioural meaning. */
 export const StopReasons = {
@@ -109,9 +137,52 @@ export const QueueDispositions = {
   cancelled: "cancelled",
 } as const;
 
-/** `update_loop_status.loop_status.status` values with behavioural meaning. */
+/**
+ * `update_loop_status.loop_status.status` values with behavioural meaning.
+ *
+ * `waitingOnInput` is the idle the one-shot terminates on. The other two were bare literals in
+ * `mockServer.ts` and nowhere else, which is the drift hole C1 names: the double could rename a
+ * status the client switches on and the whole suite would stay green, because the only other copy
+ * of the vocabulary was the double's own.
+ */
 export const LoopStatuses = {
   waitingOnInput: "WAITING_ON_INPUT",
+  sendingApiRequest: "SENDING_API_REQUEST",
+  executingClientSideTool: "EXECUTING_CLIENT_SIDE_TOOL",
+} as const;
+
+/** `input.payload.kind` values the server dispatches on. */
+export const InputKinds = {
+  createMessage: "create_message",
+  approvalResponse: "approval_response",
+} as const;
+
+/** `control_request.request.subtype` values. */
+export const ControlRequestSubtypes = {
+  canUseTool: "can_use_tool",
+} as const;
+
+/**
+ * Single-word wire values that read as ordinary English and therefore hide in plain sight.
+ *
+ * They are here for the same reason as everything else in this file: the double used to be their
+ * only other home, so a rename on the server could be mirrored into the double — or not — with no
+ * test able to tell. A one-word string is not less of a wire contract than a snake_cased one; it
+ * is merely harder to spot in a diff, which is an argument for naming it, not against.
+ */
+export const WireEnvelope = {
+  /** `stream_delta.delta.type` and `update_queue.queue[].kind`. */
+  message: "message",
+} as const;
+
+/** `update_queue.queue[].source` values. */
+export const QueueSources = {
+  user: "user",
+} as const;
+
+/** `app_server_info_response.backend` values. The App Server sole-owns a `local` backend. */
+export const Backends = {
+  local: "local",
 } as const;
 
 /** Outbound (client → server) message-type strings. */
@@ -401,7 +472,7 @@ export function buildInput(
     request_id: correlation.requestId,
     runtime,
     payload: {
-      kind: "create_message",
+      kind: InputKinds.createMessage,
       client_message_id: correlation.clientMessageId,
       // Leg 1 of the M1 approval policy, enforced per-turn by the client rather than by an
       // operational precondition somebody has to remember. The server drops
@@ -478,7 +549,7 @@ export function buildApprovalDeny(
     request_id: requestId,
     runtime,
     payload: {
-      kind: "approval_response",
+      kind: InputKinds.approvalResponse,
       request_id: controlRequestId,
       decision: { behavior: "deny", message },
     },
@@ -771,7 +842,10 @@ export function deltaText(f: StreamDeltaFrame): UntrustedText {
   // — which is what made the old declaration a bidirectional alias for `string` and the whole
   // boundary decorative.
   if (typeof d.reasoning === "string") return untrusted(d.reasoning);
-  for (const key of ["content", "text", "message"] as const) {
+  // `error` is where a `loop_error` delta carries its body. Without it the error deltas resolve to
+  // empty text, so a consumer that DOES render them still shows a blank failure notice — B1 fixed
+  // in the renderer and still useless on the wire.
+  for (const key of ["content", "text", "message", "error"] as const) {
     const v = d[key];
     if (typeof v === "string") return untrusted(v);
     if (Array.isArray(v)) {

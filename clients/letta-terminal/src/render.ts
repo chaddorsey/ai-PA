@@ -14,7 +14,7 @@
 import { type ConnectionState, type RenderEvent, protocol } from "@ai-pa/letta-continuity-core";
 import { indentContinuation, sanitize } from "./sanitize.js";
 
-const { DeltaMessageTypes, StopReasons } = protocol;
+const { DeltaMessageTypes, ERROR_DELTA_TYPES, StopReasons } = protocol;
 
 export interface RendererOptions {
   /** Emit ANSI colour. Callers should pass `stdout.isTTY`. */
@@ -191,8 +191,21 @@ export class Renderer {
         return { transcript: this.closeStream(), notice: "" };
       }
 
-      case "delta":
+      case "delta": {
+        // An ERRORED turn arrives as deltas, not as a stop reason — and both of them used to fall
+        // through `renderDelta`'s "not assistant, not reasoning" filter and be dropped. Since no
+        // `turn_finished` follows this shape either, the abnormal-ending notice below never fired,
+        // so a failed turn rendered as an empty SUCCESSFUL one and the process exited 0. Measured
+        // live against an agent whose model 404s: the payload was on the wire the whole time.
+        //
+        // It is a NOTICE, not transcript: the agent did not say this, the client is reporting that
+        // the turn failed. That also keeps stdout clean for `--json` and for automation reading
+        // the last `agent ›` line.
+        if (event.messageType && ERROR_DELTA_TYPES.has(event.messageType)) {
+          return this.renderTurnError(event);
+        }
         return { transcript: this.renderDelta(event), notice: "" };
+      }
 
       case "subagent_state": {
         const count = subagentCount(event);
@@ -225,6 +238,21 @@ export class Renderer {
       default:
         return Renderer.EMPTY;
     }
+  }
+
+  /**
+   * A turn that failed, as a notice on the diagnostic sink.
+   *
+   * The two error deltas are complementary and both are rendered when both arrive: `loop_error`
+   * is the machine-readable signal (and may carry no text at all), `error_message` the
+   * human-readable body. Handling only one still blacks out half the failures, which is why they
+   * are treated as one class rather than as two cases.
+   */
+  private renderTurnError(event: RenderEvent): RenderOutput {
+    const text = (event.text ?? "").trim();
+    // Sanitized and bounded by renderNotice: this is a provider's error string relayed verbatim,
+    // which is third-party content on the same footing as the agent's own output.
+    return this.renderNotice(text === "" ? "turn failed" : `turn failed: ${text}`, "error");
   }
 
   private renderDelta(event: RenderEvent): string {

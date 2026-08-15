@@ -119,6 +119,19 @@ async function runOneShot(
         if (ours) sawOurTurn = true;
         return;
       }
+      // A turn that ENDED IN ERROR is over, and on this server path no idle follows it — so a wait
+      // keyed only on the shared idle had nothing to wake it and sat out the whole `--timeout`
+      // (measured: 20.32s at `--timeout 20`, 180s by default) before reporting a timeout and
+      // blaming a server that had answered immediately.
+      //
+      // ADDITIVE, on purpose. This is a PER-RUN signal read from the frame itself; it does not
+      // change how idle terminates a turn and does not change how a run is attributed. It reuses
+      // the existing `sawOurTurn` guard rather than inventing a second rule, so a peer's failed
+      // turn ends our one-shot exactly as often as a peer's idle already does — no more, no less.
+      if (sawOurTurn && e.type === "turn_finished" && e.stopReason === protocol.StopReasons.error) {
+        finish(1);
+        return;
+      }
       // Terminate on the agent going IDLE. `sawOurTurn` guards against resolving on the idle that
       // PRECEDES our turn, or that ends a peer's while ours is still queued.
       if (
@@ -277,6 +290,15 @@ export async function run(
   core.onFatal(() => {
     exitCode = 1;
   });
+  // So must a FAILED TURN. This is deliberately here rather than in the renderer: the exit code
+  // has to be the same whether the run is rendering a human transcript or NDJSON, and `--json`
+  // does not go through the renderer at all. A turn that errored is not a successful run, and
+  // reporting 0 for one is what let a provider outage look like an agent with nothing to say.
+  core.onRender((e) => {
+    if (e.type === "delta" && e.messageType && protocol.ERROR_DELTA_TYPES.has(e.messageType)) {
+      exitCode = 1;
+    }
+  });
 
   const session = new TerminalSession(core, {
     write: io.stdout,
@@ -386,12 +408,22 @@ export async function run(
  * A downstream `head` or `less` closing is the consumer saying "enough", not a failure, so the
  * response is to stop writing and leave quietly.
  */
-function guardedWriter(stream: NodeJS.WriteStream, onGone: () => void): (text: string) => void {
+export function guardedWriter(
+  stream: Pick<NodeJS.WriteStream, "on" | "write">,
+  onGone: (err: NodeJS.ErrnoException) => void,
+): (text: string) => void {
   let gone = false;
   stream.on("error", (err: NodeJS.ErrnoException) => {
-    if (err.code !== "EPIPE") throw err;
+    // NEVER rethrow. This runs inside an EventEmitter `error` listener, so a throw here becomes an
+    // uncaughtException and kills the process — including on stderr, whose whole contract is that
+    // losing it is survivable. The old code rethrew everything that was not EPIPE, which turned a
+    // recoverable IO fault (EIO on a detached tty, ECONNRESET, ENOSPC) into a crash with a stack
+    // trace, on the stream the crash report itself would have to be written to.
+    //
+    // Either way the stream is GONE: nothing more can be written to it. What differs is what the
+    // caller does about it, which is why the error is handed on rather than classified here.
     gone = true;
-    onGone();
+    onGone(err);
   });
   return (text: string) => {
     if (gone) return;
@@ -404,8 +436,20 @@ function nodeIO(): TerminalIO {
     // Losing STDOUT ends the session: the transcript had one reader and it has gone. Exiting
     // outright is safe here in a way it is not on the normal path — there is nothing left to
     // flush, because the stream that would have been flushed is the one that closed.
-    stdout: guardedWriter(process.stdout, () => process.exit(0)),
-    // Losing STDERR is survivable: the conversation is on stdout, so keep going quietly.
+    //
+    // `process.exitCode ?? 0`, NOT a literal 0. A run that had already FAILED reported success the
+    // moment its consumer went away, on all three channels at once: the exit code was overwritten,
+    // stdout was closed, and the stderr notice never got written. Measured on one run: CODE=1
+    // unpiped, CODE=0 through `| head`. A consumer choosing to stop reading does not retroactively
+    // make a failed session succeed.
+    stdout: guardedWriter(process.stdout, (err) => {
+      // EPIPE is `head`/`less` saying "enough" — not a failure, so it does not create one. Any
+      // other error means the transcript genuinely could not be written, which does.
+      if (err.code !== "EPIPE") process.exitCode = 1;
+      process.exit(process.exitCode ?? 0);
+    }),
+    // Losing STDERR is survivable: the conversation is on stdout, so keep going quietly. This
+    // holds for a non-EPIPE fault too — there is simply nowhere left to report it.
     stderr: guardedWriter(process.stderr, () => {}),
     isStdoutTTY: Boolean(process.stdout.isTTY),
     /**
@@ -422,6 +466,16 @@ function nodeIO(): TerminalIO {
     },
     interactive: (onLine) =>
       new Promise<void>((resolve) => {
+        // STDIN IS ALREADY OVER — resolve rather than wait for input that cannot arrive.
+        //
+        // `letta-continuity --json < /dev/null` is the canonical headless invocation and it hung
+        // FOREVER (killed at budget; an earlier run sat three minutes). The path: stdin is not a
+        // TTY, so `readPipedMessage` drains it to EOF and finds nothing, so there is no one-shot
+        // message and this interactive loop runs — over a stream whose `end` already fired. A
+        // readline built on an ended stream never emits `close`, so this promise never settled.
+        // Nothing in-process could see it: `run()`'s promise simply never resolving is
+        // indistinguishable from a slow test, which is why it took spawning the binary to find.
+        if (process.stdin.readableEnded) return resolve();
         // Line-editing mode is a TTY question, not a colour question. Tying it to `color` meant
         // NO_COLOR silently turned raw mode OFF, which is what lets pasted escape sequences reach
         // the echo path verbatim.

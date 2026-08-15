@@ -326,6 +326,72 @@ describe("ContinuityCore properties", () => {
       core.send("second session");
       await waitFor(() => events.filter((e) => e.type === "turn_finished").length >= 2, 3000);
     });
+
+    it("a session stopped and started again ANSWERS an approval it already answered", async () => {
+      // `start()` resets FOUR pieces of per-connection state in one block, and one mutation used
+      // to revert all four while its `expect` bound only the watermark — so three of them were
+      // unasserted, including this one.
+      //
+      // `answeredApprovals` records "we put a deny on the wire" for the life of the session. Carry
+      // it across a restart and the server's redelivery of a still-pending approval is suppressed:
+      // nobody answers, and the turn parks on EVERY attached surface. That is the same
+      // nobody-answers hang mutation 1 covers on the write-failure path, reached by a third route.
+      // Re-answering is free — the server settles duplicates itself.
+      server = new MockAppServer();
+      url = await server.start();
+      const { core } = await makeCore();
+      await core.start();
+
+      const requestId = "perm-toolu_across-restart";
+      server.sendRaw(controlRequest(requestId));
+      await waitFor(() => approvalResponses().length === 1, 3000);
+
+      core.stop();
+      await waitFor(() => server.connectionCount === 0, 3000);
+      await core.start();
+
+      // The approval is still pending server-side, so it is redelivered on the new connection.
+      server.sendRaw(controlRequest(requestId));
+      await waitFor(() => approvalResponses().length === 2, 3000);
+    });
+
+    it("a session stopped and started again does not filter live frames through the OLD snapshot", async () => {
+      // The third of the four `start()` resets. `liveDedup` drops any live delta whose id appears
+      // in the catch-up snapshot, so a stale one silently swallows real content — a blackout with
+      // no error, the same class as the watermark case above.
+      //
+      // The reach is much wider than it looks. `liveDedup` is populated ONLY by a reconnect's
+      // snapshot fetch, and nothing re-populates it on a fresh `start()` — so without the reset a
+      // stale watermark from the PREVIOUS session applies for the whole of the next one, not just
+      // for some window inside it. This is therefore staged as: connect, force a reconnect (which
+      // is what fetches the snapshot at all), stop, start again, and check that content whose id
+      // was in that dead session's snapshot still renders.
+      server = new MockAppServer({ messagesSnapshot: [{ id: "letta-msg-recycled-0" }] });
+      url = await server.start();
+      const { core, events } = await makeCore();
+      await core.start();
+
+      server.dropAllConnections();
+      await waitFor(
+        () => server.received.filter((m) => m.type === "conversation_messages_list").length >= 1,
+        5000,
+      );
+      await waitFor(() => server.connectionCount === 1, 5000);
+
+      core.stop();
+      await waitFor(() => server.connectionCount === 0, 3000);
+      await core.start();
+      await waitFor(() => server.connectionCount === 1, 3000);
+
+      server.injectForeignTurn(RUNTIME, "run-after-restart", [
+        // One chunk, so the delta id is exactly the id seeded into the dead session's snapshot.
+        { id: "letta-msg-recycled", messageType: "assistant_message", text: "Z" },
+      ]);
+      await waitFor(
+        () => events.some((e) => e.type === "delta" && e.text === "Z"),
+        3000,
+      );
+    });
   });
 
   // ── listener isolation ───────────────────────────────────────────────────
