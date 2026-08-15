@@ -1,5 +1,6 @@
 ---
-status: proposed
+status: complete
+closeout: docs/plans/2026-08-15-004-continuity-fix-forward-closeout.md
 parent: docs/plans/2026-08-12-multi-surface-continuity-m1-web-terminal-plan.md
 review: docs/plans/2026-08-15-002-continuity-round4-review-findings.md
 evidence: docs/followups/2026-08-13-continuity-final-review-findings.md

@@ -688,7 +688,14 @@ export const MUTATIONS = [
     // ASYNCHRONOUS — an `error` event on the socket after write() returned — so the listener
     // isolation that was supposed to cover this could not, and an array-backed test sink never
     // closes, never fills and never errors.
-    find: `    stdout: guardedWriter(process.stdout, () => process.exit(0)),`,
+    // `find` updated when B3/B5 reshaped the onGone callback — the code moved, so the mutation
+    // moved with it. Deleting it instead would have quietly retired the property.
+    find: `    stdout: guardedWriter(process.stdout, (err) => {
+      // EPIPE is \`head\`/\`less\` saying "enough" — not a failure, so it does not create one. Any
+      // other error means the transcript genuinely could not be written, which does.
+      if (err.code !== "EPIPE") process.exitCode = 1;
+      process.exit(process.exitCode ?? 0);
+    }),`,
     replace: `    stdout: (text: string) => {
       process.stdout.write(text);
     },`,
@@ -959,8 +966,10 @@ export const MUTATIONS = [
     label: "D1: the arg-parse error path echoes argv to the terminal unsanitized",
     // A SPAWN test: argv only really is argv once it has crossed a shell.
     tests: ["test/process.test.ts"],
-    find: `    io.stderr(`+"`"+`\${sanitize(err instanceof CliError ? err.message : String(err), { maxLength: 512 })}\\n`+"`"+`);`,
-    replace: `    io.stderr(`+"`"+`\${err instanceof CliError ? err.message : String(err)}\\n`+"`"+`);`,
+    find: `    io.stderr(
+      \`\${sanitize(err instanceof CliError ? err.message : String(err), { maxLength: 512 })}\\n\`,
+    );`,
+    replace: `    io.stderr(\`\${err instanceof CliError ? err.message : String(err)}\\n\`);`,
     expect: /never echoes a control sequence back to the terminal from the arg-parse error path/,
   },
   {
