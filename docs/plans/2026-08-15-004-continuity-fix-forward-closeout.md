@@ -25,6 +25,19 @@ the design track's call.
 The core's 4 remaining skips are `live.contract.test.ts`, which is opt-in by design
 (`LETTA_LIVE_WS=1`). The fifth skip is gone: `version-pin.test.ts` now runs.
 
+Full mutation run on a clean tree (`node tools/mutate.mjs`):
+
+```
+77/77 mutations caught, 3 retired, 1 deferred (--live)
+```
+
+The first full run reported **75/77 with two harness ERRORS** — mutations 42 and 58 could no
+longer find the code they guard, because the B3/B5 fix reshaped `guardedWriter`'s callback and the
+formatter rewrapped the sanitized arg-parse diagnostic. Both were repointed rather than deleted,
+per the table's own rule. Worth recording as evidence the tool works: the old harness would have
+reported those two as *caught* on any unrelated failure in the same file, and reporting them as
+errors is exactly the discrimination `--reporter=json` bought.
+
 ## Tier 0 — the instrument
 
 **The harness now runs the binary.** `clients/letta-terminal/test/helpers/spawnCli.ts` spawns
