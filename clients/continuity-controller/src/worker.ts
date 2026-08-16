@@ -15,19 +15,29 @@ import { dirname, join } from "node:path";
 import type { ReconnectPolicy } from "@ai-pa/letta-continuity-core/connection";
 import { Outbound, buildAppServerInfo, buildSync } from "@ai-pa/letta-continuity-core/protocol";
 import type { WsConnection } from "@ai-pa/letta-continuity-core/ws";
+import type { DatabaseSync } from "node:sqlite";
 import { ConnectionLoop } from "./connection-loop.js";
 import { subscribeRuntimes } from "./hotset.js";
+import { TurnJournal } from "./journal.js";
 import type { Registry, RuntimeRef } from "./registry.js";
 import type { Journal } from "./state/journal.js";
+import { TurnPipeline } from "./turns.js";
 
 export interface WorkerOptions {
   url: string;
+  db: DatabaseSync;
   registry: Registry;
   journal: Journal;
   livenessFile: string;
   livenessIntervalMs: number;
   livenessDeadlineMs: number;
   hotsetPollMs: number;
+  /** How often the pipeline sweeps for externally-enqueued (CLI/ingress) queue rows. */
+  queuePollMs: number;
+  /** Wall-clock backstop per turn (C4). */
+  turnTimeoutMs: number;
+  /** Bound on the abort round-trip before a wedged turn bounces the connection. */
+  abortConfirmMs: number;
   /** Degradation report from openStateDb — carried into journal + liveness, never dropped. */
   degraded: string | null;
   onWarn?: (msg: string) => void;
@@ -40,14 +50,30 @@ const key = (r: RuntimeRef): string => `${r.agent_id}:${r.conversation_id}`;
 
 export class WorkerDaemon {
   private readonly loop: ConnectionLoop;
+  /** The C4 sole-submitter pipeline. Public: ingress adapters and tests accept through it. */
+  readonly pipeline: TurnPipeline;
   private livenessTimer: ReturnType<typeof setInterval> | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private queueTimer: ReturnType<typeof setInterval> | null = null;
   private subscribedKeys = new Set<string>();
   private seenHotsetVersion = -1;
   private passInFlight = false;
   private probeInFlight = false;
 
   constructor(private readonly opts: WorkerOptions) {
+    this.pipeline = new TurnPipeline({
+      db: opts.db,
+      journal: new TurnJournal(opts.db),
+      getConnection: () => this.loop.current,
+      turnTimeoutMs: opts.turnTimeoutMs,
+      abortConfirmMs: opts.abortConfirmMs,
+      onWarn: opts.onWarn,
+      onWedged: (runtime, detail) => {
+        // An unconfirmed abort means the server may still be running the turn: bounce, and let
+        // recovery reconcile its true fate from the transcript.
+        this.loop.bounce(`wedged turn on ${key(runtime)}: ${detail}`);
+      },
+    });
     this.loop = new ConnectionLoop({
       url: opts.url,
       onWarn: opts.onWarn,
@@ -55,12 +81,21 @@ export class WorkerDaemon {
       reconnect: opts.reconnect,
       makeConnection: opts.makeConnection,
       onConnected: async (conn) => {
+        // New connection = new journal generation, opened BEFORE any of its frames can be
+        // journaled (the replay arrives during subscription, not after recover()).
+        this.pipeline.beginGeneration();
+        // Frames flow into the pipeline from the FIRST hello: the wait_for_replay replay is
+        // where a mid-flight turn's history arrives, and it must not be dropped on the floor.
+        conn.onFrame((frame) => this.pipeline.onFrame(frame));
         this.subscribedKeys = new Set();
         await this.subscribePass(conn, "connect");
         this.opts.journal.append("worker_connected", {
           url: this.opts.url,
           subscribed: [...this.subscribedKeys],
         });
+        // Replay is complete (subscriptions resolved with wait_for_replay) — reconcile every
+        // non-terminal queue row against transcript truth, then resume submissions.
+        await this.pipeline.recover(conn);
       },
     });
   }
@@ -86,6 +121,10 @@ export class WorkerDaemon {
     this.livenessTimer.unref?.();
     this.pollTimer = setInterval(() => void this.pollHotset(), this.opts.hotsetPollMs);
     this.pollTimer.unref?.();
+    // Sweep for queue rows enqueued by OTHER processes (CLI, ingress) — in-process accepts
+    // pump immediately; this poll is the seam that makes the durable queue multi-writer.
+    this.queueTimer = setInterval(() => this.pipeline.pump(), this.opts.queuePollMs);
+    this.queueTimer.unref?.();
     // Prove liveness immediately rather than an interval from now — a daemon that boots and
     // dies inside the first interval would otherwise leave no liveness evidence at all.
     await this.livenessProbe();
@@ -94,8 +133,11 @@ export class WorkerDaemon {
   stop(): void {
     if (this.livenessTimer) clearInterval(this.livenessTimer);
     if (this.pollTimer) clearInterval(this.pollTimer);
+    if (this.queueTimer) clearInterval(this.queueTimer);
     this.livenessTimer = null;
     this.pollTimer = null;
+    this.queueTimer = null;
+    this.pipeline.stop();
     this.loop.stop();
   }
 

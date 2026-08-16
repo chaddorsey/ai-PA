@@ -22,12 +22,21 @@ export interface ControllerConfig {
   livenessDeadlineMs: number;
   /** How often the anchor (and worker) re-read the registry's hotset version. */
   hotsetPollMs: number;
+  /** How often the worker sweeps for externally-enqueued turn rows. */
+  queuePollMs: number;
+  /** Wall-clock backstop per turn (C4) — coupled to abort_message, never a silent drop. */
+  turnTimeoutMs: number;
+  /** Bound on the abort round-trip before a wedged turn bounces the connection. */
+  abortConfirmMs: number;
 }
 
 const DEFAULT_WS_URL = "ws://127.0.0.1:4577/ws";
 const DEFAULT_LIVENESS_INTERVAL_MS = 20_000;
 const DEFAULT_LIVENESS_DEADLINE_MS = 10_000;
 const DEFAULT_HOTSET_POLL_MS = 2_000;
+const DEFAULT_QUEUE_POLL_MS = 300;
+const DEFAULT_TURN_TIMEOUT_MS = 600_000;
+const DEFAULT_ABORT_CONFIRM_MS = 10_000;
 
 function intFromEnv(value: string | undefined, fallback: number): number {
   const n = value === undefined ? Number.NaN : Number.parseInt(value, 10);
@@ -51,5 +60,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ControllerConf
       DEFAULT_LIVENESS_DEADLINE_MS,
     ),
     hotsetPollMs: intFromEnv(env.CONTINUITY_HOTSET_POLL_MS, DEFAULT_HOTSET_POLL_MS),
+    queuePollMs: intFromEnv(env.CONTINUITY_QUEUE_POLL_MS, DEFAULT_QUEUE_POLL_MS),
+    turnTimeoutMs: intFromEnv(env.CONTINUITY_TURN_TIMEOUT_MS, DEFAULT_TURN_TIMEOUT_MS),
+    abortConfirmMs: intFromEnv(env.CONTINUITY_ABORT_CONFIRM_MS, DEFAULT_ABORT_CONFIRM_MS),
   };
 }

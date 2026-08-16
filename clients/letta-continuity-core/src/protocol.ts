@@ -206,6 +206,7 @@ export const Outbound = {
   conversationFork: "conversation_fork",
   conversationMessagesList: "conversation_messages_list",
   sync: "sync",
+  abortMessage: "abort_message",
 } as const;
 
 /** Inbound (server → client) message-type strings. */
@@ -227,6 +228,7 @@ export const Inbound = {
   conversationForkResponse: "conversation_fork_response",
   conversationMessagesListResponse: "conversation_messages_list_response",
   syncResponse: "sync_response",
+  abortMessageResponse: "abort_message_response",
 } as const;
 
 /** Map of an outbound RPC type → the inbound `*_response` type that answers it. */
@@ -240,6 +242,7 @@ export const RpcResponseFor: Record<string, string> = {
   [Outbound.conversationFork]: Inbound.conversationForkResponse,
   [Outbound.conversationMessagesList]: Inbound.conversationMessagesListResponse,
   [Outbound.sync]: Inbound.syncResponse,
+  [Outbound.abortMessage]: Inbound.abortMessageResponse,
 };
 
 export class ProtocolError extends Error {
@@ -494,6 +497,15 @@ export function buildRuntimeStart(
  * `recover_approvals` defaults FALSE here: the controller's periodic liveness probe must be
  * lightweight and side-effect-free; approval recovery is an explicit reconnect-time decision.
  */
+/**
+ * `abort_message` — kill the runtime's active turn. The controller couples this to its
+ * wall-clock backstop: a locally-timed-out turn is aborted, CONFIRMED, marked FAILED-VISIBLE,
+ * and only then is the queue released (plan, Key Technical Decisions).
+ */
+export function buildAbortMessage(requestId: string, runtime: Runtime): ServerFrame {
+  return { type: Outbound.abortMessage, request_id: requestId, runtime };
+}
+
 export function buildSync(
   requestId: string,
   runtime: Runtime,
@@ -741,6 +753,7 @@ export function validateInboundFrame(frame: ServerFrame): void {
     case Inbound.appServerInfoResponse:
     case Inbound.runtimeStartResponse:
     case Inbound.syncResponse:
+    case Inbound.abortMessageResponse:
     case Inbound.conversationListResponse:
     case Inbound.conversationCreateResponse:
     case Inbound.conversationRetrieveResponse:

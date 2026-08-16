@@ -20,9 +20,11 @@ import { Outbound, buildConversationCreate } from "@ai-pa/letta-continuity-core/
 import { WsConnection } from "@ai-pa/letta-continuity-core/ws";
 import { AnchorDaemon } from "./anchor.js";
 import { loadConfig } from "./config.js";
+import { TurnJournal } from "./journal.js";
 import { ReadOnlyRegistry, Registry } from "./registry.js";
 import { openStateDb, openStateDbReadOnly } from "./state/db.js";
 import { Journal } from "./state/journal.js";
+import { enqueueDurable } from "./turns.js";
 import { WorkerDaemon } from "./worker.js";
 
 const EX_TEMPFAIL = 75;
@@ -51,12 +53,16 @@ async function runWorker(): Promise<void> {
   const { db, degraded } = openStateDb(config.stateDir);
   const worker = new WorkerDaemon({
     url: config.wsUrl,
+    db,
     registry: new Registry(db),
     journal: new Journal(db),
     livenessFile: config.livenessFile,
     livenessIntervalMs: config.livenessIntervalMs,
     livenessDeadlineMs: config.livenessDeadlineMs,
     hotsetPollMs: config.hotsetPollMs,
+    queuePollMs: config.queuePollMs,
+    turnTimeoutMs: config.turnTimeoutMs,
+    abortConfirmMs: config.abortConfirmMs,
     degraded,
     onWarn: log,
     onExhausted: () => {
@@ -165,11 +171,53 @@ async function runRegistry(args: string[]): Promise<void> {
   throw new Error(`unknown registry command: ${String(command)}`);
 }
 
+/** Durable enqueue from OUTSIDE the worker (tests, cron, ops). The worker's poll picks it up. */
+async function runEnqueue(args: string[]): Promise<void> {
+  const config = loadConfig();
+  const agentId = flag(args, "agent");
+  const conversationId = flag(args, "conversation");
+  const text = flag(args, "text");
+  if (!agentId || !conversationId || !text) {
+    throw new Error("enqueue requires --agent, --conversation, --text");
+  }
+  const { db, degraded } = openStateDb(config.stateDir);
+  if (degraded) log(`WARNING — state db degraded: ${degraded}`);
+  const clientMessageId = enqueueDurable(
+    db,
+    new TurnJournal(db),
+    { agent_id: agentId, conversation_id: conversationId },
+    text,
+    { via: "cli" },
+  );
+  console.log(clientMessageId);
+}
+
+/** Inspect the turn queue (state + outcome — the FAILED-VISIBLE surface until C5 renders it). */
+async function runQueue(args: string[]): Promise<void> {
+  const config = loadConfig();
+  const { db } = openStateDb(config.stateDir);
+  const cm = flag(args, "cm");
+  const rows = db
+    .prepare(
+      cm
+        ? "SELECT * FROM turn_queue WHERE client_message_id = ?"
+        : "SELECT * FROM turn_queue ORDER BY id DESC LIMIT 20",
+    )
+    .all(...(cm ? [cm] : [])) as Array<Record<string, unknown>>;
+  for (const r of rows) {
+    console.log(
+      `${String(r.state).padEnd(10)} ${String(r.outcome ?? "-").padEnd(28)} ${r.client_message_id} ${r.agent_id}/${r.conversation_id}`,
+    );
+  }
+}
+
 async function main(): Promise<void> {
   const [role = "worker", ...rest] = process.argv.slice(2);
   if (role === "worker") return runWorker();
   if (role === "anchor") return runAnchor();
   if (role === "registry") return runRegistry(rest);
+  if (role === "enqueue") return runEnqueue(rest);
+  if (role === "queue") return runQueue(rest);
   console.error(`usage: continuity-controller <worker|anchor|registry> …  (got: ${role})`);
   process.exit(2);
 }

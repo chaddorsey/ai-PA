@@ -1143,4 +1143,114 @@ export const MUTATIONS = [
     replace: ``,
     expect: /marked broken in the REGISTRY and journaled/,
   },
+  // ── 73-81: Unit C4 — turn pipeline (plan 2026-08-15-006) ───────────────────
+  {
+    id: 73,
+    pkg: CONTROLLER,
+    file: "src/turns.ts",
+    label: "C4: the durable `submitting` state vanishes (crash window becomes unreconcilable)",
+    tests: ["test/turns.test.ts"],
+    find: `    this.setState(row.client_message_id, "submitting", null);`,
+    replace: ``,
+    expect: /durably .submitting. BEFORE the ack returns/,
+  },
+  {
+    id: 74,
+    pkg: CONTROLLER,
+    file: "src/journal.ts",
+    label: "C4: journal dedup becomes best-effort (INSERT without OR IGNORE)",
+    tests: ["test/journal.test.ts"],
+    find: `        \`INSERT OR IGNORE INTO turn_events`,
+    replace: `        \`INSERT INTO turn_events`,
+    expect: /journals exactly once/,
+  },
+  {
+    id: 75,
+    pkg: CONTROLLER,
+    file: "src/turns.ts",
+    label: "C4: the wall-clock backstop stops sending abort (local skip instead of server kill)",
+    tests: ["test/turns.test.ts"],
+    find: `      if (!conn) throw new Error("no connection to abort on");
+      await conn.request(
+        (rid) => buildAbortMessage(rid, runtime),
+        Outbound.abortMessage,
+        this.opts.abortConfirmMs,
+      );`,
+    replace: `      if (!conn) throw new Error("no connection to abort on");`,
+    expect: /timeout .*abort.*FAILED-VISIBLE.*NEXT queued message actually runs/,
+  },
+  {
+    id: 76,
+    pkg: CONTROLLER,
+    file: "src/turns.ts",
+    label: "C4: an UNCONFIRMED abort releases the queue anyway (server may still be running the turn)",
+    tests: ["test/turns.test.ts"],
+    find: `      this.opts.onWedged?.(runtime, detail);
+      return;`,
+    replace: `      this.opts.onWedged?.(runtime, detail);`,
+    expect: /UNCONFIRMED abort holds the queue/,
+  },
+  {
+    id: 77,
+    pkg: CONTROLLER,
+    file: "src/terminality.ts",
+    label: "C4: requires_approval terminates the turn (every tool step would end it)",
+    tests: ["test/terminality.test.ts"],
+    find: `        if (delta.stop_reason === "requires_approval") return null; // continuation, not terminality`,
+    replace: ``,
+    expect: /requires_approval is a CONTINUATION/,
+  },
+  {
+    id: 78,
+    pkg: CONTROLLER,
+    file: "src/terminality.ts",
+    label: "C4: subagent deltas terminate the parent turn",
+    tests: ["test/terminality.test.ts"],
+    find: `      if (typeof frame.subagent_id === "string") return null; // subagent activity never terminates the parent`,
+    replace: ``,
+    expect: /subagent deltas never terminate/,
+  },
+  {
+    id: 79,
+    pkg: CONTROLLER,
+    file: "src/terminality.ts",
+    label: "C4: a run terminalizes twice (the late turn_finished latches the NEXT turn)",
+    tests: ["test/terminality.test.ts"],
+    find: `    if (this.terminalized.has(key)) return false;`,
+    replace: ``,
+    expect: /terminalizes AT MOST once/,
+  },
+  {
+    id: 80,
+    pkg: CONTROLLER,
+    file: "src/turns.ts",
+    label: "C4: journal generations become process-local again (restart reuses labels)",
+    tests: ["test/turns.test.ts"],
+    find: `    this.opts.db
+      .prepare(
+        \`INSERT INTO meta (key, value) VALUES ('journal_generation', '1')
+         ON CONFLICT (key) DO UPDATE SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT)\`,
+      )
+      .run();
+    const generationRow = this.opts.db
+      .prepare("SELECT value FROM meta WHERE key = 'journal_generation'")
+      .get() as { value: string };
+    this.generation = Number.parseInt(generationRow.value, 10);`,
+    replace: `    this.generation += 1;`,
+    expect: /generations PERSIST across worker restarts/,
+  },
+  {
+    id: 81,
+    pkg: CONTROLLER,
+    file: "src/turns.ts",
+    label: "C4: a reconnect leaves the previous turn's wall-clock timer armed",
+    tests: ["test/turns.test.ts"],
+    find: `    // Stale actives die WITH their timers: a leftover wall-clock timer would fire against a
+    // turn the coming recovery is about to reconcile, aborting or failing a row it no longer
+    // owns.
+    for (const [, turn] of this.active) if (turn.timer) clearTimeout(turn.timer);
+    this.active.clear();`,
+    replace: `    this.active.clear();`,
+    expect: /KILLS the previous turn's wall-clock timer/,
+  },
 ];

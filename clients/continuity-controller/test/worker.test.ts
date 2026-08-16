@@ -21,6 +21,7 @@ const FAST_RECONNECT = { baseDelayMs: 20, maxDelayMs: 40, stabilityMs: 0, jitter
 
 interface Fixture {
   dir: string;
+  db: ReturnType<typeof openStateDb>["db"];
   registry: Registry;
   journal: Journal;
   degraded: string | null;
@@ -33,7 +34,7 @@ function stateWith(
   const { db, degraded } = openStateDb(dir);
   const registry = new Registry(db);
   for (const row of rows) registry.upsert(row);
-  return { dir, registry, journal: new Journal(db), degraded };
+  return { dir, db, registry, journal: new Journal(db), degraded };
 }
 
 function makeWorker(
@@ -43,12 +44,16 @@ function makeWorker(
 ): WorkerDaemon {
   return new WorkerDaemon({
     url,
+    db: fixture.db,
     registry: fixture.registry,
     journal: fixture.journal,
     livenessFile: join(fixture.dir, "liveness.json"),
     livenessIntervalMs: 60_000, // probes are driven by start() or explicitly in tests
     livenessDeadlineMs: 500,
     hotsetPollMs: 25,
+    queuePollMs: 50,
+    turnTimeoutMs: 60_000,
+    abortConfirmMs: 500,
     degraded: fixture.degraded,
     onExhausted: () => {
       throw new Error("unexpected exhaustion");

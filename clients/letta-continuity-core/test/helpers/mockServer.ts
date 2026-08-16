@@ -403,6 +403,23 @@ export class MockAppServer {
       if (this.guard(isObj(msg.body))) this.handleConversationCreate(conn, msg);
     } else if (type === Outbound.conversationMessagesList) {
       if (this.guard(typeof msg.conversation_id === "string")) this.handleMessagesList(conn, msg);
+    } else if (type === Outbound.abortMessage) {
+      // Real shape: abort_message_response on the control channel; `aborted` reports whether
+      // anything was actually interrupted (the double reports true — tests that need a refusal
+      // suppress the response instead).
+      if (this.guard(isObj(msg.runtime) && typeof msg.runtime.agent_id === "string")) {
+        if (typeof msg.request_id === "string") {
+          conn.socket.send(
+            JSON.stringify({
+              type: Inbound.abortMessageResponse,
+              request_id: msg.request_id,
+              runtime: msg.runtime,
+              aborted: true,
+              success: true,
+            }),
+          );
+        }
+      }
     } else if (type === Outbound.sync) {
       // The real command requires a runtime scope (vendor SyncCommand). The response is a plain
       // RPC ack — the controller uses it as its forward-progress liveness round-trip.
@@ -511,6 +528,18 @@ export class MockAppServer {
    * own `client_message_id`.
    */
   private handleInput(conn: ConnState, msg: Record<string, unknown>): void {
+    // The real server routes an input by the FRAME's runtime scope, not by the connection's
+    // latest hello (S6: inputs to two runtimes interleave on one socket). Re-point the
+    // "current" runtime at the input's target when this connection is subscribed to it.
+    const target = isObj(msg.runtime) ? msg.runtime : null;
+    if (
+      target &&
+      typeof target.agent_id === "string" &&
+      typeof target.conversation_id === "string" &&
+      conn.runtimes.has(`${target.agent_id}:${target.conversation_id}`)
+    ) {
+      conn.runtime = { agent_id: target.agent_id, conversation_id: target.conversation_id };
+    }
     if (!conn.runtime) return;
     const payload = isObj(msg.payload) ? msg.payload : {};
     if (payload.kind === InputKinds.approvalResponse) {

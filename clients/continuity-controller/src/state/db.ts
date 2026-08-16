@@ -59,6 +59,32 @@ CREATE TABLE IF NOT EXISTS journal (
   kind    TEXT NOT NULL,
   payload TEXT NOT NULL DEFAULT '{}'
 );
+CREATE TABLE IF NOT EXISTS turn_queue (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_id          TEXT NOT NULL,
+  conversation_id   TEXT NOT NULL,
+  client_message_id TEXT NOT NULL UNIQUE,
+  content           TEXT NOT NULL,
+  origin            TEXT NOT NULL DEFAULT '{}',
+  state             TEXT NOT NULL CHECK (state IN ('queued','submitting','submitted','terminal')),
+  outcome           TEXT,
+  created_at        TEXT NOT NULL,
+  updated_at        TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS turn_events (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_id          TEXT NOT NULL,
+  conversation_id   TEXT NOT NULL,
+  client_message_id TEXT,
+  event_seq         INTEGER,
+  idempotency_key   TEXT,
+  kind              TEXT NOT NULL,
+  payload           TEXT NOT NULL DEFAULT '{}',
+  at                TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS turn_events_idem
+  ON turn_events (agent_id, conversation_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
 `;
 
 export const DB_FILENAME = "controller.sqlite3";

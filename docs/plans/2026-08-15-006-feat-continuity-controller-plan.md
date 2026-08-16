@@ -398,7 +398,7 @@ are listed for retirement alongside it.
 
 ### Phase B — Controller core
 
-- [ ] **Unit C3: Controller skeleton — registry, hot set, anchor, supervision**
+- [x] **Unit C3: Controller skeleton — registry, hot set, anchor, supervision** *(soak verification pending its 1h window — all other criteria green)*
 
 **Goal:** A supervised daemon that holds the anchor+worker connections, keeps the runtime
 registry, and subscribes the hot set — no turns yet.
@@ -451,7 +451,7 @@ controller's mutation list.
 **Verification:** Daemon runs under launchd on a clone backend for an hour with hot-set
 subscriptions held; logs in `~/Library/Logs`; liveness file fresh; zero writes to live backend.
 
-- [ ] **Unit C4: Turn pipeline — queue, submission, terminality, journal**
+- [x] **Unit C4: Turn pipeline — queue, submission, terminality, journal** *(P3/P4 passed live on clone 2026-08-16)*
 
 **Goal:** The controller becomes the sole submitter: accepts messages, queues per runtime,
 submits, tracks the turn state machine, journals every event exactly once, marks failures
