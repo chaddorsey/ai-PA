@@ -4,6 +4,7 @@ type: feat
 status: active
 date: 2026-08-15
 origin: docs/brainstorms/2026-08-15-continuity-controller-requirements.md
+deepened: 2026-08-15
 ---
 
 # feat: Continuity Controller — resident sole client of the App Server
@@ -44,7 +45,7 @@ the origin document (R21–R29) and the adopted sketch
   no static operator rule config. *(Unit C8)*
 - **R26** — direct-route specialists are hot-set members. *(Units C3, C8)*
 - **R27** — one orchestration pattern registry; Kinara-as-orchestrator and -as-reporter.
-  *(Unit C10)*
+  *(Unit C10a)*
 - **R28** — tiered surface protocol: mandatory core + declared capability sets, per-surface
   degradation, nothing silently lost. *(Units C5–C6, C9)*
 - **R29** — multiple live Kinara conversations from day one; R13/R15 load-bearing. *(Units C3, C7)*
@@ -53,7 +54,10 @@ the origin document (R21–R29) and the adopted sketch
   (R18), clone-and-validate cutover (R19), loopback-first auth (R20).
 - **Success criteria** (origin): direct lane adds no model hop; a named pattern is
   invoker-agnostic; a core-tier-only surface gets full continuity; proofs P1–P5 pass with
-  reverting mutations (G9).
+  reverting mutations (G9). Proof ownership: **P1/P2 → C1** (P1 additionally pinned as a
+  permanent live contract test), **P3/P4 → C4** live scenarios, **P5 → C5** live scenarios on a
+  permission-mode-flipped clone; the full P1–P5 checklist is re-run in C10b's cutover
+  verification.
 
 ## Scope Boundaries
 
@@ -119,7 +123,9 @@ the origin document (R21–R29) and the adopted sketch
 - **Replay/dedup mechanisms are documented, use them**: `idempotency_key` per broadcast, `otid`
   as the stable per-message key (`delta.id` namespaces are disjoint from snapshot ids), `sync`
   for runtime-state replay, `runtime_start.wait_for_replay`, `recover_approvals` default-true;
-  transcript source is `conversation_messages_list` only (docs-vs-impl §B).
+  transcript source is `conversation_messages_list` only (docs-vs-impl §B; the `otid` keying
+  comes from `docs/followups/2026-08-13-continuity-core-approval-correlation.md`, not §B — and
+  `otid` is optional in the vendor types).
 - **Approvals**: broadcast to all subscribers, server settles the race — answer unconditionally,
   send-then-record, clear answered-set on reconnect; currently unobservable under
   `permission_mode: unrestricted` (pinned by a live contract test) — approval findings are
@@ -160,31 +166,72 @@ the origin document (R21–R29) and the adopted sketch
 - **Two WS connections: anchor + worker (pending C1 confirmation).** The learnings add a
   constraint the sketch missed: the controller itself becomes the last subscriber, so a
   controller crash/restart would cancel every in-flight turn. Mitigation: a minimal **anchor**
-  process (subscribe-only, no logic, separately supervised) holds `runtime_start` subscriptions
-  for the hot set so the feature-rich worker can restart without killing turns. C1 proves the
+  process (subscribe-only, separately supervised) holds `runtime_start` subscriptions for the
+  hot set so the feature-rich worker can restart without killing turns. *This is a deliberate,
+  learnings-driven revision of the sketch's single-socket design (sketch §2), pending C1.*
+  Design rules that C3 must honor: **both connections subscribe to every hot runtime** — the
+  worker's subscription is the one journaled from; the anchor's exists purely for crash-overlap
+  (a `sync` on a fresh connection is not shown to create a subscription, so the worker must
+  `runtime_start` too). The anchor stays near-zero-logic by **reading the registry read-only**
+  and re-issuing `runtime_start`s when the worker signals a hot-set change; the window in which
+  a newly-warmed runtime is worker-only-subscribed is a journaled known exposure. C1 proves the
   takeover semantics ("no other subscribed client **can take over**" implies a second subscriber
-  prevents cancellation); if the platform disagrees, fall back to accepting restart-cancels-turns
-  with visible journal failure marks, and say so in the goals doc.
+  prevents cancellation) — including S5's harder question: worker-registered external tools and
+  approvals die with the worker's *connection* even when the anchor holds the turn, so worker
+  reconnect must re-register tools and any in-flight `external_tool_call_request` orphaned by
+  the restart is journaled FAILED-VISIBLE. If the platform disagrees on takeover, fall back to
+  accepting restart-cancels-turns with visible journal failure marks, and say so in the goals
+  doc.
 - **Controller-side per-runtime turn queue** (never rely on server queue frames): at most one
   active controller-submitted turn per `{agent_id, conversation_id}`; queued messages persist in
-  controller state so nothing dies with a socket — this is what closes loss path Q3 by
-  construction.
+  controller state so nothing dies with a socket — this closes loss path Q3 for the
+  *server-side-queued* mode. The remaining seam is the **submitting window**: a worker crash
+  between the socket write and the ack/commit leaves one message in an unknown state. Protocol:
+  persist `state=submitting` *before* the socket write; on recovery, reconcile against
+  `conversation_messages_list` keyed by `client_message_id`→`otid` (C1 verifies this mapping is
+  actually recoverable from the transcript); resubmit only on confirmed absence — duplicate
+  turns on a shared conversation are the documented hazard (docs-vs-impl §A4).
 - **Turn terminality = the disjunction** (stop_reason delta | `loop_error.is_terminal` | idle
   fallback at reconnect seams | wall-clock backstop), with `subagent_id` filtering; every turn
-  leaves the state machine visibly (G5).
+  leaves the state machine visibly (G5). The wall-clock arm is **coupled to `abort_message`**:
+  on timeout the controller sends abort, confirms (abort response or subsequent terminal
+  signal), marks FAILED-VISIBLE, and only then releases the queue — a locally-timed-out but
+  still-running server turn would otherwise head-of-line-block every subsequent message into
+  serial timeouts. Operator-initiated abort is a surface-protocol capability (C5/C6), so a
+  runaway turn can be killed from any surface.
 - **Controller-internal state (registry, journal, routes, queues) lives in host-local SQLite**,
   a deliberate deviation from the repo's Postgres-`pa_web` daemon convention. Rationale: the
   controller must be up and journaling when Docker/supabase is down (it guards against exactly
   that class of outage), it is a single-writer daemon (SQLite's sweet spot), and its data is
   device-local operational state, not shared product state. `pa_web.conversation_meta` remains
   the reference model for rail metadata and is migrated into the registry at the web-surface
-  unit. If review prefers convention over independence, this is the decision to challenge.
+  unit. Operational hardening (review-added): WAL mode; DB directory 0700, files 0600; a
+  boot-time integrity check that **degrades visibly** rather than starting with an empty
+  authority (routes/registry/unseen markers are reconstructable from nowhere — only the journal
+  can be rebuilt from `conversation_messages_list`); deliberate inclusion of the SQLite files in
+  `deployment/scripts/backup.sh`'s host-data section at C3; retention/compaction revisited at
+  the C10 soak or when the journal first exceeds a size threshold set in C3, whichever comes
+  first. If review prefers convention over independence, this is the decision to challenge.
 - **R3 delivery = the controller speaks the scheduler's existing dialect**: it serves
-  `POST /v1/agents/{agent_id}/messages` on loopback so `scheduler-service` re-points
-  `LETTA_CALLBACK_URL` and nothing else changes in that service.
+  `POST /v1/agents/{agent_id}/messages` so `scheduler-service` re-points `LETTA_CALLBACK_URL`
+  (to `host.docker.internal:<port>` — the container cannot reach host loopback directly, and
+  that proxy makes the ingress reachable from **every** container on the box, so interface
+  binding is not the control). The ingress therefore **requires a shared-secret bearer header**
+  (reuse `SCHEDULER_API_KEY` via scheduler env — still a config-only change on that side);
+  unauthenticated POSTs are rejected and journaled. Response semantics are a stated decision,
+  not an accident: **202-on-accept** — the scheduler's execution records become *delivery*
+  records; turn outcome is controller-journal truth (documented in the cutover runbook).
+  Cutover prerequisite: inventory `route=letta` jobs and map Docker→local agent ids per job
+  (one env var moves for all jobs; the 2026-08-12 spike flagged this mapping as required).
 - **Auth**: App Server stays loopback/no-auth. Controller: loopback surfaces (terminal) use a
-  file-permission token; browser surfaces use short-lived tickets minted over the existing
-  authenticated HTTPS path (browsers can't set WS headers). One boundary, per G8/R20.
+  file-permission token — generated at first boot under
+  `~/Library/Application Support/continuity-controller/` mode 0600, rotatable on demand; this
+  makes *user-level code* the explicit trust boundary, and approval-answering authority rides
+  on it. Browser surfaces use tickets minted over the existing authenticated HTTPS path
+  (browsers can't set WS headers): **single-use, seconds-order TTL, consumed via a first-frame
+  auth message on the open socket — never in the WS URL** (query strings leak through
+  Cloudflare/proxy logs). The concrete identity of that HTTPS path is named and recorded as a
+  security dependency at C9. One boundary, per G8/R20.
 - **Approvals**: controller answers the server unconditionally per settled facts (send-then-
   record), and separately runs its own surface-facing arbitration (first answer wins; others see
   resolution; held pending + badge when nobody attached, recovered via `recover_approvals`).
@@ -253,6 +300,10 @@ Turn state machine (worker, per accepted message):
   terminal ∈ {stop_reason, loop_error.is_terminal, aborted, idle-fallback, timeout→FAILED-VISIBLE}
 ```
 
+*(The anchor+worker split is a learnings-driven revision of the sketch's single-socket design,
+pending C1's takeover proof — see Key Technical Decisions. Both connections subscribe to every
+hot runtime; the worker's subscription is the journaled one.)*
+
 ## Implementation Units
 
 Grouped in phases; each phase is independently landable. Unit labels are C1–C10 to avoid
@@ -273,27 +324,42 @@ runtimes), reusing `clients/tools/capture-ownership.mjs` scenario style and
 **Files:**
 - Create: `clients/tools/capture-controller-spike.mjs` (scenarios), findings appendix
   `docs/plans/2026-08-15-006-controller-spike-findings.md`
-- Test: scenarios double as the named artifacts; no permanent suite additions in this unit.
+- Test: S1 is additionally **promoted into the permanent opt-in live contract suite** as a
+  version-gated test ("a second subscriber holds a detached turn alive") run at every server
+  version bump — cancellation-on-detach is *behavior*, not types, and the vendor-type binding
+  cannot catch it changing. Other scenarios double as the named capture artifacts.
 
-**Approach:** Four scenarios, each producing a capture file: (S1) client A starts a 25s+ tool
+**Approach:** Six scenarios, each producing a capture file: (S1) client A starts a 25s+ tool
 turn, client B stays subscribed, A detaches → does the turn complete? (the P1 question — B is
 the anchor stand-in); (S2) same but B subscribes *after* the turn starts (late anchor);
 (S3) two messages submitted through one socket with a controller-style local queue (submit
 second only on first's terminality) → confirm clean serialization and terminality detection via
-the disjunction; (S4) submitting socket dies with one message queued *at the server* vs queued
-*locally* → demonstrate the loss mode and its absence under local queueing.
+the disjunction, and confirm the submitted `client_message_id` is **recoverable from
+`conversation_messages_list` (as `otid` or otherwise)** — the exactly-once reconciliation in C4
+depends on it, and note which message classes carry null `otid`; (S4) submitting socket dies
+with one message queued *at the server* vs queued *locally* → demonstrate the loss mode and its
+absence under local queueing; (S5) client A registers an external tool, starts a turn that will
+call it, and dies mid-turn while B stays subscribed → record the fate of the in-flight tool
+call and any pending approval (does it error, hang, or terminate the turn?), then A reconnects
+and re-registers → can a subsequent call succeed? — this is the anchor's real value
+proposition (safe worker restarts) for the turns that matter; (S6) turns submitted to two
+*different* runtimes through one socket while both stream → is Q2's deferred-ack serialization
+per-runtime or per-socket? (decides worker-socket sharding before C7, not after).
 
 **Test scenarios:**
 - Happy path: S1 turn runs to completion with output captured by B after A detaches.
-- Edge case: S2 late-subscriber takeover; S1 repeated with B on a separate *process*.
+- Edge case: S2 late-subscriber takeover; S1 repeated with B on a separate *process*; S6
+  cross-runtime concurrency on one socket with per-connection `event_seq` intact.
 - Error path: S4 server-side-queued message vanishes (expected, documents the hazard); locally
-  queued message survives and submits.
+  queued message survives and submits; S5 orphaned tool call's observed fate recorded.
 - Integration: terminality disjunction correctly closes S3's first turn (stop_reason observed;
-  no reliance on `turn_finished`).
+  no reliance on `turn_finished`); S3 `client_message_id`→transcript mapping verified.
 
-**Verification:** Findings doc states, with capture-file evidence, whether a second subscriber
+**Verification:** Findings doc states, with capture-file evidence: whether a second subscriber
 prevents detach-cancellation (GO for anchor) or not (fallback: restart-cancels-turns accepted
-and journal-marked; goals doc updated). Explicit go/no-go recorded before Phase B starts.
+and journal-marked; goals doc updated); the observed S5 tool-call fate (shapes C3/C7's
+re-registration contract); the S6 answer (socket sharding decision); the S3 mapping answer
+(shapes C4's reconciliation). Explicit go/no-go recorded before Phase B starts.
 
 - [ ] **Unit C2: Salvage map (R22)**
 
@@ -345,9 +411,17 @@ registry, and subscribes the hot set — no turns yet.
   `test/anchor.test.ts` (against the salvaged mock App Server)
 
 **Approach:** Registry rows = `{agent_id, conversation_id, label, hot|cold, surface origin
-metadata}`; boot sequence = read registry → `runtime_start` (with `wait_for_replay`) per hot
-runtime on the anchor → worker connects and `sync`s. Conversation creation goes through the
-registry (WS `conversation_create`; the pre-exist gotcha lives here). Forward-progress liveness:
+metadata}`; boot sequence = read registry → **both** anchor and worker issue `runtime_start`
+(with `wait_for_replay`) per hot runtime — the worker's subscription is the one journaled
+from, the anchor's exists for crash-overlap only (dual-subscription rule; a bare `sync` is not
+shown to create a subscription). Hot-set changes: worker updates the registry and signals the
+anchor, which re-reads (read-only) and adjusts its `runtime_start`s; the worker-only window on
+a freshly-warmed runtime is journaled as a known exposure. Worker reconnect **re-registers all
+external tools** before resuming submissions; any in-flight `external_tool_call_request`
+orphaned by the restart is journaled FAILED-VISIBLE (contract shaped by C1's S5 answer).
+Conversation creation goes through the registry (WS `conversation_create`; the pre-exist gotcha
+lives here). SQLite opened in WAL mode, 0700 dir/0600 files, boot integrity check that degrades
+visibly; backup.sh host-data inclusion decided and wired here. Forward-progress liveness:
 periodic worker `sync` round-trip with deadline, surfaced via a liveness file the plist watchdog
 can act on.
 
@@ -356,8 +430,9 @@ behavioural fix or load-bearing property added in C3+ lands with a named entry i
 controller's mutation list.
 
 **Test scenarios:**
-- Happy path: boot with 3 registry rows (2 hot) → exactly 2 `runtime_start`s on the anchor;
-  worker `sync` succeeds.
+- Happy path: boot with 3 registry rows (2 hot) → exactly 2 `runtime_start`s on the anchor AND
+  2 on the worker; worker-received deltas flow with the anchor absent, and vice versa (dual
+  subscription proven in both directions).
 - Edge case: registry row for a conversation the server doesn't know → visible boot warning,
   row marked broken, other rows unaffected. Cold row warmed on demand promotes to hot.
 - Error path: App Server down at boot → bounded reconnect with `reconnecting` state persisted;
@@ -375,7 +450,9 @@ subscriptions held; logs in `~/Library/Logs`; liveness file fresh; zero writes t
 submits, tracks the turn state machine, journals every event exactly once, marks failures
 visibly.
 
-**Requirements:** R21 (sole submitter, journal), G5; closes loss paths Q2/Q3.
+**Requirements:** R21 (sole submitter, journal), G5; closes loss paths Q2/Q3; owns proofs
+**P3** (replay complete and deduplicated after controller restart) and **P4** (silence
+impossible after App Server kill), each with its reverting mutation.
 
 **Dependencies:** C3.
 
@@ -388,10 +465,15 @@ visibly.
 
 **Approach:** Every accepted message gets a controller-minted `client_message_id` (nonce-prefixed
 per origin surface — `request_id` is connection-local, per learnings) and a durable queue row
-before any socket write; submit next only on terminality of the current; journal is append-only
-with the turn's state transitions as first-class rows; a turn that exceeds the wall-clock
-backstop or is orphaned by an App Server restart is marked FAILED-VISIBLE, never silently
-absent. `subagent_id`-carrying deltas journal under the parent turn but never terminate it.
+before any socket write; the row moves to `state=submitting` *before* the write, so a crash in
+the write→ack window is reconcilable: on recovery, check `conversation_messages_list` for the
+`client_message_id` (via `otid`, per C1's S3 answer; fallback key for null-`otid` rows =
+snapshot message id + role) and resubmit only on confirmed absence. Submit next only on
+terminality of the current; **wall-clock timeout sends `abort_message`, confirms, marks
+FAILED-VISIBLE, then releases the queue** (never releases while the server may still be
+running the turn). Journal is append-only with the turn's state transitions as first-class
+rows; a turn orphaned by an App Server restart is marked FAILED-VISIBLE, never silently absent.
+`subagent_id`-carrying deltas journal under the parent turn but never terminate it.
 
 **Test scenarios:**
 - Happy path: two messages to one runtime → serialized submission; journal shows both turns
@@ -402,22 +484,30 @@ absent. `subagent_id`-carrying deltas journal under the parent turn but never te
   without latching the watermark.
 - Error path: `loop_error.is_terminal` → turn FAILED-VISIBLE with the error journaled; App
   Server killed mid-stream → on reconnect, `sync` + `conversation_messages_list`/`otid`
-  reconciliation either completes the record or marks FAILED-VISIBLE; a queued-but-unsubmitted
-  message survives worker restart (SQLite) and submits after recovery.
+  reconciliation either completes the record or marks FAILED-VISIBLE (this is proof **P4**); a
+  queued-but-unsubmitted message survives worker restart (SQLite) and submits after recovery;
+  worker crash *between socket write and ack* → recovery reconciles via `client_message_id`
+  and does not double-submit (exactly-once test); wedged turn → wall-clock timeout → abort →
+  FAILED-VISIBLE → the next queued message actually runs (no head-of-line cascade).
 - Integration: mock server's orphan-run and deferred-close behaviours (existing double
   fidelity) exercised against the full pipeline; live opt-in test runs one real tool turn end
   to end on the clone.
 
 **Verification:** With the App Server restarted mid-turn during the live test, the journal
-contains no turn in a non-terminal state and no duplicated message rows; the mutation list
-covers queue durability, dedup, and each disjunction arm.
+contains no turn in a non-terminal state and no duplicated message rows; kill-and-restart the
+*controller* mid-stream and the journal holds each event exactly once, in order (proof **P3**);
+the mutation list covers queue durability, dedup, the abort coupling, the submitting-window
+reconciliation, and each disjunction arm.
 
 - [ ] **Unit C5: Surface protocol — core tier + auth + approvals arbitration**
 
 **Goal:** The authenticated controller↔surface API: attach, replay-from-cursor, send, presence;
 capability declaration; approval fan-out with first-answer-wins.
 
-**Requirements:** R28, R21 (auth boundary), G8; approval settled facts.
+**Requirements:** R28, R21 (auth boundary), G8; approval settled facts; owns proof **P5**
+(approval survives absence) — exercised on the **clone backend with a restrictive permission
+mode set for the scratch agent** (safe there; the live unrestricted pin remains the production
+tripwire), so approval arbitration is proven against a real `control_request`, not only mocks.
 
 **Dependencies:** C4.
 
@@ -430,10 +520,17 @@ capability declaration; approval fan-out with first-answer-wins.
 **Approach:** Attach = authenticate → declare capabilities → name conversation → receive journal
 tail from a client-stated cursor + live events; send = hand over message, receive
 `client_message_id` receipt (delivery is then C4's inspectable problem); presence =
-focused/background/gone, feeding C7's routing. Approvals: controller answers the App Server per
-settled facts and arbitrates surfaces separately; if no surface holds the approval capability,
-hold pending + unseen marker (recovery via `recover_approvals` on restart). Undeclared
-capabilities degrade per R28 (route to another surface or hold), never drop.
+focused/background/gone, feeding C7's routing. The **initial capability-set taxonomy is pinned
+here** (the origin deferred it to this plan): `core` (mandatory: attach·replay·send·presence),
+`abort` (operator-initiated turn kill), `approvals`, `rail` (conversation CRUD), `notify`
+(awareness rendering), `direct` (direct-lane addressing), `subagent` (subagent-state
+rendering) — with a stated degradation rule per set (approvals → another capable surface or
+held-pending; notify → unseen markers; others → feature simply absent for that surface).
+Loopback token per the Auth decision (0600 file, boot-generated, rotation; user-level code is
+the trust boundary). Approvals: controller answers the App Server per settled facts and
+arbitrates surfaces separately; if no surface holds the approval capability, hold pending +
+unseen marker (recovery via `recover_approvals` on restart). Undeclared capabilities degrade
+per R28, never drop.
 
 **Test scenarios:**
 - Happy path: two surfaces attached; a message from one appears on the other via journal+live
@@ -446,7 +543,11 @@ capabilities degrade per R28 (route to another surface or hold), never drop.
   message still delivered (C4 ownership); controller restart mid-attach → surface reconnect
   replays from cursor with zero loss (the G5 criterion).
 - Integration: approval requested with two capable surfaces attached — first answer wins,
-  second surface sees resolution, server acked exactly once.
+  second surface sees resolution, server acked exactly once; live opt-in on the
+  permission-flipped clone: real `control_request` with zero surfaces attached → held pending,
+  recovered across a controller restart via `recover_approvals`, answerable on next attach
+  (proof **P5**); operator abort from a surface kills a running turn and the journal shows
+  `aborted` terminality.
 
 **Verification:** A scripted two-surface session on the clone demonstrates origin-doc success
 criterion 1 (interchangeable use, nothing lost); protocol version + capability sets documented
@@ -472,8 +573,12 @@ WS — the first real surface, core tier + approvals + direct-lane addressing.
 **Approach:** The render/sanitize/NDJSON/exit-code behaviours are already reviewed and
 mutation-bound — preserve them; only the transport under `SessionCore` changes. Add
 `@specialist` address parsing (thin: the controller owns routing; the terminal just passes the
-address through). Attribution labels now come from controller data, deleting the local
-attribution machinery.
+address through) and an abort command (the C5 `abort` capability). Attribution labels now come
+from controller data, deleting the local attribution machinery — and **every string rendered
+to the TTY passes the existing sanitizer**: attribution labels, conversation labels, route
+aliases, awareness text, not just message bodies (some of these are Kinara-authored via
+`manage_routes`; an escape-bearing label must not be able to spoof the attribution mark),
+with a mutation-bound escape-sequence-label test.
 
 **Test scenarios:**
 - Happy path: interactive turn renders streamed output; `--json` NDJSON shape unchanged
@@ -495,7 +600,9 @@ inverse of the q5 capture, demonstrated live.
 **Goal:** Scheduled and agent-initiated turns land, survive nobody-attached, and signal the
 operator per R13(tag→default)/R14/R15.
 
-**Requirements:** R3/G3, R13–R15, R29; origin success criterion 2.
+**Requirements:** R3/G3, **R12** (the outbound direct inline card, clearly non-Kinara, with
+the Kinara-catch-up bookkeeping C8's digest dedupes against), R13–R15, R29; origin success
+criterion 2.
 
 **Dependencies:** C4 (foreign turns journal), C5 (awareness events to surfaces).
 
@@ -508,14 +615,23 @@ operator per R13(tag→default)/R14/R15.
 - Test: `test/ingress.scheduler.test.ts`, `test/routing.landing.test.ts`,
   `test/routing.awareness.test.ts`
 
-**Approach:** Ingress accepts the scheduler's existing body shape verbatim; landing resolves
-conversation by explicit tag else the agent's default thread (relevance inference deliberately
-out); the turn then runs through C4 exactly like a surface turn. Awareness directive is
-per-item, urgency-inferred default `badge`, overridable (including deliberately muted);
-`notify_operator` (external tool on Kinara's runtime, registered by the worker) lets the agent
-set it. Unseen markers persist per `{conversation, surface-consumption}` so a later attach
-shows what arrived while away. Focus never moves (R14) — the controller has no mechanism to
-move it, by design.
+**Approach:** Ingress accepts the scheduler's existing body shape verbatim, requires the
+shared-secret bearer (see Key Decisions — it is Docker-wide-reachable via
+`host.docker.internal`, so the secret is the control, not the bind address), and responds
+**202-on-accept** (turn outcome = controller-journal truth). Landing resolves conversation by
+explicit tag else the agent's default thread (relevance inference deliberately out); the turn
+then runs through C4 exactly like a surface turn. R12's **direct inline card** is built here:
+specialist output that bypasses Kinara renders as a clearly-non-Kinara card with a catch-up
+record Kinara ingests (C8's digest dedupes against these by shared item id). Awareness
+directive is per-item, urgency-inferred default `badge`, overridable (including deliberately
+muted); `notify_operator` (external tool on Kinara's runtime, registered by the worker —
+re-registered on every worker reconnect per C3) lets the agent set it, with a **per-runtime
+rate cap on interrupt-level directives** (excess degrades to badge, journaled) so a runaway or
+prompt-injected agent annoys at most N times per window. Unseen markers persist per
+`{conversation, surface-consumption}` so a later attach shows what arrived while away. Focus
+never moves (R14) — the controller has no mechanism to move it, by design. Cutover
+prerequisite owned here: the `route=letta` **job inventory and per-job Docker→local agent-id
+disposition** (jobs with no local equivalent need an explicit decision, not a silent 4xx).
 
 **Test scenarios:**
 - Happy path: scheduler POST with an explicit conversation tag lands in that thread; attached
@@ -526,7 +642,9 @@ move it, by design.
   serialized by C4's queue. `notify_operator(interrupt)` on a non-focused thread raises
   interrupt on the focused surface without moving focus.
 - Error path: POST for an unknown agent → 4xx with body, journaled as rejected ingress
-  (visible, G5); turn that errors mid-run still sets the unseen marker with failure state.
+  (visible, G5); POST without the bearer secret → 401, journaled, no state; turn that errors
+  mid-run still sets the unseen marker with failure state; interrupt-directive flood → cap
+  engages, excess arrives as badges, journal shows the degradation.
 - Integration: end-to-end with a real scheduler-service job against the clone stack (rehearsal
   of the config re-point).
 
@@ -555,8 +673,12 @@ inline rendering).
 
 **Approach:** A route resolves *before* any model call: address match → target
 `{specialist, conversation}` (creating/warming it via the registry, hot per R26); bound thread →
-everything routes until unbound. The exchange journals in the specialist's thread; the
-operator's attached surface renders it inline via a foreign-thread event carrying attribution.
+everything routes until unbound. Authorization constraints on Kinara-authored routes: targets
+limited to registry-known specialists; **an explicit `@address` always beats any authored
+route**; a route mutation affecting an operator-bound thread raises an awareness event to
+attached surfaces (prevention-adjacent, not just after-the-fact journal audit). The exchange
+journals in the specialist's thread; the operator's attached surface renders it inline via a
+foreign-thread event carrying attribution.
 Digest: controller batches direct-lane activity per Kinara conversation and submits a
 low-priority catch-up turn (or context injection — implementation's call) when Kinara is idle;
 dedupe against R12 direct cards by shared item ids.
@@ -596,10 +718,18 @@ earlier units by design; refine at pickup.
   labels/parent links)
 - Test: surface-protocol conformance suite reused; Playwright smoke for rail actions.
 
+**Pickup gate:** expand this unit to full unit format (files, scenarios, verification) and
+record it in this plan before implementation begins.
+
 **Approach:** Rail = registry queries + WS `conversation_*` RPCs through the controller
 (delete = archive + undo window, per the WS protocol's archive semantics). Live chat over the
 same surface protocol as the terminal — the point of R28 is that this unit adds *capabilities*,
-not architecture.
+not architecture. Tickets per the Auth decision (single-use, seconds-TTL, first-frame auth,
+never in the URL); the concrete authenticated HTTPS path is **named here and recorded as a
+security dependency** of the controller boundary. The `conversation_meta` import is
+**idempotent and re-runnable** (keyed on `conversation_id`; registry wins after the first
+controller write) because pa-web-ui keeps writing until C10b retires its chat transport — the
+final delta-import happens in the cutover runbook.
 
 **Test scenarios (initial):** rail CRUD round-trips including fork parent links and
 archive-undo; two browsers + one terminal on one conversation, nothing lost; ticket
@@ -607,36 +737,59 @@ expiry/renewal; unseen badges match journal truth after a detached scheduled tur
 
 **Verification:** Origin success criteria 1 and 3 demonstrated across terminal + browser.
 
-- [ ] **Unit C10: Orchestration pattern registry (R27) + cutover (R19)**
+- [ ] **Unit C10a: Orchestration pattern registry (R27)**
 
-**Goal:** (a) Named patterns: participants, fan-out via `/v1/responses`, synthesis target;
+**Pickup gate:** expand to full unit format in this plan before implementation begins.
+
+**Goal:** Named patterns: participants, fan-out via `/v1/responses`, synthesis target;
 invocable by Kinara (`fan_out`/pattern tool), operator, scheduler; results to
-Kinara-as-reporter when she didn't originate. (b) The cutover: clone-and-validate rehearsal
-already done piecewise in C3–C9; execute for real — load both plists, re-point
-`LETTA_CALLBACK_URL`, flip terminal then web, quiesce incumbent writers, retire
-`scripts/restore-letta-app-server.py` stopgap; instant rollback = re-point back + unload.
+Kinara-as-reporter when she didn't originate.
 
-**Requirements:** R27, R19/G7.
+**Requirements:** R27.
 
-**Dependencies:** C7–C9 (patterns need delivery; cutover needs everything).
+**Dependencies:** C7 (delivery for reporter results), C8 (external-tool machinery). **Not a
+dependency of the cutover** — fan-out callers use the unchanged `/v1/responses` shim, so C10b
+may ship first.
 
-**Files:** `src/patterns/` + tests; cutover runbook
-`docs/runbooks/continuity-controller-cutover.md` (steps, checks, rollback); modify
-launchd reference plists as needed.
+**Files:** `src/patterns/` + tests.
 
 **Test scenarios (initial):** one pattern invoked three ways yields the same journaled result
 differing only in presenter; pattern participant failure → partial-result synthesis with the
-failure visible; cutover rehearsal on clone passes all origin success criteria; rollback
-rehearsal restores incumbents in under a minute.
+failure visible.
+
+**Verification:** A named pattern is invoker-agnostic (origin success criterion), demonstrated
+in the journal.
+
+- [ ] **Unit C10b: Cutover (R19)**
+
+**Pickup gate:** expand to full unit format in this plan before implementation begins.
+
+**Goal:** Clone-and-validate rehearsal already done piecewise in C3–C9; execute for real —
+load both plists, re-point `LETTA_CALLBACK_URL` (with the bearer secret and the per-job
+agent-id dispositions from C7's inventory), run the final `conversation_meta` delta-import,
+flip terminal then web, quiesce incumbent writers, retire the
+`scripts/restore-letta-app-server.py` stopgap; instant rollback = re-point back + unload.
+
+**Requirements:** R19/G7.
+
+**Dependencies:** C7–C9. C10a explicitly not required.
+
+**Files:** cutover runbook `docs/runbooks/continuity-controller-cutover.md` (steps, checks,
+rollback, the 202-accept semantics change, the break-glass posture); modify launchd reference
+plists as needed.
+
+**Test scenarios (initial):** cutover rehearsal on clone passes all origin success criteria
+and the full **P1–P5 checklist**; rollback rehearsal restores incumbents in under a minute.
 
 **Verification:** Post-cutover soak: the six origin/goals success criteria pass on the live
-system; goals doc statuses updated (G1–G8) with a new "last reality check" date.
+system; P1–P5 re-verified; goals doc statuses updated (G1–G8) with a new "last reality check"
+date.
 
 ## System-Wide Impact
 
 - **Interaction graph:** scheduler-service (config re-point only), letta-push-receiver
   supervisor (peer service, unchanged), enrichment `/v1/responses` callers (unchanged),
-  pa-web-ui (runs in parallel until C10 retires its chat transport; Task Review Sidebar ports
+  pa-web-ui (runs in parallel until C10b retires its chat transport; Task Review Sidebar ports
   separately), `~/bin/letta-continuity` wrapper (transport swap), launchd service set (+1
   service, +1 if the anchor is its own process).
 - **Error propagation:** platform failures surface as journal FAILED-VISIBLE states → surface
@@ -666,8 +819,8 @@ system; goals doc statuses updated (G1–G8) with a new "last reality check" dat
   gate + the live contract test against the clone; the pin fails loudly, not silently.
 - **#99-class silent stalls** → wall-clock backstop arm of the terminality disjunction +
   supervisor's forward-progress probe remain independent detectors.
-- **Scope gravity in Phase D** → C9/C10 are deliberately coarse; re-deepen before pickup rather
-  than padding now.
+- **Scope gravity in Phase D** → C9/C10a/C10b are deliberately coarse, each carrying an
+  explicit pickup gate: expand to full unit format in this plan before implementation begins.
 - **Sequencing:** C1 gates Phase B; C5 gates all surfaces; nothing before C10 touches live
   writers.
 
