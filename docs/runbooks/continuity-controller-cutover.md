@@ -43,8 +43,13 @@ NEEDS-OPERATOR-REVIEW decisions resolved.
       re-point; the secret's appearance in local scheduler logs is accepted; revisit bearer
       when `actions.py` is next touched. Job dispositions:
       `docs/plans/2026-08-15-006-scheduler-job-inventory.md` (zero active `route=letta` jobs).
-- [ ] **NEEDS-OPERATOR-REVIEW** — the writer-quiesce tiers in step 2 (discovered live
-      2026-08-16), specifically the Tier-3 runner decision.
+- [x] **DECIDED (operator, 2026-08-16): quiesce tiers approved; Tier-3 = option (a)** —
+      bootout the runner at cutover, re-point the two `route=local` self-check jobs to the
+      controller ingress in the same sitting, and land the memfs-sync/extension-tools
+      migration as the first post-cutover unit. Rollback posture verified: no data migration
+      anywhere (process swaps over unchanged state); whole-stack rollback ≈1 minute; runner
+      rollback implies whole-stack rollback (single-writer tripwire), which is acceptable at
+      that cost.
 
 ## 2. Cutover steps (terminal-first)
 
@@ -78,9 +83,11 @@ Each step names its clone rehearsal. Total attended time ≈ 20 min.
    memfs Gitea sync wrapper, and warm-pool recipes all ride it. Options:
    (a) **bootout the runner at cutover and accept those flows paused** until they re-point
    (scheduler jobs → controller ingress as `route=letta`; memfs-sync/extension-tools
-   migration = a follow-up unit) — cleanest single-writer posture, recommended if the pause
-   is tolerable; (b) defer cutover until a runner migration lands; (c) leaving it running is
-   NOT an option — the supervisor's foreign-writer tripwire will (correctly) fight it.
+   migration = a follow-up unit) — cleanest single-writer posture; (b) defer cutover until a
+   runner migration lands; (c) leaving it running is NOT an option — the supervisor's
+   foreign-writer tripwire will (correctly) fight it. **DECIDED (operator, 2026-08-16):
+   option (a).** Enrichment is unaffected either way (it rides `/v1/responses`, which both
+   the old and new server serve; the swap gap is 503-retried).
 
    **Confirmed NON-writers (no action):** `letta-teams-daemon` (Docker `:8283`), `letta-cleanup`
    (repo dir only), `letta-code-verify`, Claude sessions. The supervisor's flock tripwire +

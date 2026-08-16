@@ -152,3 +152,28 @@ bail-out criterion ("S6 per-socket HOL blocking") did not trigger.
 
 Scratch agents and the clone server are left running for Phase B development; they are torn
 down at the C10b rehearsal teardown (tracked there).
+
+## Addendum 2026-08-16 — S7 (post-goal probe): can the STOCK letta-code TUI attach to an App Server?
+
+**NO — resolved negative on 0.30.20** (closes the question deferred from the M1 spike §E3,
+which had only established viability for the *SDK*, not the TUI):
+
+- The CLI exposes `--backend cloud|local` only; `letta backend` the same. `--environment`
+  routing is headless-only and cloud-relayed. `letta app-server` is a deprecated alias for
+  `letta server --listen` (server side). The Desktop config (`desktop_config.json`) has no
+  external-server URL knob — the Desktop spawns and owns its own child.
+- The bundle DOES ship a protocol_v2 App-Server **client** (`createAppServerClient`,
+  `AppServerClient`) — but its only consumer is the `channel-gateway` subcommand
+  (`--app-server-url`), which even models the full attach idiom (runtime_start with
+  `client_info`, `recover_approvals`, `wait_for_replay`, `external_tools`).
+- **Empirical, on the clone**: `LETTA_LOCAL_BACKEND_DIR=<clone> letta --backend local
+  --agent <scratch> -p "…"` completed a turn by writing a NEW conversation
+  (`local-conv-23`) directly into the backend filesystem with **zero WebSocket connections**
+  to the running clone App Server (lsof before/after: 0→0). The stock TUI's local mode is an
+  in-process writer, full stop — exactly the class the cutover quiesce exists for.
+
+**Consequence for the "native TUI as a governed surface" idea:** a controller-side
+protocol_v2 facade would serve channel-gateway-class clients today, but the interactive TUI
+cannot point at it — that needs either an upstream attach flag (the client machinery already
+ships in the bundle, so it is a small vendor ask), a local patch (the `letta-code-patched/`
+precedent), or staying on `letta-continuity` (the current answer).
