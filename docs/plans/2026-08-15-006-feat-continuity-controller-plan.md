@@ -782,7 +782,12 @@ flip terminal then web, quiesce incumbent writers, retire the
 
 **Requirements:** R19/G7.
 
-**Dependencies:** C7–C9. C10a explicitly not required.
+**Dependencies:** C7–C9 for the full cutover. C10a explicitly not required. **Staged per the
+execution goal (`docs/plans/2026-08-15-007-feat-continuity-controller-goal.md`): the
+terminal-first portion (services live, scheduler re-pointed, `lc-local-backend` writers
+quiesced) executes after C8 — pa-web-ui runs on the separate Docker backend and continues in
+parallel; the web flip and pa-web-ui chat-transport retirement land with C9 in the follow-on
+goal.**
 
 **Files:** cutover runbook `docs/runbooks/continuity-controller-cutover.md` (steps, checks,
 rollback, the 202-accept semantics change, the break-glass posture); modify launchd reference
