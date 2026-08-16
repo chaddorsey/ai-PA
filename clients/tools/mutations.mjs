@@ -1285,9 +1285,7 @@ export const MUTATIONS = [
     file: "src/approvals.ts",
     label: "C5: an answered approval's unseen marker leaks forever",
     tests: ["test/approvals.test.ts"],
-    find: `    this.opts.db
-      .prepare("DELETE FROM unseen WHERE kind = 'approval' AND ref = ?")
-      .run(approvalId);`,
+    find: `    this.opts.db.prepare("DELETE FROM unseen WHERE kind = 'approval' AND ref = ?").run(approvalId);`,
     replace: ``,
     expect: /delivered on the next capable attach/,
   },
