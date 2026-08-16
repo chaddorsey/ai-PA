@@ -1387,8 +1387,8 @@ export const MUTATIONS = [
     file: "src/main.ts",
     label: "C6: replayed HISTORICAL failures poison every future interactive exit",
     tests: ["test/controller.test.ts"],
-    find: `    if (live && (outcome.startsWith("FAILED") || outcome.startsWith("failed"))) exitCode = 1;`,
-    replace: `    if (outcome.startsWith("FAILED") || outcome.startsWith("failed")) exitCode = 1;`,
+    find: `      if (live && (outcome.startsWith("FAILED") || outcome.startsWith("failed"))) exitCode = 1;`,
+    replace: `      if (outcome.startsWith("FAILED") || outcome.startsWith("failed")) exitCode = 1;`,
     expect: /REPLAYED historical failure does not/,
   },
 ];

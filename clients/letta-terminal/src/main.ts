@@ -351,6 +351,15 @@ async function runController(
     showReasoning: options.showReasoning,
   });
   const detach = options.json ? attachJson(core, io) : session.attach();
+  // A LIVE failed turn fails an interactive session's exit — the same rule as the raw path's
+  // ERROR_DELTA_TYPES hook. Attached BEFORE start() so the attach replay itself exercises the
+  // live/replayed distinction: REPLAYED history must not poison this run's exit code. The
+  // one-shot path detaches this hook — its exit belongs to its own receipt's outcome alone.
+  const offLiveFailures = core.onTurnOutcome(
+    (_cm: string | null, outcome: string, live: boolean) => {
+      if (live && (outcome.startsWith("FAILED") || outcome.startsWith("failed"))) exitCode = 1;
+    },
+  );
 
   try {
     await core.start();
@@ -362,6 +371,7 @@ async function runController(
   }
 
   const oneShotMessage = options.message ?? (await io.readPipedMessage());
+  if (oneShotMessage !== undefined) offLiveFailures();
   if (oneShotMessage !== undefined) {
     const code = await new Promise<number>((resolve) => {
       let settled = false;
@@ -410,13 +420,6 @@ async function runController(
     core.stop();
     return code === 0 ? exitCode : code;
   }
-
-  // A LIVE failed turn fails an interactive session's exit — the same rule as the raw path's
-  // ERROR_DELTA_TYPES hook. REPLAYED history is excluded on purpose: a failure that happened
-  // last week must not poison every future attach's exit code.
-  core.onTurnOutcome((_cm: string | null, outcome: string, live: boolean) => {
-    if (live && (outcome.startsWith("FAILED") || outcome.startsWith("failed"))) exitCode = 1;
-  });
 
   io.stderr(
     `— attached via controller to ${sanitize(runtime.agent_id, { maxLength: 120 })} · conversation ${sanitize(runtime.conversation_id, { maxLength: 120 })}
