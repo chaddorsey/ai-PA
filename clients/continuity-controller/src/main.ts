@@ -64,6 +64,10 @@ async function runWorker(): Promise<void> {
     turnTimeoutMs: config.turnTimeoutMs,
     abortConfirmMs: config.abortConfirmMs,
     surfacePort: config.surfacePort,
+    // Fail CLOSED: without a secret the Docker-wide-reachable ingress must not exist at all.
+    ...(config.ingressSecret
+      ? { ingressPort: config.ingressPort, ingressSecret: config.ingressSecret }
+      : {}),
     stateDir: config.stateDir,
     runtimeMode: process.env.CONTINUITY_RUNTIME_MODE,
     degraded,
@@ -74,6 +78,8 @@ async function runWorker(): Promise<void> {
     },
   });
   installSignalStop(() => worker.stop());
+  if (!config.ingressSecret)
+    log("ingress DISABLED (set CONTINUITY_INGRESS_SECRET to serve the scheduler dialect)");
   log(`worker starting: ws=${config.wsUrl} state=${config.stateDir}`);
   await worker.start();
 }
@@ -126,6 +132,7 @@ async function runRegistry(args: string[]): Promise<void> {
     if (!agentId) throw new Error("registry add requires --agent <id>");
     const label = flag(args, "label") ?? "";
     const temp = (flag(args, "temp") ?? "hot") as "hot" | "cold";
+    const isDefault = args.includes("--default");
     const conn = new WsConnection({ url: config.wsUrl, versionPolicy: "warn", onWarn: log });
     await conn.connectBare();
     try {
@@ -138,7 +145,13 @@ async function runRegistry(args: string[]): Promise<void> {
       }
       const conversationId = (created.conversation as { id?: string } | null)?.id;
       if (typeof conversationId !== "string") throw new Error("no conversation id in response");
-      registry.upsert({ agent_id: agentId, conversation_id: conversationId, label, temp });
+      registry.upsert({
+        agent_id: agentId,
+        conversation_id: conversationId,
+        label,
+        temp,
+        origin: isDefault ? { default: true } : {},
+      });
       journal.append("registry_upsert", {
         agent_id: agentId,
         conversation_id: conversationId,

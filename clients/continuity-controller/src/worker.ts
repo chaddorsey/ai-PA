@@ -19,8 +19,10 @@ import type { WsConnection } from "@ai-pa/letta-continuity-core/ws";
 import { ApprovalArbiter } from "./approvals.js";
 import { ConnectionLoop } from "./connection-loop.js";
 import { subscribeRuntimes } from "./hotset.js";
+import { IngressServer } from "./ingress/scheduler.js";
 import { TurnJournal } from "./journal.js";
 import type { Registry, RuntimeRef } from "./registry.js";
+import { AwarenessManager } from "./routing/awareness.js";
 import type { Journal } from "./state/journal.js";
 import { ensureSurfaceToken } from "./surface/auth.js";
 import { SurfaceServer } from "./surface/server.js";
@@ -51,6 +53,10 @@ export interface WorkerOptions {
   stateDir?: string;
   /** Permission mode stamped on runtime_start (P5's flipped-clone scenario sets `standard`). */
   runtimeMode?: string;
+  /** Scheduler-dialect ingress port (C7). Undefined = disabled; 0 = ephemeral (tests). */
+  ingressPort?: number;
+  /** Shared ingress secret — REQUIRED when ingressPort is set (Docker-wide reachability). */
+  ingressSecret?: string;
   onWarn?: (msg: string) => void;
   onExhausted: () => void;
   reconnect?: ReconnectPolicy;
@@ -58,6 +64,27 @@ export interface WorkerOptions {
 }
 
 const key = (r: RuntimeRef): string => `${r.agent_id}:${r.conversation_id}`;
+
+/**
+ * The C7 agent-facing awareness lever, registered on EVERY hot runtime's hello so a worker
+ * reconnect re-registers it by construction. Uncapped per the documented-risk decision
+ * 2026-08-15 (journal audit only).
+ */
+const NOTIFY_OPERATOR_TOOL = {
+  name: "notify_operator",
+  description:
+    "Set how the operator is notified about this conversation's current activity: " +
+    "'interrupt' (raise attention on their focused surface), 'badge' (default), or 'muted' " +
+    "(deliberately silent). Use sparingly; 'interrupt' should mean it cannot wait.",
+  parameters: {
+    type: "object",
+    properties: {
+      level: { type: "string", enum: ["interrupt", "badge", "muted"] },
+      note: { type: "string", description: "Optional short reason, journaled" },
+    },
+    required: ["level"],
+  },
+};
 
 export class WorkerDaemon {
   private readonly loop: ConnectionLoop;
@@ -69,6 +96,11 @@ export class WorkerDaemon {
   surface: SurfaceServer | null = null;
   /** Bound surface port after start (differs from surfacePort when 0/ephemeral). */
   surfaceBoundPort: number | null = null;
+  /** The C7 awareness/unseen layer. */
+  readonly awareness: AwarenessManager;
+  /** The scheduler-dialect ingress; null until start() when ingressPort is set. */
+  ingress: IngressServer | null = null;
+  ingressBoundPort: number | null = null;
   private readonly turnJournal: TurnJournal;
   private livenessTimer: ReturnType<typeof setInterval> | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -107,6 +139,10 @@ export class WorkerDaemon {
         // Frames flow into the pipeline from the FIRST hello: the wait_for_replay replay is
         // where a mid-flight turn's history arrives, and it must not be dropped on the floor.
         conn.onFrame((frame) => {
+          if (frame.type === "external_tool_call_request") {
+            this.onExternalToolCall(conn, frame as Record<string, unknown>);
+            return;
+          }
           if (this.approvals.onFrame(frame)) return;
           this.pipeline.onFrame(frame);
         });
@@ -120,6 +156,13 @@ export class WorkerDaemon {
         // non-terminal queue row against transcript truth, then resume submissions.
         await this.pipeline.recover(conn);
       },
+    });
+    this.awareness = new AwarenessManager({
+      db: opts.db,
+      journal: this.turnJournal,
+      broadcast: (runtime, level, ref) =>
+        this.surface?.broadcastAwareness(runtime, level, ref) ?? 0,
+      onWarn: opts.onWarn,
     });
     this.approvals = new ApprovalArbiter({
       db: opts.db,
@@ -156,9 +199,21 @@ export class WorkerDaemon {
         journal: this.turnJournal,
         pipeline: this.pipeline,
         approvals: this.approvals,
+        awareness: this.awareness,
         onWarn: this.opts.onWarn,
       });
       this.surfaceBoundPort = await this.surface.start(this.opts.surfacePort);
+    }
+    if (this.opts.ingressPort !== undefined) {
+      this.ingress = new IngressServer({
+        secret: this.opts.ingressSecret ?? "",
+        registry: this.opts.registry,
+        pipeline: this.pipeline,
+        journal: this.turnJournal,
+        awareness: this.awareness,
+        onWarn: this.opts.onWarn,
+      });
+      this.ingressBoundPort = await this.ingress.start(this.opts.ingressPort);
     }
     await this.loop.start();
     this.livenessTimer = setInterval(() => void this.livenessProbe(), this.opts.livenessIntervalMs);
@@ -184,7 +239,34 @@ export class WorkerDaemon {
     this.pipeline.stop();
     void this.surface?.stop();
     this.surface = null;
+    void this.ingress?.stop();
+    this.ingress = null;
     this.loop.stop();
+  }
+
+  /** Controller-owned external tools. notify_operator is the only one until C8. */
+  private onExternalToolCall(conn: WsConnection, frame: Record<string, unknown>): void {
+    const requestId = frame.request_id as string;
+    const runtime = frame.runtime as RuntimeRef | undefined;
+    const ack = (result: string, isError = false): void => {
+      conn.send({
+        type: "external_tool_call_response",
+        request_id: requestId,
+        result: { content: [{ type: "text", text: result }], is_error: isError },
+      } as unknown as Parameters<WsConnection["send"]>[0]);
+    };
+    if (frame.tool_name === "notify_operator" && runtime) {
+      const input = (frame.input as { level?: string; note?: string } | undefined) ?? {};
+      const ok = this.awareness.setDirective(runtime, input.level ?? "");
+      ack(
+        ok
+          ? `awareness set to ${input.level}`
+          : `unknown level "${input.level ?? ""}" — use interrupt | badge | muted`,
+        !ok,
+      );
+      return;
+    }
+    ack(`unknown controller tool: ${String(frame.tool_name)}`, true);
   }
 
   private async pollHotset(): Promise<void> {
@@ -205,6 +287,7 @@ export class WorkerDaemon {
         const report = await subscribeRuntimes(conn, fresh, {
           waitForReplay: true,
           mode: this.opts.runtimeMode,
+          externalTools: [{ tools: [NOTIFY_OPERATOR_TOOL] }],
         });
         for (const r of report.subscribed) this.subscribedKeys.add(key(r));
         for (const b of report.broken) {

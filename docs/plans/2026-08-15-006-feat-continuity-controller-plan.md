@@ -602,7 +602,7 @@ with a mutation-bound escape-sequence-label test.
 codes) passes unchanged; detaching the terminal mid-turn no longer cancels the turn — the
 inverse of the q5 capture, demonstrated live.
 
-- [ ] **Unit C7: Agent-initiated delivery — the 10:55 fix (G3)**
+- [x] **Unit C7: Agent-initiated delivery — the 10:55 fix (G3)** *(10:55 passed live: real scheduler job → clone ingress → unseen → presented+consumed on attach; job inventory in 2026-08-15-006-scheduler-job-inventory.md)*
 
 **Goal:** Scheduled and agent-initiated turns land, survive nobody-attached, and signal the
 operator per R13(tag→default)/R14/R15.

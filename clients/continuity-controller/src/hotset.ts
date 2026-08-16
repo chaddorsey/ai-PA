@@ -24,6 +24,12 @@ export interface SubscribeOptions {
   waitForReplay: boolean;
   /** Permission mode stamped on the hello (P5 runs the clone flipped to `standard`). */
   mode?: string;
+  /**
+   * Controller-owned external tools registered atomically with the hello (C7's
+   * notify_operator). Registrations die with the connection, which is exactly why they ride
+   * the hello: every reconnect re-registers by construction (C1 S5).
+   */
+  externalTools?: ReadonlyArray<{ tools: ReadonlyArray<Record<string, unknown>> }>;
   /** Per-runtime hello deadline. */
   timeoutMs?: number;
 }
@@ -51,11 +57,13 @@ export async function subscribeRuntimes(
           const startOptions: { waitForReplay?: boolean; mode?: string } = {};
           if (options.waitForReplay) startOptions.waitForReplay = true;
           if (options.mode) startOptions.mode = options.mode;
-          return buildRuntimeStart(
+          const frame = buildRuntimeStart(
             rid,
             ref,
             Object.keys(startOptions).length > 0 ? startOptions : undefined,
           );
+          if (options.externalTools) frame.external_tools = options.externalTools;
+          return frame;
         },
         Outbound.runtimeStart,
         options.timeoutMs ?? DEFAULT_HELLO_TIMEOUT_MS,

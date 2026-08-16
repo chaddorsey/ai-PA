@@ -15,6 +15,7 @@ import { createRequire } from "node:module";
 import type { ApprovalArbiter, ApprovalDecision, PendingApproval } from "../approvals.js";
 import type { TurnEventRow, TurnJournal } from "../journal.js";
 import type { RuntimeRef } from "../registry.js";
+import type { AwarenessManager } from "../routing/awareness.js";
 import type { TurnPipeline } from "../turns.js";
 import { verifySurfaceToken } from "./auth.js";
 import {
@@ -43,6 +44,8 @@ export interface SurfaceServerOptions {
   journal: TurnJournal;
   pipeline: TurnPipeline;
   approvals: ApprovalArbiter;
+  /** C7's unseen/awareness layer. Optional so C5-era callers keep working. */
+  awareness?: AwarenessManager;
   onWarn?: (msg: string) => void;
 }
 
@@ -116,6 +119,19 @@ export class SurfaceServer {
     return reached;
   }
 
+  /** Awareness fan-out (C7): notify-capable sessions of the runtime. Returns how many. */
+  broadcastAwareness(runtime: RuntimeRef, level: string, ref: string): number {
+    let reached = 0;
+    for (const [, s] of this.sessions) {
+      if (key(s.runtime) !== key(runtime)) continue;
+      if (!s.capabilities.has("notify")) continue;
+      if (s.presence === "gone") continue;
+      this.sendTo(s, { type: "awareness", level, runtime, ref });
+      reached += 1;
+    }
+    return reached;
+  }
+
   broadcastApprovalResolution(approvalId: string, decision: ApprovalDecision, by: string): void {
     for (const [, s] of this.sessions) {
       if (!s.capabilities.has("approvals")) continue;
@@ -179,6 +195,9 @@ export class SurfaceServer {
           cursor,
         };
         this.sessions.set(session.id, session);
+        // What arrived while nobody watched (C7): presented on attach, then CONSUMED — the
+        // replay the surface just received is the content those markers pointed at.
+        const unseen = this.opts.awareness?.unseenFor(command.runtime) ?? [];
         socket.send(
           JSON.stringify({
             type: "attach_ok",
@@ -187,9 +206,11 @@ export class SurfaceServer {
             runtime: command.runtime,
             replay,
             cursor,
+            unseen,
             warnings,
           }),
         );
+        if (unseen.length > 0) this.opts.awareness?.markSeen(command.runtime);
         // Held-pending approvals reach a newly-attached capable surface immediately.
         if (session.capabilities.has("approvals")) {
           for (const approval of this.opts.approvals.pendingApprovals()) {

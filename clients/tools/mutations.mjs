@@ -1391,4 +1391,102 @@ export const MUTATIONS = [
     replace: `      if (outcome.startsWith("FAILED") || outcome.startsWith("failed")) exitCode = 1;`,
     expect: /REPLAYED historical failure does not/,
   },
+  // ── 93-100: Unit C7 — agent-initiated delivery (plan 2026-08-15-006) ────────
+  {
+    id: 93,
+    pkg: CONTROLLER,
+    file: "src/routing/landing.ts",
+    label: "C7: a missed tag silently falls through to the default thread",
+    tests: ["test/routing.landing.test.ts"],
+    find: `    // An explicit tag that matches nothing is a MISS, not a shrug: falling through to the
+    // default thread would land the message somewhere the sender did not name.
+    return null;`,
+    replace: ``,
+    expect: /tag that matches nothing is a MISS/,
+  },
+  {
+    id: 94,
+    pkg: CONTROLLER,
+    file: "src/ingress/scheduler.ts",
+    label: "C7: the ingress secret check accepts anything",
+    tests: ["test/ingress.scheduler.test.ts"],
+    find: `  const a = Buffer.from(expected);
+  const b = Buffer.from(presented);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);`,
+    replace: `  void expected;
+  void presented;
+  return true;`,
+    expect: /wrong secret .* 401/,
+  },
+  {
+    id: 95,
+    pkg: CONTROLLER,
+    file: "src/ingress/scheduler.ts",
+    label: "C7: rejected ingress stops being journaled (invisible 401s)",
+    tests: ["test/ingress.scheduler.test.ts"],
+    find: `      this.opts.journal.record({
+        runtime: { agent_id: agentId ?? "unknown", conversation_id: "ingress" },
+        kind: "ingress_rejected",
+        payload: { status, reason, path: req.url ?? "", method: req.method ?? "" },
+      });`,
+    replace: ``,
+    expect: /401, JOURNALED/,
+  },
+  {
+    id: 96,
+    pkg: CONTROLLER,
+    file: "src/routing/awareness.ts",
+    label: "C7: nobody-attached arrivals leave no unseen marker (the 10:55 bug reborn)",
+    tests: ["test/routing.awareness.test.ts"],
+    find: `      this.opts.db
+        .prepare(
+          \`INSERT OR IGNORE INTO unseen (agent_id, conversation_id, kind, ref, created_at)
+           VALUES (?, ?, 'turn', ?, ?)\`,
+        )
+        .run(runtime.agent_id, runtime.conversation_id, ref, new Date().toISOString());`,
+    replace: ``,
+    expect: /10:55 TEST/,
+  },
+  {
+    id: 97,
+    pkg: CONTROLLER,
+    file: "src/surface/server.ts",
+    label: "C7: attach presents unseen markers but never consumes them (badge forever)",
+    tests: ["test/routing.awareness.test.ts"],
+    find: `        if (unseen.length > 0) this.opts.awareness?.markSeen(command.runtime);`,
+    replace: ``,
+    expect: /10:55 TEST/,
+  },
+  {
+    id: 98,
+    pkg: CONTROLLER,
+    file: "src/worker.ts",
+    label: "C7: notify_operator stops riding the worker's hellos (no re-registration)",
+    tests: ["test/routing.awareness.test.ts"],
+    find: `          externalTools: [{ tools: [NOTIFY_OPERATOR_TOOL] }],`,
+    replace: ``,
+    expect: /hellos REGISTER notify_operator/,
+  },
+  {
+    id: 99,
+    pkg: CONTROLLER,
+    file: "src/routing/awareness.ts",
+    label: "C7: muted stops meaning muted (still broadcasts)",
+    tests: ["test/routing.awareness.test.ts"],
+    find: `    if (level === "muted") return;`,
+    replace: ``,
+    expect: /muted silences/,
+  },
+  {
+    id: 100,
+    pkg: CONTROLLER,
+    file: "src/surface/server.ts",
+    label: "C7: awareness frames fan out to every surface, notify capability or not",
+    tests: ["test/routing.awareness.test.ts"],
+    find: `      if (!s.capabilities.has("notify")) continue;
+      if (s.presence === "gone") continue;`,
+    replace: `      if (s.presence === "gone") continue;`,
+    expect: /core-only surface gets nothing/,
+  },
 ];

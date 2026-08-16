@@ -30,6 +30,10 @@ export interface ControllerConfig {
   abortConfirmMs: number;
   /** Loopback surface-API port (C5). */
   surfacePort: number;
+  /** Scheduler-dialect ingress port (C7). */
+  ingressPort: number;
+  /** Shared ingress secret (C7). Empty = ingress stays DOWN (fail-closed). */
+  ingressSecret: string;
 }
 
 const DEFAULT_WS_URL = "ws://127.0.0.1:4577/ws";
@@ -40,6 +44,7 @@ const DEFAULT_QUEUE_POLL_MS = 300;
 const DEFAULT_TURN_TIMEOUT_MS = 600_000;
 const DEFAULT_ABORT_CONFIRM_MS = 10_000;
 const DEFAULT_SURFACE_PORT = 4610;
+const DEFAULT_INGRESS_PORT = 4611;
 
 function intFromEnv(value: string | undefined, fallback: number): number {
   const n = value === undefined ? Number.NaN : Number.parseInt(value, 10);
@@ -67,5 +72,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ControllerConf
     turnTimeoutMs: intFromEnv(env.CONTINUITY_TURN_TIMEOUT_MS, DEFAULT_TURN_TIMEOUT_MS),
     abortConfirmMs: intFromEnv(env.CONTINUITY_ABORT_CONFIRM_MS, DEFAULT_ABORT_CONFIRM_MS),
     surfacePort: intFromEnv(env.CONTINUITY_SURFACE_PORT, DEFAULT_SURFACE_PORT),
+    ingressPort: intFromEnv(env.CONTINUITY_INGRESS_PORT, DEFAULT_INGRESS_PORT),
+    ingressSecret: env.CONTINUITY_INGRESS_SECRET ?? "",
   };
 }
