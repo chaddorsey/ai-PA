@@ -23,6 +23,8 @@ import { IngressServer } from "./ingress/scheduler.js";
 import { TurnJournal } from "./journal.js";
 import type { Registry, RuntimeRef } from "./registry.js";
 import { AwarenessManager } from "./routing/awareness.js";
+import { DigestManager } from "./routing/digest.js";
+import { RouteTable } from "./routing/routes.js";
 import type { Journal } from "./state/journal.js";
 import { ensureSurfaceToken } from "./surface/auth.js";
 import { SurfaceServer } from "./surface/server.js";
@@ -57,6 +59,8 @@ export interface WorkerOptions {
   ingressPort?: number;
   /** Shared ingress secret — REQUIRED when ingressPort is set (Docker-wide reachability). */
   ingressSecret?: string;
+  /** Digest delivery sweep cadence (C8). Only the cadence is tunable; the design is fixed. */
+  digestSweepMs?: number;
   onWarn?: (msg: string) => void;
   onExhausted: () => void;
   reconnect?: ReconnectPolicy;
@@ -86,6 +90,25 @@ const NOTIFY_OPERATOR_TOOL = {
   },
 };
 
+/** Kinara's route-authoring lever (R25). Journal audit only — documented-risk posture. */
+const MANAGE_ROUTES_TOOL = {
+  name: "manage_routes",
+  description:
+    "Manage the controller's direct-lane routes: set/delete an @alias pointing at a " +
+    "registry-known specialist, or list current routes. Every mutation is journaled with " +
+    "you as the author.",
+  parameters: {
+    type: "object",
+    properties: {
+      op: { type: "string", enum: ["set", "delete", "list"] },
+      alias: { type: "string" },
+      agent_id: { type: "string" },
+      conversation_id: { type: "string" },
+    },
+    required: ["op"],
+  },
+};
+
 export class WorkerDaemon {
   private readonly loop: ConnectionLoop;
   /** The C4 sole-submitter pipeline. Public: ingress adapters and tests accept through it. */
@@ -98,6 +121,10 @@ export class WorkerDaemon {
   surfaceBoundPort: number | null = null;
   /** The C7 awareness/unseen layer. */
   readonly awareness: AwarenessManager;
+  /** The C8 direct-lane route table. */
+  readonly routes: RouteTable;
+  /** The C8 Kinara digest queue. */
+  readonly digests: DigestManager;
   /** The scheduler-dialect ingress; null until start() when ingressPort is set. */
   ingress: IngressServer | null = null;
   ingressBoundPort: number | null = null;
@@ -105,6 +132,7 @@ export class WorkerDaemon {
   private livenessTimer: ReturnType<typeof setInterval> | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private queueTimer: ReturnType<typeof setInterval> | null = null;
+  private digestTimer: ReturnType<typeof setInterval> | null = null;
   private subscribedKeys = new Set<string>();
   private seenHotsetVersion = -1;
   private passInFlight = false;
@@ -116,6 +144,7 @@ export class WorkerDaemon {
       db: opts.db,
       journal: this.turnJournal,
       getConnection: () => this.loop.current,
+      isSubscribed: (runtime) => this.subscribedKeys.has(key(runtime)),
       turnTimeoutMs: opts.turnTimeoutMs,
       abortConfirmMs: opts.abortConfirmMs,
       onWarn: opts.onWarn,
@@ -156,6 +185,44 @@ export class WorkerDaemon {
         // non-terminal queue row against transcript truth, then resume submissions.
         await this.pipeline.recover(conn);
       },
+    });
+    this.routes = new RouteTable(opts.db, opts.registry, this.turnJournal);
+    this.digests = new DigestManager({
+      db: opts.db,
+      journal: this.turnJournal,
+      pipeline: this.pipeline,
+      onWarn: opts.onWarn,
+    });
+    // A COMPLETED direct-lane exchange becomes a digest row for its route-origin Kinara
+    // thread (R24). Item id = the exchange's client_message_id — the same id R12's inline
+    // card carried, which is what lets Kinara dedupe.
+    this.turnJournal.onRecord((row) => {
+      if (row.kind !== "turn_terminal" || !row.client_message_id) return;
+      const queueRow = this.pipeline.rowFor(row.client_message_id);
+      const origin = queueRow?.origin as { via?: string; origin_runtime?: RuntimeRef } | undefined;
+      if (origin?.via !== "direct" || !origin.origin_runtime) return;
+      const replyText = this.turnJournal
+        .eventsFor({ agent_id: row.agent_id, conversation_id: row.conversation_id })
+        .filter(
+          (e) => e.client_message_id === row.client_message_id && e.kind === "assistant_message",
+        )
+        .map((e) => {
+          const delta = (e.payload as { delta?: { content?: unknown } }).delta;
+          const content = delta?.content;
+          if (typeof content === "string") return content;
+          if (Array.isArray(content))
+            return content
+              .map((c) => (typeof c === "string" ? c : ((c as { text?: string }).text ?? "")))
+              .join("");
+          return "";
+        })
+        .join("")
+        .slice(0, 300);
+      this.digests.enqueue(
+        origin.origin_runtime,
+        row.client_message_id,
+        `@${row.agent_id}: ${queueRow?.content.slice(0, 120) ?? ""} → ${replyText || "(no text reply)"}`,
+      );
     });
     this.awareness = new AwarenessManager({
       db: opts.db,
@@ -200,6 +267,7 @@ export class WorkerDaemon {
         pipeline: this.pipeline,
         approvals: this.approvals,
         awareness: this.awareness,
+        routes: this.routes,
         onWarn: this.opts.onWarn,
       });
       this.surfaceBoundPort = await this.surface.start(this.opts.surfacePort);
@@ -224,6 +292,8 @@ export class WorkerDaemon {
     // pump immediately; this poll is the seam that makes the durable queue multi-writer.
     this.queueTimer = setInterval(() => this.pipeline.pump(), this.opts.queuePollMs);
     this.queueTimer.unref?.();
+    this.digestTimer = setInterval(() => this.digests.sweep(), this.opts.digestSweepMs ?? 30_000);
+    this.digestTimer.unref?.();
     // Prove liveness immediately rather than an interval from now — a daemon that boots and
     // dies inside the first interval would otherwise leave no liveness evidence at all.
     await this.livenessProbe();
@@ -233,9 +303,11 @@ export class WorkerDaemon {
     if (this.livenessTimer) clearInterval(this.livenessTimer);
     if (this.pollTimer) clearInterval(this.pollTimer);
     if (this.queueTimer) clearInterval(this.queueTimer);
+    if (this.digestTimer) clearInterval(this.digestTimer);
     this.livenessTimer = null;
     this.pollTimer = null;
     this.queueTimer = null;
+    this.digestTimer = null;
     this.pipeline.stop();
     void this.surface?.stop();
     this.surface = null;
@@ -255,6 +327,32 @@ export class WorkerDaemon {
         result: { content: [{ type: "text", text: result }], is_error: isError },
       } as unknown as Parameters<WsConnection["send"]>[0]);
     };
+    if (frame.tool_name === "manage_routes" && runtime) {
+      const input =
+        (frame.input as
+          | { op?: string; alias?: string; agent_id?: string; conversation_id?: string }
+          | undefined) ?? {};
+      const author = `agent:${runtime.agent_id}`;
+      try {
+        if (input.op === "list") {
+          ack(JSON.stringify(this.routes.list()));
+        } else if (input.op === "set" && input.alias && input.agent_id) {
+          const route = this.routes.set(input.alias, input.agent_id, input.conversation_id, author);
+          ack(`route @${route.alias} → ${route.agent_id}/${route.conversation_id}`);
+        } else if (input.op === "delete" && input.alias) {
+          ack(
+            this.routes.delete(input.alias, author)
+              ? `route @${input.alias} deleted`
+              : `no route @${input.alias}`,
+          );
+        } else {
+          ack("manage_routes: op=set requires alias+agent_id; op=delete requires alias", true);
+        }
+      } catch (e) {
+        ack(e instanceof Error ? e.message : String(e), true);
+      }
+      return;
+    }
     if (frame.tool_name === "notify_operator" && runtime) {
       const input = (frame.input as { level?: string; note?: string } | undefined) ?? {};
       const ok = this.awareness.setDirective(runtime, input.level ?? "");
@@ -287,7 +385,7 @@ export class WorkerDaemon {
         const report = await subscribeRuntimes(conn, fresh, {
           waitForReplay: true,
           mode: this.opts.runtimeMode,
-          externalTools: [{ tools: [NOTIFY_OPERATOR_TOOL] }],
+          externalTools: [{ tools: [NOTIFY_OPERATOR_TOOL, MANAGE_ROUTES_TOOL] }],
         });
         for (const r of report.subscribed) this.subscribedKeys.add(key(r));
         for (const b of report.broken) {

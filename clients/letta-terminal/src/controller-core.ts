@@ -150,6 +150,32 @@ export class ControllerCore {
     return () => this.outcomeListeners.delete(cb);
   };
 
+  private readonly foreignListeners = new Set<
+    (route: string, specialist: { agent_id: string }, event: Record<string, unknown>) => void
+  >();
+  /** C8 inline direct-lane rendering: journal events from a route-target specialist thread. */
+  onForeignEvent = (
+    cb: (route: string, specialist: { agent_id: string }, event: Record<string, unknown>) => void,
+  ): (() => void) => {
+    this.foreignListeners.add(cb);
+    return () => this.foreignListeners.delete(cb);
+  };
+
+  /** Bind this session's thread to a route alias (plain messages route direct until unbound). */
+  bind = (alias: string): void => {
+    const socket = this.socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error("not connected");
+    this.sendCounter += 1;
+    socket.send(JSON.stringify({ type: "bind", request_id: `bind-${this.sendCounter}`, alias }));
+  };
+
+  unbind = (): void => {
+    const socket = this.socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error("not connected");
+    this.sendCounter += 1;
+    socket.send(JSON.stringify({ type: "unbind", request_id: `unbind-${this.sendCounter}` }));
+  };
+
   ownsRun = (runId: string | undefined): boolean => this.attributeRun(runId) === "mine";
 
   attributeRun = (runId: string | undefined): "mine" | "foreign" | "unknown" => {
@@ -252,7 +278,7 @@ export class ControllerCore {
         type: "attach",
         token,
         protocol_version: 1,
-        capabilities: ["core", "abort", "approvals"],
+        capabilities: ["core", "abort", "approvals", "direct", "notify"],
         runtime: this.opts.runtime,
         cursor: this.cursor,
       }),
@@ -320,6 +346,18 @@ export class ControllerCore {
       bound(this.myClientMessageIds);
       bound(this.cmOrigins);
       for (const cb of this.receiptListeners) cb(clientMessageId);
+      return;
+    }
+    if (frame.type === "foreign_event") {
+      const event = (frame.event as Record<string, unknown>) ?? {};
+      const specialist = (frame.specialist as { agent_id: string }) ?? { agent_id: "unknown" };
+      for (const cb of this.foreignListeners) {
+        try {
+          cb(String(frame.route ?? "direct"), specialist, event);
+        } catch {
+          // isolated
+        }
+      }
       return;
     }
     if (frame.type === "approval_request") {

@@ -1489,4 +1489,95 @@ export const MUTATIONS = [
     replace: `      if (s.presence === "gone") continue;`,
     expect: /core-only surface gets nothing/,
   },
+  // ── 101-107: Unit C8 — direct lane (plan 2026-08-15-006) ────────────────────
+  {
+    id: 101,
+    pkg: CONTROLLER,
+    file: "src/routing/routes.ts",
+    label: "C8: a routing miss silently becomes a Kinara model call",
+    tests: ["test/routing.routes.test.ts"],
+    find: `      if (!route) throw new RouteMissError(\`no route named @\${alias}\`);`,
+    replace: `      if (!route) return null;`,
+    expect: /VISIBLE error and nothing is submitted/,
+  },
+  {
+    id: 102,
+    pkg: CONTROLLER,
+    file: "src/routing/routes.ts",
+    label: "C8: bind mutations stop being journaled (the R25 audit goes dark)",
+    tests: ["test/routing.routes.test.ts"],
+    find: `    this.journal.record({
+      runtime: source,
+      kind: "route_mutation",
+      payload: { op: "bind", alias, author },
+    });`,
+    replace: ``,
+    expect: /bind routes plain messages until unbind/,
+  },
+  {
+    id: 103,
+    pkg: CONTROLLER,
+    file: "src/routing/routes.ts",
+    label: "C8: an active binding starts beating an explicit @address",
+    tests: ["test/routing.routes.test.ts"],
+    find: `    const address = ADDRESS.exec(line);
+    if (address) {`,
+    replace: `    const bindingFirst = this.getBinding(source);
+    if (bindingFirst) {
+      return {
+        target: {
+          agent_id: bindingFirst.target_agent_id,
+          conversation_id: bindingFirst.target_conversation_id,
+        },
+        text: line,
+        via: "binding",
+        alias: null,
+      };
+    }
+    const address = ADDRESS.exec(line);
+    if (address) {`,
+    expect: /@address BEATS an active binding/,
+  },
+  {
+    id: 104,
+    pkg: CONTROLLER,
+    file: "src/routing/digest.ts",
+    label: "C8: digests jump ahead of pending operator messages",
+    tests: ["test/routing.digest.test.ts"],
+    find: `      if (pending.length > 0) continue;`,
+    replace: ``,
+    expect: /OPERATOR MESSAGES PREEMPT/,
+  },
+  {
+    id: 105,
+    pkg: CONTROLLER,
+    file: "src/routing/digest.ts",
+    label: "C8: delivered digests never marked — redelivered every sweep forever",
+    tests: ["test/routing.digest.test.ts"],
+    find: `        const mark = this.opts.db.prepare("UPDATE digests SET delivered_at = ? WHERE id = ?");
+        for (const r of rows) mark.run(now, r.id);`,
+    replace: ``,
+    expect: /ROUTE-ORIGIN thread as ONE batched muted turn/,
+  },
+  {
+    id: 106,
+    pkg: CONTROLLER,
+    file: "src/surface/server.ts",
+    label: "C8: foreign-thread events fan out to every surface, capability or not",
+    tests: ["test/routing.routes.test.ts"],
+    find: `      if (key(s.runtime) !== key(origin.origin_runtime)) continue;
+      if (!s.capabilities.has("direct")) continue;`,
+    replace: `      if (key(s.runtime) !== key(origin.origin_runtime)) continue;`,
+    expect: /ZERO Kinara turns, inline attributed reply/,
+  },
+  {
+    id: 107,
+    pkg: CONTROLLER,
+    file: "src/turns.ts",
+    label: "C8: the pump submits to runtimes the worker has not subscribed",
+    tests: ["test/routing.routes.test.ts"],
+    find: `      if (this.opts.isSubscribed && !this.opts.isSubscribed(runtime)) continue;`,
+    replace: ``,
+    expect: /ZERO Kinara turns, inline attributed reply/,
+  },
 ];

@@ -187,6 +187,37 @@ async function runRegistry(args: string[]): Promise<void> {
   throw new Error(`unknown registry command: ${String(command)}`);
 }
 
+/** Operator route authoring (C8). Same table the running worker reads; mutations journaled. */
+async function runRoutes(args: string[]): Promise<void> {
+  const config = loadConfig();
+  const { db } = openStateDb(config.stateDir);
+  const registry = new Registry(db);
+  const journal = new TurnJournal(db);
+  const { RouteTable } = await import("./routing/routes.js");
+  const routes = new RouteTable(db, registry, journal);
+  const command = args[0];
+  if (command === "list") {
+    for (const r of routes.list())
+      console.log(`@${r.alias} → ${r.agent_id}/${r.conversation_id} (by ${r.author})`);
+    return;
+  }
+  if (command === "set") {
+    const alias = flag(args, "alias");
+    const agentId = flag(args, "agent");
+    if (!alias || !agentId) throw new Error("routes set requires --alias and --agent");
+    const route = routes.set(alias, agentId, flag(args, "conversation"), "operator-cli");
+    console.log(`@${route.alias} → ${route.agent_id}/${route.conversation_id}`);
+    return;
+  }
+  if (command === "delete") {
+    const alias = flag(args, "alias");
+    if (!alias) throw new Error("routes delete requires --alias");
+    console.log(routes.delete(alias, "operator-cli") ? "deleted" : "no such route");
+    return;
+  }
+  throw new Error(`unknown routes command: ${String(command)}`);
+}
+
 /** Durable enqueue from OUTSIDE the worker (tests, cron, ops). The worker's poll picks it up. */
 async function runEnqueue(args: string[]): Promise<void> {
   const config = loadConfig();
@@ -233,6 +264,7 @@ async function main(): Promise<void> {
   if (role === "anchor") return runAnchor();
   if (role === "registry") return runRegistry(rest);
   if (role === "enqueue") return runEnqueue(rest);
+  if (role === "routes") return runRoutes(rest);
   if (role === "queue") return runQueue(rest);
   console.error(`usage: continuity-controller <worker|anchor|registry> …  (got: ${role})`);
   process.exit(2);

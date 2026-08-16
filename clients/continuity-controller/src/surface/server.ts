@@ -16,6 +16,7 @@ import type { ApprovalArbiter, ApprovalDecision, PendingApproval } from "../appr
 import type { TurnEventRow, TurnJournal } from "../journal.js";
 import type { RuntimeRef } from "../registry.js";
 import type { AwarenessManager } from "../routing/awareness.js";
+import { RouteMissError, type RouteTable } from "../routing/routes.js";
 import type { TurnPipeline } from "../turns.js";
 import { verifySurfaceToken } from "./auth.js";
 import {
@@ -46,6 +47,8 @@ export interface SurfaceServerOptions {
   approvals: ApprovalArbiter;
   /** C7's unseen/awareness layer. Optional so C5-era callers keep working. */
   awareness?: AwarenessManager;
+  /** C8's direct-lane route table. Optional so earlier callers keep working. */
+  routes?: RouteTable;
   onWarn?: (msg: string) => void;
 }
 
@@ -233,15 +236,76 @@ export class SurfaceServer {
       }
 
       if (command.type === "send") {
-        const clientMessageId = this.opts.pipeline.accept(session.runtime, command.text, {
-          via: "surface",
+        // C8: the route resolves BEFORE any model call. Explicit @address beats a binding
+        // beats the ordinary lane; an address that matches nothing is a visible error, not a
+        // model call.
+        let resolved: ReturnType<NonNullable<typeof this.opts.routes>["resolveSend"]> = null;
+        if (this.opts.routes) {
+          try {
+            resolved = this.opts.routes.resolveSend(session.runtime, command.text);
+          } catch (e) {
+            this.sendTo(session, {
+              type: "error",
+              request_id: command.request_id,
+              message: e instanceof RouteMissError ? e.message : "route resolution failed",
+            });
+            return;
+          }
+        }
+        const target = resolved?.target ?? session.runtime;
+        const clientMessageId = this.opts.pipeline.accept(target, resolved?.text ?? command.text, {
+          via: resolved ? "direct" : "surface",
           session: session.id,
+          ...(resolved
+            ? {
+                route: resolved.alias ?? "binding",
+                origin_runtime: session.runtime,
+              }
+            : {}),
         });
         this.sendTo(session, {
           type: "send_ok",
           request_id: command.request_id,
           client_message_id: clientMessageId,
+          ...(resolved ? { routed_to: target, route: resolved.alias ?? "binding" } : {}),
         });
+        return;
+      }
+
+      if (command.type === "bind") {
+        if (!this.opts.routes) {
+          this.sendTo(session, {
+            type: "error",
+            request_id: command.request_id,
+            message: "routing unavailable",
+          });
+          return;
+        }
+        try {
+          const route = this.opts.routes.bind(
+            session.runtime,
+            command.alias,
+            `surface:${session.id}`,
+          );
+          this.sendTo(session, {
+            type: "bind_ok",
+            request_id: command.request_id,
+            alias: command.alias,
+            target: { agent_id: route.agent_id, conversation_id: route.conversation_id },
+          });
+        } catch (e) {
+          this.sendTo(session, {
+            type: "error",
+            request_id: command.request_id,
+            message: e instanceof Error ? e.message : String(e),
+          });
+        }
+        return;
+      }
+
+      if (command.type === "unbind") {
+        const removed = this.opts.routes?.unbind(session.runtime, `surface:${session.id}`) ?? false;
+        this.sendTo(session, { type: "unbind_ok", request_id: command.request_id, removed });
         return;
       }
 
@@ -309,6 +373,26 @@ export class SurfaceServer {
       // Core tier gets journal events; approval frames ride their own capability-gated channel.
       this.sendTo(s, this.toEvent(row));
       s.cursor = row.id;
+    }
+    // C8 inline rendering (R12/R24): a direct-lane exchange journals in the SPECIALIST's
+    // thread, and the surfaces attached to its ROUTE-ORIGIN thread see it inline as a
+    // clearly-attributed foreign-thread event (capability `direct`).
+    if (!row.client_message_id) return;
+    const queueRow = this.opts.pipeline.rowFor(row.client_message_id);
+    const origin = queueRow?.origin as
+      | { via?: string; origin_runtime?: RuntimeRef; route?: string }
+      | undefined;
+    if (origin?.via !== "direct" || !origin.origin_runtime) return;
+    for (const [, s] of this.sessions) {
+      if (key(s.runtime) !== key(origin.origin_runtime)) continue;
+      if (!s.capabilities.has("direct")) continue;
+      this.sendTo(s, {
+        type: "foreign_event",
+        route: origin.route ?? "direct",
+        origin_runtime: origin.origin_runtime,
+        specialist: { agent_id: row.agent_id, conversation_id: row.conversation_id },
+        event: this.toEvent(row),
+      });
     }
   }
 

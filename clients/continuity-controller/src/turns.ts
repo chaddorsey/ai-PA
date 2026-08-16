@@ -56,6 +56,12 @@ export interface TurnPipelineOptions {
   abortConfirmMs: number;
   /** Escalation: abort unconfirmed — the worker should bounce the connection. */
   onWedged?: (runtime: RuntimeRef, detail: string) => void;
+  /**
+   * Submission gate: is the worker SUBSCRIBED to this runtime? A freshly-warmed specialist
+   * (C8 routes a cold target hot) must not receive its input before the hotset pass
+   * subscribes — the row waits, queued and durable, until the subscription exists.
+   */
+  isSubscribed?: (runtime: RuntimeRef) => boolean;
   onWarn?: (msg: string) => void;
 }
 
@@ -296,6 +302,7 @@ export class TurnPipeline {
     for (const row of this.rows(["queued"])) {
       const runtime = { agent_id: row.agent_id, conversation_id: row.conversation_id };
       if (this.active.has(key(runtime))) continue;
+      if (this.opts.isSubscribed && !this.opts.isSubscribed(runtime)) continue;
       this.submit(conn, runtime, row);
     }
   }

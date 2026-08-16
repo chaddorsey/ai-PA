@@ -370,6 +370,44 @@ async function runController(
     return 1;
   }
 
+  // C8 inline rendering: a direct-lane specialist reply renders in THIS terminal with an
+  // explicit attribution mark. Every string here is controller data → sanitized (C6 rule).
+  let foreignOpen: string | null = null;
+  core.onForeignEvent((route, specialist, event) => {
+    if (options.json) return; // NDJSON consumers get outcomes via their own stream shape (C9)
+    const kind = String(event.kind ?? "");
+    const payload =
+      (event.payload as {
+        delta?: { message_type?: string; content?: Array<{ text?: string }> };
+        outcome?: string;
+      }) ?? {};
+    if (kind === "assistant_message") {
+      const raw = payload.delta?.content as unknown;
+      const text =
+        typeof raw === "string"
+          ? raw
+          : Array.isArray(raw)
+            ? raw
+                .map((c) => (typeof c === "string" ? c : ((c as { text?: string }).text ?? "")))
+                .join("")
+            : "";
+      if (foreignOpen !== route) {
+        io.stdout(`${foreignOpen !== null ? "\n" : ""}@${sanitize(route, { maxLength: 64 })} › `);
+        foreignOpen = route;
+      }
+      io.stdout(sanitize(text, { maxLength: 4096 }));
+      return;
+    }
+    if (kind === "turn_terminal") {
+      if (foreignOpen !== null) io.stdout("\n");
+      foreignOpen = null;
+      io.stderr(
+        `— direct @${sanitize(route, { maxLength: 64 })} turn ${sanitize(String(payload.outcome ?? "done"), { maxLength: 64 })} (specialist ${sanitize(specialist.agent_id, { maxLength: 80 })})\n`,
+      );
+    }
+  });
+
+
   const oneShotMessage = options.message ?? (await io.readPipedMessage());
   if (oneShotMessage !== undefined) offLiveFailures();
   if (oneShotMessage !== undefined) {
@@ -395,6 +433,14 @@ async function runController(
         if (cm !== null && cm === myCm) {
           finish(outcome.startsWith("FAILED") || outcome.startsWith("failed") ? 1 : 0);
         }
+      });
+      // A ROUTED one-shot's turn lives in the specialist's thread — its outcome arrives as a
+      // foreign event, keyed by the same receipt.
+      core.onForeignEvent((_route, _specialist, event) => {
+        if (event.kind !== "turn_terminal") return;
+        if ((event.client_message_id as string | null) !== myCm) return;
+        const outcome = String((event.payload as { outcome?: string })?.outcome ?? "");
+        finish(outcome.startsWith("FAILED") || outcome.startsWith("failed") ? 1 : 0);
       });
       core.onFatal(() => finish(1));
       const intent = classifyInput(oneShotMessage);
@@ -424,6 +470,7 @@ async function runController(
   io.stderr(
     `— attached via controller to ${sanitize(runtime.agent_id, { maxLength: 120 })} · conversation ${sanitize(runtime.conversation_id, { maxLength: 120 })}
 — type a message and press Enter; /exit leaves, /abort kills the running turn, /approve · /deny answer approvals
+— @alias routes direct to a specialist; /bind <alias> routes everything until /unbind
 `,
   );
 
@@ -435,6 +482,24 @@ async function runController(
         io.stderr("— abort requested\n");
       } catch (err) {
         io.stderr(`— abort failed: ${sanitize((err as Error).message, { maxLength: 256 })}\n`);
+      }
+      return "ignored";
+    }
+    if (trimmed.startsWith("/bind ")) {
+      try {
+        core.bind(trimmed.slice(6).trim().replace(/^@/, ""));
+        io.stderr("— bind requested\n");
+      } catch (err) {
+        io.stderr(`— bind failed: ${sanitize((err as Error).message, { maxLength: 256 })}\n`);
+      }
+      return "ignored";
+    }
+    if (trimmed === "/unbind") {
+      try {
+        core.unbind();
+        io.stderr("— unbind requested\n");
+      } catch (err) {
+        io.stderr(`— unbind failed: ${sanitize((err as Error).message, { maxLength: 256 })}\n`);
       }
       return "ignored";
     }

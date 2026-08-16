@@ -658,7 +658,7 @@ disposition** (jobs with no local equivalent need an explicit decision, not a si
 no client attached, is not cancelled, and is visibly waiting (badge + unseen) on next attach —
 origin success criterion 2, first clause and second clause both.
 
-- [ ] **Unit C8: Direct lane — routes, inline rendering, Kinara digest**
+- [x] **Unit C8: Direct lane — routes, inline rendering, Kinara digest** *(live on clone: accept→submit 1ms, zero Kinara turns in the exchange window, inline attributed render, digest batched to the route-origin thread)*
 
 **Goal:** Predetermined operator↔specialist routing with zero model hops: explicit address,
 per-thread binding, Kinara-managed routes; specialist threads render inline; Kinara catches up

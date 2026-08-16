@@ -85,6 +85,32 @@ CREATE TABLE IF NOT EXISTS turn_events (
 CREATE UNIQUE INDEX IF NOT EXISTS turn_events_idem
   ON turn_events (agent_id, conversation_id, idempotency_key)
   WHERE idempotency_key IS NOT NULL;
+CREATE TABLE IF NOT EXISTS routes (
+  alias           TEXT PRIMARY KEY,
+  agent_id        TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  author          TEXT NOT NULL,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS bindings (
+  source_agent_id        TEXT NOT NULL,
+  source_conversation_id TEXT NOT NULL,
+  target_agent_id        TEXT NOT NULL,
+  target_conversation_id TEXT NOT NULL,
+  author                 TEXT NOT NULL,
+  created_at             TEXT NOT NULL,
+  PRIMARY KEY (source_agent_id, source_conversation_id)
+);
+CREATE TABLE IF NOT EXISTS digests (
+  id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+  kinara_agent_id        TEXT NOT NULL,
+  kinara_conversation_id TEXT NOT NULL,
+  item_id                TEXT NOT NULL UNIQUE,
+  summary                TEXT NOT NULL,
+  created_at             TEXT NOT NULL,
+  delivered_at           TEXT
+);
 CREATE TABLE IF NOT EXISTS unseen (
   agent_id        TEXT NOT NULL,
   conversation_id TEXT NOT NULL,

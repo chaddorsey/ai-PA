@@ -63,12 +63,23 @@ export interface ApprovalAnswerFrame {
   approval_id: string;
   decision: { behavior: "allow" | "deny"; message?: string };
 }
+export interface BindFrame {
+  type: "bind";
+  request_id: string;
+  alias: string;
+}
+export interface UnbindFrame {
+  type: "unbind";
+  request_id: string;
+}
 export type SurfaceCommand =
   | AttachFrame
   | SendFrame
   | PresenceFrame
   | AbortFrame
-  | ApprovalAnswerFrame;
+  | ApprovalAnswerFrame
+  | BindFrame
+  | UnbindFrame;
 
 /** controller → surface */
 export interface AttachOkFrame {
@@ -167,6 +178,16 @@ export function parseSurfaceCommand(raw: string): SurfaceCommand {
     if (typeof frame.request_id !== "string")
       throw new SurfaceProtocolError("abort: request_id required");
     return frame as unknown as AbortFrame;
+  }
+  if (type === "bind") {
+    if (typeof frame.request_id !== "string" || typeof frame.alias !== "string")
+      throw new SurfaceProtocolError("bind: request_id and alias required");
+    return frame as unknown as BindFrame;
+  }
+  if (type === "unbind") {
+    if (typeof frame.request_id !== "string")
+      throw new SurfaceProtocolError("unbind: request_id required");
+    return frame as unknown as UnbindFrame;
   }
   if (type === "approval_answer") {
     if (typeof frame.approval_id !== "string")
