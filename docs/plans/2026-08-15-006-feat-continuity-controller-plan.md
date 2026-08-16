@@ -506,7 +506,7 @@ contains no turn in a non-terminal state and no duplicated message rows; kill-an
 the mutation list covers queue durability, dedup, the abort coupling, the submitting-window
 reconciliation, and each disjunction arm.
 
-- [ ] **Unit C5: Surface protocol — core tier + auth + approvals arbitration**
+- [x] **Unit C5: Surface protocol — core tier + auth + approvals arbitration** *(P5 passed live on permission-flipped clone; two-surface session green on launchd worker)*
 
 **Goal:** The authenticated controller↔surface API: attach, replay-from-cursor, send, presence;
 capability declaration; approval fan-out with first-answer-wins.

@@ -40,6 +40,31 @@ corrupt db is set aside (never deleted) and the rebuild is **visible**: journale
 conversations — never the `default` alias (C1 S3: the alias is unresolvable by
 `conversation_messages_list`, which C4's exactly-once reconciliation depends on).
 
+## Surface protocol (C5)
+
+Loopback WS on `CONTINUITY_SURFACE_PORT` (default 4610), path `/surface`,
+**protocol_version 1** (`src/surface/protocol.ts`). Attach = first-frame auth with the 0600
+token file (`<state>/surface-token`) → declare capabilities → name a runtime → journal replay
+from your cursor (journal row id — gapless and duplicate-free by construction) + live events.
+
+Capability sets (R28; unknown strings degrade with a warning, never a rejection):
+
+| set | grants | degradation when absent |
+|---|---|---|
+| `core` | attach · replay · send · presence (mandatory) | — |
+| `abort` | operator turn kill | feature absent |
+| `approvals` | receive + answer approval requests (first answer wins) | another capable surface, else held-pending + unseen marker |
+| `rail` | conversation CRUD (C9) | feature absent |
+| `notify` | awareness rendering (C7) | unseen markers |
+| `direct` | direct-lane addressing (C8) | feature absent |
+| `subagent` | subagent-state rendering | feature absent |
+
+Approval survival across controller restarts is **anchor-load-bearing** (live-probed): with no
+second subscriber the parked turn and its approval are cancelled by the worker's detach; with
+the anchor subscribed, reconnect re-broadcasts the pending `control_request`
+(`recover_approvals` default). Proof P5: `test/live.approvals.contract.test.ts` on a
+permission-flipped clone.
+
 ## Testing
 
 ```bash

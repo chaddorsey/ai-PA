@@ -63,6 +63,9 @@ async function runWorker(): Promise<void> {
     queuePollMs: config.queuePollMs,
     turnTimeoutMs: config.turnTimeoutMs,
     abortConfirmMs: config.abortConfirmMs,
+    surfacePort: config.surfacePort,
+    stateDir: config.stateDir,
+    runtimeMode: process.env.CONTINUITY_RUNTIME_MODE,
     degraded,
     onWarn: log,
     onExhausted: () => {

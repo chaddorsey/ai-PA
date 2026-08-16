@@ -43,14 +43,23 @@ export class TerminalityTracker {
    * Classify one frame for one runtime. Returns a TerminalSignal when this frame ENDS the
    * runtime's active turn, null otherwise. Callers filter for the runtime they care about.
    */
-  observe(frame: ServerFrame, runtime: { agent_id: string; conversation_id: string }): TerminalSignal | null {
+  observe(
+    frame: ServerFrame,
+    runtime: { agent_id: string; conversation_id: string },
+  ): TerminalSignal | null {
     const key = runtimeKey(frame);
     if (key !== null && key !== `${runtime.agent_id}:${runtime.conversation_id}`) return null;
 
     if (frame.type === "stream_delta") {
       if (typeof frame.subagent_id === "string") return null; // subagent activity never terminates the parent
       const delta = frame.delta as
-        | { message_type?: string; stop_reason?: string; run_id?: string; is_terminal?: boolean; message?: string }
+        | {
+            message_type?: string;
+            stop_reason?: string;
+            run_id?: string;
+            is_terminal?: boolean;
+            message?: string;
+          }
         | undefined;
       if (!delta) return null;
       if (delta.message_type === "stop_reason") {

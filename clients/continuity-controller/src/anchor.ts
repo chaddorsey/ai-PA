@@ -25,6 +25,8 @@ export interface AnchorOptions {
   url: string;
   registry: ReadOnlyRegistry;
   hotsetPollMs: number;
+  /** Permission mode stamped on the anchor's hellos (P5 clone scenarios flip it). */
+  runtimeMode?: string;
   onWarn?: (msg: string) => void;
   onExhausted: () => void;
   reconnect?: ReconnectPolicy;
@@ -95,7 +97,10 @@ export class AnchorDaemon {
       const rows = this.opts.registry.hotRows();
       const fresh = rows.filter((r) => !this.subscribedKeys.has(key(r)));
       if (fresh.length > 0) {
-        const report = await subscribeRuntimes(conn, fresh, { waitForReplay: false });
+        const report = await subscribeRuntimes(conn, fresh, {
+          waitForReplay: false,
+          mode: this.opts.runtimeMode,
+        });
         for (const r of report.subscribed) this.subscribedKeys.add(key(r));
         for (const b of report.broken) {
           // Read-only process: the WORKER owns marking rows broken; the anchor only says so.

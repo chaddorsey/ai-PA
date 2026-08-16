@@ -1062,8 +1062,8 @@ export const MUTATIONS = [
     file: "src/hotset.ts",
     label: "C3: the worker's subscription stops being replay-complete (wait_for_replay dropped)",
     tests: ["test/hotset.test.ts"],
-    find: `          buildRuntimeStart(rid, ref, options.waitForReplay ? { waitForReplay: true } : undefined),`,
-    replace: `          buildRuntimeStart(rid, ref),`,
+    find: `          if (options.waitForReplay) startOptions.waitForReplay = true;`,
+    replace: ``,
     expect: /wait_for_replay for the worker/,
   },
   {
@@ -1252,5 +1252,94 @@ export const MUTATIONS = [
     this.active.clear();`,
     replace: `    this.active.clear();`,
     expect: /KILLS the previous turn's wall-clock timer/,
+  },
+  // ── 82-87: Unit C5 — surface protocol + approvals (plan 2026-08-15-006) ─────
+  {
+    id: 82,
+    pkg: CONTROLLER,
+    file: "src/surface/auth.ts",
+    label: "C5: the surface token check accepts anything",
+    tests: ["test/surface.protocol.test.ts"],
+    find: `  const a = Buffer.from(expected);
+  const b = Buffer.from(presented);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);`,
+    replace: `  void expected;
+  void presented;
+  return true;`,
+    expect: /bad token .* clean denial/,
+  },
+  {
+    id: 83,
+    pkg: CONTROLLER,
+    file: "src/journal.ts",
+    label: "C5: replay ignores the cursor (every attach replays everything = duplicates)",
+    tests: ["test/surface.protocol.test.ts"],
+    find: `      .all(runtime.agent_id, runtime.conversation_id, cursor ?? 0, limit) as Array<`,
+    replace: `      .all(runtime.agent_id, runtime.conversation_id, 0, limit) as Array<`,
+    expect: /replay from a stale cursor is gapless and duplicate-free/,
+  },
+  {
+    id: 84,
+    pkg: CONTROLLER,
+    file: "src/approvals.ts",
+    label: "C5: an answered approval's unseen marker leaks forever",
+    tests: ["test/approvals.test.ts"],
+    find: `    this.opts.db
+      .prepare("DELETE FROM unseen WHERE kind = 'approval' AND ref = ?")
+      .run(approvalId);`,
+    replace: ``,
+    expect: /delivered on the next capable attach/,
+  },
+  {
+    id: 85,
+    pkg: CONTROLLER,
+    file: "src/surface/server.ts",
+    label: "C5: approval requests fan out to EVERY surface, capability or not",
+    tests: ["test/approvals.test.ts"],
+    find: `    let reached = 0;
+    for (const [, s] of this.sessions) {
+      if (!s.capabilities.has("approvals")) continue;
+      this.sendTo(s, {
+        type: "approval_request",`,
+    replace: `    let reached = 0;
+    for (const [, s] of this.sessions) {
+      this.sendTo(s, {
+        type: "approval_request",`,
+    expect: /first answer wins, second sees resolution, server acked ONCE/,
+  },
+  {
+    id: 86,
+    pkg: CONTROLLER,
+    file: "src/approvals.ts",
+    label: "C5: nobody-capable stops being held-pending (the approval quietly vanishes)",
+    tests: ["test/approvals.test.ts"],
+    find: `      this.opts.db
+        .prepare(
+          \`INSERT OR IGNORE INTO unseen (agent_id, conversation_id, kind, ref, created_at)
+           VALUES (?, ?, 'approval', ?, ?)\`,
+        )
+        .run(runtime.agent_id, runtime.conversation_id, requestId, new Date().toISOString());`,
+    replace: ``,
+    expect: /HELD pending \+ unseen marker/,
+  },
+  {
+    id: 87,
+    pkg: CONTROLLER,
+    file: "src/surface/server.ts",
+    label: "C5: the surface protocol version gate vanishes (any client version attaches)",
+    tests: ["test/surface.protocol.test.ts"],
+    find: `        if (command.protocol_version !== SURFACE_PROTOCOL_VERSION) {
+          socket.send(
+            JSON.stringify({
+              type: "attach_denied",
+              reason: \`protocol_version \${command.protocol_version} unsupported (controller speaks \${SURFACE_PROTOCOL_VERSION})\`,
+            }),
+          );
+          socket.close();
+          return;
+        }`,
+    replace: ``,
+    expect: /wrong protocol version .* denial naming both versions/,
   },
 ];

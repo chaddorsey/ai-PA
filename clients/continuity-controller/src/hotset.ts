@@ -22,6 +22,8 @@ export interface SubscribeReport {
 export interface SubscribeOptions {
   /** True for the worker (journaled subscription), false for the anchor (crash-overlap only). */
   waitForReplay: boolean;
+  /** Permission mode stamped on the hello (P5 runs the clone flipped to `standard`). */
+  mode?: string;
   /** Per-runtime hello deadline. */
   timeoutMs?: number;
 }
@@ -45,8 +47,16 @@ export async function subscribeRuntimes(
       const resp = await conn.request(
         // The anchor's hello carries NO wait_for_replay field at all (not `false`): its
         // subscription is crash-overlap only, and the leanest possible frame is the point.
-        (rid) =>
-          buildRuntimeStart(rid, ref, options.waitForReplay ? { waitForReplay: true } : undefined),
+        (rid) => {
+          const startOptions: { waitForReplay?: boolean; mode?: string } = {};
+          if (options.waitForReplay) startOptions.waitForReplay = true;
+          if (options.mode) startOptions.mode = options.mode;
+          return buildRuntimeStart(
+            rid,
+            ref,
+            Object.keys(startOptions).length > 0 ? startOptions : undefined,
+          );
+        },
         Outbound.runtimeStart,
         options.timeoutMs ?? DEFAULT_HELLO_TIMEOUT_MS,
       );

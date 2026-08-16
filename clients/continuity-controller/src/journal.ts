@@ -33,11 +33,22 @@ export interface RecordEventInput {
   payload?: Record<string, unknown>;
 }
 
+export type JournalListener = (row: TurnEventRow) => void;
+
 export class TurnJournal {
+  private readonly listeners = new Set<JournalListener>();
+
   constructor(private readonly db: DatabaseSync) {}
+
+  /** Live tap for the surface layer: fires ONLY for rows that actually inserted (post-dedup). */
+  onRecord(listener: JournalListener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
 
   /** Append one event. Returns false when the idempotency key made it a duplicate (ignored). */
   record(input: RecordEventInput): boolean {
+    const at = new Date().toISOString();
     const result = this.db
       .prepare(
         `INSERT OR IGNORE INTO turn_events
@@ -52,9 +63,52 @@ export class TurnJournal {
         input.idempotencyKey ?? null,
         input.kind,
         JSON.stringify(input.payload ?? {}),
-        new Date().toISOString(),
+        at,
       );
+    if (result.changes > 0) {
+      const row: TurnEventRow = {
+        id: Number(result.lastInsertRowid),
+        agent_id: input.runtime.agent_id,
+        conversation_id: input.runtime.conversation_id,
+        client_message_id: input.clientMessageId ?? null,
+        event_seq: input.eventSeq ?? null,
+        idempotency_key: input.idempotencyKey ?? null,
+        kind: input.kind,
+        payload: input.payload ?? {},
+        at,
+      };
+      for (const listener of this.listeners) {
+        try {
+          listener(row);
+        } catch {
+          // A surface listener must never poison the journal write path.
+        }
+      }
+    }
     return result.changes > 0;
+  }
+
+  /** Replay: rows for a runtime with id > cursor, oldest first. Gapless by construction. */
+  rowsSince(runtime: RuntimeRef, cursor: number | null, limit = 1000): TurnEventRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM turn_events WHERE agent_id = ? AND conversation_id = ? AND id > ?
+         ORDER BY id ASC LIMIT ?`,
+      )
+      .all(runtime.agent_id, runtime.conversation_id, cursor ?? 0, limit) as Array<
+      Record<string, unknown>
+    >;
+    return rows.map((r) => ({
+      id: r.id as number,
+      agent_id: r.agent_id as string,
+      conversation_id: r.conversation_id as string,
+      client_message_id: (r.client_message_id as string | null) ?? null,
+      event_seq: (r.event_seq as number | null) ?? null,
+      idempotency_key: (r.idempotency_key as string | null) ?? null,
+      kind: r.kind as string,
+      payload: JSON.parse(r.payload as string) as Record<string, unknown>,
+      at: r.at as string,
+    }));
   }
 
   eventsFor(runtime: RuntimeRef, limit = 500): TurnEventRow[] {

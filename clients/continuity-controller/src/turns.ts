@@ -20,15 +20,15 @@
  */
 
 import { randomUUID } from "node:crypto";
+import type { DatabaseSync } from "node:sqlite";
+import type { protocol } from "@ai-pa/letta-continuity-core";
 import {
   Outbound,
   buildAbortMessage,
   buildConversationMessagesList,
   buildInput,
 } from "@ai-pa/letta-continuity-core/protocol";
-import type { protocol } from "@ai-pa/letta-continuity-core";
 import type { WsConnection } from "@ai-pa/letta-continuity-core/ws";
-import type { DatabaseSync } from "node:sqlite";
 import type { TurnJournal } from "./journal.js";
 import type { RuntimeRef } from "./registry.js";
 import { TerminalityTracker } from "./terminality.js";
@@ -80,7 +80,15 @@ export function enqueueDurable(
     `INSERT INTO turn_queue
        (agent_id, conversation_id, client_message_id, content, origin, state, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)`,
-  ).run(runtime.agent_id, runtime.conversation_id, clientMessageId, content, JSON.stringify(origin), now, now);
+  ).run(
+    runtime.agent_id,
+    runtime.conversation_id,
+    clientMessageId,
+    content,
+    JSON.stringify(origin),
+    now,
+    now,
+  );
   journal.record({ runtime, clientMessageId, kind: "turn_accepted", payload: { origin } });
   return clientMessageId;
 }
@@ -89,6 +97,7 @@ export function enqueueDurable(
 const JOURNALED_DELTAS = new Set([
   "assistant_message",
   "reasoning_message",
+  "tool_call_message",
   "tool_return_message",
   "client_tool_start",
   "client_tool_end",
@@ -114,7 +123,13 @@ export class TurnPipeline {
 
   /** Durable acceptance. The receipt is the client_message_id; delivery is now inspectable. */
   accept(runtime: RuntimeRef, content: string, origin: Record<string, unknown> = {}): string {
-    const clientMessageId = enqueueDurable(this.opts.db, this.opts.journal, runtime, content, origin);
+    const clientMessageId = enqueueDurable(
+      this.opts.db,
+      this.opts.journal,
+      runtime,
+      content,
+      origin,
+    );
     this.pump();
     return clientMessageId;
   }
@@ -139,7 +154,10 @@ export class TurnPipeline {
           clientMessageId: activeTurn?.clientMessageId ?? null,
           eventSeq: typeof frame.event_seq === "number" ? frame.event_seq : null,
           idempotencyKey: typeof frame.idempotency_key === "string" ? frame.idempotency_key : null,
-          kind: typeof frame.subagent_id === "string" ? `subagent:${delta.message_type}` : delta.message_type,
+          kind:
+            typeof frame.subagent_id === "string"
+              ? `subagent:${delta.message_type}`
+              : delta.message_type,
           payload: { delta: frame.delta, gen: this.generation },
         });
       }
@@ -158,7 +176,15 @@ export class TurnPipeline {
     }
 
     const signal = activeTurn ? this.terminality.observe(frame, runtime) : null;
-    if (signal && activeTurn) this.finishTurn(runtime, activeTurn, signal.failed ? `failed:${signal.stopReason ?? signal.kind}` : (signal.stopReason ?? signal.kind), signal);
+    if (signal && activeTurn)
+      this.finishTurn(
+        runtime,
+        activeTurn,
+        signal.failed
+          ? `failed:${signal.stopReason ?? signal.kind}`
+          : (signal.stopReason ?? signal.kind),
+        signal,
+      );
   }
 
   /**
@@ -205,7 +231,9 @@ export class TurnPipeline {
         transcript = (resp.messages as Array<Record<string, unknown>>) ?? [];
       } catch (e) {
         // Connection died mid-recovery: leave the row for the NEXT recovery. Never guess.
-        this.opts.onWarn?.(`recovery deferred for ${row.client_message_id}: ${e instanceof Error ? e.message : String(e)}`);
+        this.opts.onWarn?.(
+          `recovery deferred for ${row.client_message_id}: ${e instanceof Error ? e.message : String(e)}`,
+        );
         continue;
       }
       // Newest-first list (C1 probe): our user row at index i; anything BEFORE i is newer.
@@ -326,7 +354,9 @@ export class TurnPipeline {
       // The socket refused synchronously — nothing reached the server. Back to queued; the
       // next recovery/pump retries. (An UNKNOWN outcome only exists after a successful write.)
       this.setState(row.client_message_id, "queued", null);
-      this.opts.onWarn?.(`submit write failed for ${row.client_message_id}: ${e instanceof Error ? e.message : String(e)}`);
+      this.opts.onWarn?.(
+        `submit write failed for ${row.client_message_id}: ${e instanceof Error ? e.message : String(e)}`,
+      );
       return;
     }
     this.adopt(runtime, row.client_message_id);
@@ -434,15 +464,52 @@ export class TurnPipeline {
     this.pump();
   }
 
+  /**
+   * Operator-initiated abort (the C5 `abort` capability): kill the runtime's active
+   * controller-submitted turn. Confirmed against the server before the queue releases —
+   * same coupling as the wall-clock arm. Returns false when nothing was active.
+   */
+  async abortActive(runtime: RuntimeRef, by: string): Promise<boolean> {
+    const turn = this.active.get(key(runtime));
+    if (!turn || turn.aborting) return false;
+    turn.aborting = true;
+    const conn = this.opts.getConnection();
+    if (!conn) {
+      turn.aborting = false;
+      return false;
+    }
+    await conn.request(
+      (rid) => buildAbortMessage(rid, runtime),
+      Outbound.abortMessage,
+      this.opts.abortConfirmMs,
+    );
+    this.clearActive(runtime, turn);
+    this.setState(turn.clientMessageId, "terminal", "aborted:operator");
+    this.opts.journal.record({
+      runtime,
+      clientMessageId: turn.clientMessageId,
+      kind: "turn_terminal",
+      payload: { outcome: "aborted:operator", via: "abort", by },
+    });
+    this.pump();
+    return true;
+  }
+
   private clearActive(runtime: RuntimeRef, turn: ActiveTurn): void {
     if (turn.timer) clearTimeout(turn.timer);
     turn.timer = null;
     if (this.active.get(key(runtime)) === turn) this.active.delete(key(runtime));
   }
 
-  private setState(clientMessageId: string, state: QueueRow["state"], outcome: string | null): void {
+  private setState(
+    clientMessageId: string,
+    state: QueueRow["state"],
+    outcome: string | null,
+  ): void {
     this.opts.db
-      .prepare("UPDATE turn_queue SET state = ?, outcome = ?, updated_at = ? WHERE client_message_id = ?")
+      .prepare(
+        "UPDATE turn_queue SET state = ?, outcome = ?, updated_at = ? WHERE client_message_id = ?",
+      )
       .run(state, outcome, new Date().toISOString(), clientMessageId);
   }
 }

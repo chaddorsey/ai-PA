@@ -85,6 +85,14 @@ CREATE TABLE IF NOT EXISTS turn_events (
 CREATE UNIQUE INDEX IF NOT EXISTS turn_events_idem
   ON turn_events (agent_id, conversation_id, idempotency_key)
   WHERE idempotency_key IS NOT NULL;
+CREATE TABLE IF NOT EXISTS unseen (
+  agent_id        TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  kind            TEXT NOT NULL,
+  ref             TEXT NOT NULL,
+  created_at      TEXT NOT NULL,
+  PRIMARY KEY (agent_id, conversation_id, kind, ref)
+);
 `;
 
 export const DB_FILENAME = "controller.sqlite3";

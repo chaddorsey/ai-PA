@@ -12,15 +12,18 @@
 
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import type { DatabaseSync } from "node:sqlite";
 import type { ReconnectPolicy } from "@ai-pa/letta-continuity-core/connection";
 import { Outbound, buildAppServerInfo, buildSync } from "@ai-pa/letta-continuity-core/protocol";
 import type { WsConnection } from "@ai-pa/letta-continuity-core/ws";
-import type { DatabaseSync } from "node:sqlite";
+import { ApprovalArbiter } from "./approvals.js";
 import { ConnectionLoop } from "./connection-loop.js";
 import { subscribeRuntimes } from "./hotset.js";
 import { TurnJournal } from "./journal.js";
 import type { Registry, RuntimeRef } from "./registry.js";
 import type { Journal } from "./state/journal.js";
+import { ensureSurfaceToken } from "./surface/auth.js";
+import { SurfaceServer } from "./surface/server.js";
 import { TurnPipeline } from "./turns.js";
 
 export interface WorkerOptions {
@@ -40,6 +43,14 @@ export interface WorkerOptions {
   abortConfirmMs: number;
   /** Degradation report from openStateDb — carried into journal + liveness, never dropped. */
   degraded: string | null;
+  /**
+   * Loopback surface-API port (C5). Undefined = surface disabled; 0 = ephemeral (tests).
+   * Requires `stateDir` for the token file.
+   */
+  surfacePort?: number;
+  stateDir?: string;
+  /** Permission mode stamped on runtime_start (P5's flipped-clone scenario sets `standard`). */
+  runtimeMode?: string;
   onWarn?: (msg: string) => void;
   onExhausted: () => void;
   reconnect?: ReconnectPolicy;
@@ -52,6 +63,13 @@ export class WorkerDaemon {
   private readonly loop: ConnectionLoop;
   /** The C4 sole-submitter pipeline. Public: ingress adapters and tests accept through it. */
   readonly pipeline: TurnPipeline;
+  /** The C5 approval arbitration layer. */
+  readonly approvals: ApprovalArbiter;
+  /** The C5 surface boundary; null until start() when surfacePort is set. */
+  surface: SurfaceServer | null = null;
+  /** Bound surface port after start (differs from surfacePort when 0/ephemeral). */
+  surfaceBoundPort: number | null = null;
+  private readonly turnJournal: TurnJournal;
   private livenessTimer: ReturnType<typeof setInterval> | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private queueTimer: ReturnType<typeof setInterval> | null = null;
@@ -61,9 +79,10 @@ export class WorkerDaemon {
   private probeInFlight = false;
 
   constructor(private readonly opts: WorkerOptions) {
+    this.turnJournal = new TurnJournal(opts.db);
     this.pipeline = new TurnPipeline({
       db: opts.db,
-      journal: new TurnJournal(opts.db),
+      journal: this.turnJournal,
       getConnection: () => this.loop.current,
       turnTimeoutMs: opts.turnTimeoutMs,
       abortConfirmMs: opts.abortConfirmMs,
@@ -84,9 +103,13 @@ export class WorkerDaemon {
         // New connection = new journal generation, opened BEFORE any of its frames can be
         // journaled (the replay arrives during subscription, not after recover()).
         this.pipeline.beginGeneration();
+        this.approvals.onReconnect();
         // Frames flow into the pipeline from the FIRST hello: the wait_for_replay replay is
         // where a mid-flight turn's history arrives, and it must not be dropped on the floor.
-        conn.onFrame((frame) => this.pipeline.onFrame(frame));
+        conn.onFrame((frame) => {
+          if (this.approvals.onFrame(frame)) return;
+          this.pipeline.onFrame(frame);
+        });
         this.subscribedKeys = new Set();
         await this.subscribePass(conn, "connect");
         this.opts.journal.append("worker_connected", {
@@ -97,6 +120,15 @@ export class WorkerDaemon {
         // non-terminal queue row against transcript truth, then resume submissions.
         await this.pipeline.recover(conn);
       },
+    });
+    this.approvals = new ApprovalArbiter({
+      db: opts.db,
+      journal: this.turnJournal,
+      getConnection: () => this.loop.current,
+      broadcast: (approval) => this.surface?.broadcastApproval(approval) ?? 0,
+      broadcastResolution: (id, decision, by) =>
+        this.surface?.broadcastApprovalResolution(id, decision, by),
+      onWarn: opts.onWarn,
     });
   }
 
@@ -116,6 +148,18 @@ export class WorkerDaemon {
       this.opts.onWarn?.(`STATE DB DEGRADED: ${this.opts.degraded}`);
     }
     this.opts.journal.append("worker_boot", {});
+    if (this.opts.surfacePort !== undefined) {
+      if (!this.opts.stateDir) throw new Error("surfacePort requires stateDir (token home)");
+      const token = ensureSurfaceToken(this.opts.stateDir);
+      this.surface = new SurfaceServer({
+        token,
+        journal: this.turnJournal,
+        pipeline: this.pipeline,
+        approvals: this.approvals,
+        onWarn: this.opts.onWarn,
+      });
+      this.surfaceBoundPort = await this.surface.start(this.opts.surfacePort);
+    }
     await this.loop.start();
     this.livenessTimer = setInterval(() => void this.livenessProbe(), this.opts.livenessIntervalMs);
     this.livenessTimer.unref?.();
@@ -138,6 +182,8 @@ export class WorkerDaemon {
     this.pollTimer = null;
     this.queueTimer = null;
     this.pipeline.stop();
+    void this.surface?.stop();
+    this.surface = null;
     this.loop.stop();
   }
 
@@ -156,7 +202,10 @@ export class WorkerDaemon {
       const rows = this.opts.registry.hotRows();
       const fresh = rows.filter((r) => !this.subscribedKeys.has(key(r)));
       if (fresh.length > 0) {
-        const report = await subscribeRuntimes(conn, fresh, { waitForReplay: true });
+        const report = await subscribeRuntimes(conn, fresh, {
+          waitForReplay: true,
+          mode: this.opts.runtimeMode,
+        });
         for (const r of report.subscribed) this.subscribedKeys.add(key(r));
         for (const b of report.broken) {
           this.opts.registry.markBroken(b.runtime, b.reason);

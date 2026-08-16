@@ -37,7 +37,11 @@ function state(): Fixture {
   return { dir, db, registry, journal: new Journal(db), turnJournal: new TurnJournal(db) };
 }
 
-function makeWorker(url: string, fixture: Fixture, overrides: Record<string, unknown> = {}): WorkerDaemon {
+function makeWorker(
+  url: string,
+  fixture: Fixture,
+  overrides: Record<string, unknown> = {},
+): WorkerDaemon {
   return new WorkerDaemon({
     url,
     db: fixture.db,
@@ -79,7 +83,9 @@ describe("TurnPipeline (worker + mock server)", () => {
     const cm1 = worker.pipeline.accept(RUNTIME, "first");
     const cm2 = worker.pipeline.accept(RUNTIME, "second");
     await waitFor(
-      () => worker?.pipeline.rowFor(cm1)?.state === "terminal" && worker?.pipeline.rowFor(cm2)?.state === "terminal",
+      () =>
+        worker?.pipeline.rowFor(cm1)?.state === "terminal" &&
+        worker?.pipeline.rowFor(cm2)?.state === "terminal",
       5000,
     );
     expect(worker.pipeline.rowFor(cm1)?.outcome).toBe("end_turn");
@@ -100,7 +106,9 @@ describe("TurnPipeline (worker + mock server)", () => {
     const url = await server.start();
     const fixture = state();
     // Enqueued while NO worker exists — the S4local property, through the real seam.
-    const cm = enqueueDurable(fixture.db, fixture.turnJournal, RUNTIME, "held message", { via: "test" });
+    const cm = enqueueDurable(fixture.db, fixture.turnJournal, RUNTIME, "held message", {
+      via: "test",
+    });
     worker = makeWorker(url, fixture);
     await worker.start();
     await waitFor(() => worker?.pipeline.rowFor(cm)?.state === "terminal", 5000);
@@ -130,7 +138,11 @@ describe("TurnPipeline (worker + mock server)", () => {
     const fixtureCm = "cm-preexisting-0001";
     const server2 = new MockAppServer({
       messagesSnapshot: [
-        { id: "ui-msg-2", message_type: "assistant_message", content: [{ type: "text", text: "done" }] },
+        {
+          id: "ui-msg-2",
+          message_type: "assistant_message",
+          content: [{ type: "text", text: "done" }],
+        },
         { id: "ui-msg-1", message_type: "user_message", otid: fixtureCm },
       ],
     });
@@ -238,7 +250,8 @@ describe("TurnPipeline (worker + mock server)", () => {
     expect(worker.pipeline.rowFor(cm2)?.state).toBe("queued");
     // After the bounce, recovery reconciles cm1 (absent from the empty transcript) → requeued.
     await waitFor(
-      () => fixture.turnJournal.eventsFor(RUNTIME).some((e) => e.kind === "reconciled_absent_requeued"),
+      () =>
+        fixture.turnJournal.eventsFor(RUNTIME).some((e) => e.kind === "reconciled_absent_requeued"),
       5000,
     );
     expect(worker.pipeline.rowFor(cm1)?.outcome).not.toBe("FAILED-VISIBLE:timeout");
@@ -262,15 +275,17 @@ describe("TurnPipeline (worker + mock server)", () => {
     const fixture = state();
     worker = makeWorker(url, fixture);
     await worker.start();
-    const gen1 = fixture.db.prepare("SELECT value FROM meta WHERE key = 'journal_generation'").get() as
-      | { value: string }
-      | undefined;
+    const gen1 = fixture.db
+      .prepare("SELECT value FROM meta WHERE key = 'journal_generation'")
+      .get() as { value: string } | undefined;
     expect(Number(gen1?.value)).toBeGreaterThanOrEqual(1);
     worker.stop();
 
     worker = makeWorker(url, fixture);
     await worker.start();
-    const gen2 = fixture.db.prepare("SELECT value FROM meta WHERE key = 'journal_generation'").get() as {
+    const gen2 = fixture.db
+      .prepare("SELECT value FROM meta WHERE key = 'journal_generation'")
+      .get() as {
       value: string;
     };
     expect(Number(gen2.value)).toBeGreaterThan(Number(gen1?.value ?? 0));

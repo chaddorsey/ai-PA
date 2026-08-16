@@ -33,7 +33,14 @@ describe("TerminalityTracker", () => {
     const t = new TerminalityTracker();
     expect(t.observe(stopDelta("run-1", "end_turn"), RUNTIME)).not.toBeNull();
     const late = t.observe(
-      { type: "turn_finished", runtime: RUNTIME, event_seq: 2, turn_id: "t", stop_reason: "end_turn", run_id: "run-1" },
+      {
+        type: "turn_finished",
+        runtime: RUNTIME,
+        event_seq: 2,
+        turn_id: "t",
+        stop_reason: "end_turn",
+        run_id: "run-1",
+      },
       RUNTIME,
     );
     expect(late).toBeNull();
@@ -48,7 +55,12 @@ describe("TerminalityTracker", () => {
         type: "stream_delta",
         runtime: RUNTIME,
         event_seq: 1,
-        delta: { message_type: "loop_error", is_terminal: false, run_id: "run-1", message: "retrying" },
+        delta: {
+          message_type: "loop_error",
+          is_terminal: false,
+          run_id: "run-1",
+          message: "retrying",
+        },
       },
       RUNTIME,
     );
@@ -58,7 +70,12 @@ describe("TerminalityTracker", () => {
         type: "stream_delta",
         runtime: RUNTIME,
         event_seq: 2,
-        delta: { message_type: "loop_error", is_terminal: true, run_id: "run-1", message: "provider 404" },
+        delta: {
+          message_type: "loop_error",
+          is_terminal: true,
+          run_id: "run-1",
+          message: "provider 404",
+        },
       },
       RUNTIME,
     );
@@ -68,7 +85,9 @@ describe("TerminalityTracker", () => {
 
   it("subagent deltas never terminate the parent turn", () => {
     const t = new TerminalityTracker();
-    expect(t.observe(stopDelta("run-sub", "end_turn", { subagent_id: "sub-1" }), RUNTIME)).toBeNull();
+    expect(
+      t.observe(stopDelta("run-sub", "end_turn", { subagent_id: "sub-1" }), RUNTIME),
+    ).toBeNull();
   });
 
   it("frames for a different runtime are ignored", () => {
@@ -79,7 +98,14 @@ describe("TerminalityTracker", () => {
   it("turn_finished with stop_reason error reports failure", () => {
     const t = new TerminalityTracker();
     const signal = t.observe(
-      { type: "turn_finished", runtime: RUNTIME, event_seq: 3, turn_id: "t", stop_reason: "error", run_id: "run-9" },
+      {
+        type: "turn_finished",
+        runtime: RUNTIME,
+        event_seq: 3,
+        turn_id: "t",
+        stop_reason: "error",
+        run_id: "run-9",
+      },
       RUNTIME,
     );
     expect(signal?.failed).toBe(true);
