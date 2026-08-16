@@ -314,7 +314,8 @@ collision with the superseded M1 Units 1–8.
 
 ### Phase A — Ground truth (gating)
 
-- [ ] **Unit C1: P1/P2 platform spike — anchor viability and multiplex shape**
+- [x] **Unit C1: P1/P2 platform spike — anchor viability and multiplex shape** *(GO recorded —
+  docs/plans/2026-08-15-006-controller-spike-findings.md)*
 
 **Goal:** Prove or kill the load-bearing platform assumptions before controller code exists.
 
@@ -364,7 +365,7 @@ and journal-marked; goals doc updated); the observed S5 tool-call fate (shapes C
 re-registration contract); the S6 answer (socket sharding decision); the S3 mapping answer
 (shapes C4's reconciliation). Explicit go/no-go recorded before Phase B starts.
 
-- [ ] **Unit C2: Salvage map (R22)**
+- [x] **Unit C2: Salvage map (R22)** *(docs/plans/2026-08-15-006-salvage-map.md)*
 
 **Goal:** Assign every module of the two built packages to controller-side, surface-side, or
 retire; decide evolve-in-place vs fork for the core package.
