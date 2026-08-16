@@ -39,11 +39,12 @@ NEEDS-OPERATOR-REVIEW decisions resolved.
 - [x] C7 10:55 live (real scheduler job → ingress → unseen → presented+consumed on attach;
       unauthenticated POST → 401 journaled)
 - [x] C8 direct lane live (1ms accept→submit; zero Kinara turns in window; digest batched)
-- [ ] **NEEDS-OPERATOR-REVIEW** — job dispositions and secret presentation:
-      `docs/plans/2026-08-15-006-scheduler-job-inventory.md`. Headline: ZERO active
-      `route=letta` jobs, so the re-point changes no active job; the two `route=local`
-      self-check jobs are unaffected. Decide: (a) path-token (config-only, secret appears in
-      scheduler logs) vs bearer header (needs a small `actions.py` change).
+- [x] **DECIDED (operator, 2026-08-16): PATH-TOKEN** for the ingress secret — config-only
+      re-point; the secret's appearance in local scheduler logs is accepted; revisit bearer
+      when `actions.py` is next touched. Job dispositions:
+      `docs/plans/2026-08-15-006-scheduler-job-inventory.md` (zero active `route=letta` jobs).
+- [ ] **NEEDS-OPERATOR-REVIEW** — the writer-quiesce tiers in step 2 (discovered live
+      2026-08-16), specifically the Tier-3 runner decision.
 
 ## 2. Cutover steps (terminal-first)
 
@@ -51,12 +52,39 @@ Each step names its clone rehearsal. Total attended time ≈ 20 min.
 
 1. **Snapshot**: `./deployment/scripts/backup.sh --verbose`; note `git rev-parse HEAD`.
    Add the controller state dir to backup.sh host-data section if not yet merged.
-2. **Quiesce the incumbent `lc-local-backend` writers.** Inventory at execution time
-   (`fs_usage`/`lsof` on `~/.letta/lc-local-backend` + `launchctl list | grep -i letta`);
-   known candidates: the local-runner launchd service and ad-hoc `letta --backend local`
-   invocations. The supervisor's flock tripwire + foreign-writer rescan (Units 2–3) is the
-   backstop for stragglers. **NEEDS-OPERATOR-REVIEW at execution: the definitive quiesce
-   list.**
+2. **Quiesce the incumbent `lc-local-backend` writers.** Discovered live 2026-08-16
+   (process table + plist env + lsof), in three tiers:
+
+   **Tier 1 — replaced by the cutover itself:**
+   - `scripts/restore-letta-app-server.py` (the stopgap; it is the PARENT of today's :4577
+     `letta server --backend local --openai-api`) → kill both; the supervised sole owner
+     (`com.ai-pa.letta-app-server`) takes over. `letta-push-receiver` (enrichment) stays —
+     it is a `/v1/responses` CLIENT of :4577, not a writer.
+
+   **Tier 2 — straightforward quiesce:**
+   - **Letta Desktop's local-backend client** (`letta.js remote … --backend local`, the
+     PID that holds the `crons.json` scheduler lease — lease tasks are EMPTY): quit
+     Letta.app (or kill the child). Keep it closed until it is re-pointed or retired.
+   - **Interactive fleet TUIs** in tmux (`agent-supervise` × kinara/mc, email, tasks,
+     calendar, pulse → `~/bin/letta-<slug>` → `letta --backend local --agent …`): each is a
+     direct writer. Close the sessions; the Kinara/MC surface is replaced by
+     `letta-continuity` immediately; the other agents' TUIs reopen as `letta-continuity
+     --agent <id> --conversation <registry-thread>` or stay closed.
+
+   **Tier 3 — THE operator decision: `com.ai-pa.letta-local-runner` (:8920).** Its plist
+   pins `LETTA_LOCAL_BACKEND_DIR=lc-local-backend`; every invocation spawns a
+   `letta --backend local` writer. It is also the fleet's execution substrate: the two
+   active `route=local` scheduler self-checks, the pa-tools extension-tool bridge, the
+   memfs Gitea sync wrapper, and warm-pool recipes all ride it. Options:
+   (a) **bootout the runner at cutover and accept those flows paused** until they re-point
+   (scheduler jobs → controller ingress as `route=letta`; memfs-sync/extension-tools
+   migration = a follow-up unit) — cleanest single-writer posture, recommended if the pause
+   is tolerable; (b) defer cutover until a runner migration lands; (c) leaving it running is
+   NOT an option — the supervisor's foreign-writer tripwire will (correctly) fight it.
+
+   **Confirmed NON-writers (no action):** `letta-teams-daemon` (Docker `:8283`), `letta-cleanup`
+   (repo dir only), `letta-code-verify`, Claude sessions. The supervisor's flock tripwire +
+   foreign-writer rescan backstops stragglers either way.
 3. **Load the App Server plist** (`letta-push-receiver/launchd/com.ai-pa.letta-app-server.plist`
    → `~/Library/LaunchAgents`, hand-synced per repo convention) and verify
    `app_server_info` on :4577 reports the pinned version. Retire the
@@ -76,8 +104,8 @@ Each step names its clone rehearsal. Total attended time ≈ 20 min.
    liveness file fresh; `launchctl list` shows both; logs under
    `~/Library/Logs/continuity-controller/`. *Rehearsed: full clone soak.*
 7. **Re-point the scheduler**: edit `LETTA_CALLBACK_URL` in the compose env to
-   `http://host.docker.internal:4611/t/<secret>/v1/agents/{agent_id}/messages` (path-token
-   form; swap to bare path + bearer if the operator chose the header). Recreate only the
+   `http://host.docker.internal:4611/t/<secret>/v1/agents/{agent_id}/messages`
+   (**path-token form — operator decision 2026-08-16**). Recreate only the
    scheduler container (`docker-compose up -d --no-deps scheduler-service`).
    *Rehearsed: a real scheduler job delivered through the clone ingress with the bearer (C7).*
 8. **Flip the terminal**: deploy `clients/letta-terminal/bin/letta-continuity` → `~/bin`

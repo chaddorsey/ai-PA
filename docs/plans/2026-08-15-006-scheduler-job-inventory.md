@@ -1,7 +1,7 @@
 ---
 title: "Scheduler job inventory — LETTA_CALLBACK_URL re-point dispositions (C7 prerequisite)"
 type: assessment
-status: NEEDS-OPERATOR-REVIEW
+status: secret-presentation DECIDED (path-token, operator 2026-08-16); route=local migration question open
 date: 2026-08-16
 origin: docs/plans/2026-08-15-006-feat-continuity-controller-plan.md (Unit C7 → consumed by C10b)
 ---
