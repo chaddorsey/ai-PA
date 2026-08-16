@@ -162,7 +162,10 @@ the origin document (R21–R29) and the adopted sketch
 - **Wire types bind to `@letta-ai/letta-code/app-server-protocol`** with compile-time
   assignability checks; `protocol.ts`'s runtime validation, drift guards, and version pins are
   salvaged on top. The pin gates the **running** server's reported version, not the binary on
-  disk.
+  disk. Resolution mechanism (decided 2026-08-15): the CLI package becomes a **devDependency of
+  `clients/continuity-controller`, pinned to the version the supervisor runs** — types resolve
+  normally, and a server upgrade cannot silently compile against stale definitions (rejected
+  alternative: a committed snapshot, whose skipped refresh fails quietly).
 - **Two WS connections: anchor + worker (pending C1 confirmation).** The learnings add a
   constraint the sketch missed: the controller itself becomes the last subscriber, so a
   controller crash/restart would cancel every in-flight turn. Mitigation: a minimal **anchor**
@@ -259,8 +262,8 @@ the origin document (R21–R29) and the adopted sketch
   after real volume is observed.
 - One worker socket for all runtimes vs per-runtime sharding — start with one (+ anchor); shard
   only if C1/C7 show ordering or throughput pressure.
-- The Kinara catch-up digest format (per-exchange vs batched) — draft in C8, tune against real
-  use.
+- Digest batch-window sizing — the design is decided (batched, muted, operator-preempts,
+  route-origin thread mapping); only the window cadence needs tuning against real use.
 - Relevance-inferred landing (R13 middle clause) — out of plan; tag → default precedence ships
   first.
 - Whether approvals become observable once permission modes are used in anger — the pinned live
@@ -381,7 +384,10 @@ validation + version pins (rebound to vendor types), `test/helpers/mockServer.ts
 surface-side — terminal `render/sanitize/session/cli/main` + `spawnCli.ts` harness + deploy
 wrapper; retire — `ownership.ts` attribution (controller stamps origin as data), `pointer.ts`
 (subsumed by the registry), approval auto-deny responder (replaced by controller arbitration),
-`fanout.ts`/`evict.ts`/`trust.ts` per-file judgment. Recommendation to carry: **evolve
+`fanout.ts`/`evict.ts`/`trust.ts` per-file judgment. Exception (operator decision 2026-08-15):
+the terminal's existing direct raw-WS transport is **not** retired — it is kept installable as
+the emergency break-glass client (see System-Wide Impact), so the salvage map must preserve a
+working direct path alongside the controller transport. Recommendation to carry: **evolve
 `letta-continuity-core` in place** into the controller's App-Server client library (its README
 role barely changes; the mutation history stays attached) rather than forking.
 
@@ -625,9 +631,9 @@ specialist output that bypasses Kinara renders as a clearly-non-Kinara card with
 record Kinara ingests (C8's digest dedupes against these by shared item id). Awareness
 directive is per-item, urgency-inferred default `badge`, overridable (including deliberately
 muted); `notify_operator` (external tool on Kinara's runtime, registered by the worker —
-re-registered on every worker reconnect per C3) lets the agent set it, with a **per-runtime
-rate cap on interrupt-level directives** (excess degrades to badge, journaled) so a runaway or
-prompt-injected agent annoys at most N times per window. Unseen markers persist per
+re-registered on every worker reconnect per C3) lets the agent set it — uncapped in the
+initial build, per the documented-risk posture in Risks &amp; Dependencies (operator decision
+2026-08-15). Unseen markers persist per
 `{conversation, surface-consumption}` so a later attach shows what arrived while away. Focus
 never moves (R14) — the controller has no mechanism to move it, by design. Cutover
 prerequisite owned here: the `route=letta` **job inventory and per-job Docker→local agent-id
@@ -643,8 +649,7 @@ disposition** (jobs with no local equivalent need an explicit decision, not a si
   interrupt on the focused surface without moving focus.
 - Error path: POST for an unknown agent → 4xx with body, journaled as rejected ingress
   (visible, G5); POST without the bearer secret → 401, journaled, no state; turn that errors
-  mid-run still sets the unseen marker with failure state; interrupt-directive flood → cap
-  engages, excess arrives as badges, journal shows the degradation.
+  mid-run still sets the unseen marker with failure state.
 - Integration: end-to-end with a real scheduler-service job against the clone stack (rehearsal
   of the config re-point).
 
@@ -673,15 +678,20 @@ inline rendering).
 
 **Approach:** A route resolves *before* any model call: address match → target
 `{specialist, conversation}` (creating/warming it via the registry, hot per R26); bound thread →
-everything routes until unbound. Authorization constraints on Kinara-authored routes: targets
-limited to registry-known specialists; **an explicit `@address` always beats any authored
-route**; a route mutation affecting an operator-bound thread raises an awareness event to
-attached surfaces (prevention-adjacent, not just after-the-fact journal audit). The exchange
+everything routes until unbound. Routing semantics for Kinara-authored routes: targets
+limited to registry-known specialists (a route must point at a real agent); **an explicit
+`@address` always beats any authored route**; every route mutation is journaled with author
+(R25's audit requirement) — no confirmation gates or push-notification of changes in the
+initial build, per the documented-risk posture in Risks &amp; Dependencies. The exchange
 journals in the specialist's thread; the operator's attached surface renders it inline via a
 foreign-thread event carrying attribution.
-Digest: controller batches direct-lane activity per Kinara conversation and submits a
-low-priority catch-up turn (or context injection — implementation's call) when Kinara is idle;
-dedupe against R12 direct cards by shared item ids.
+Digest (decided 2026-08-15): recaps are **real turns** — there is no protocol operation that
+injects context without producing a turn — **batched per Kinara conversation** and submitted
+only when no operator message is pending for that runtime (**operator messages always preempt
+digests** in the C4 queue); an exchange maps to the Kinara thread **whose route or binding
+produced it**, else the default thread — never fanned out to all threads; digest turns carry a
+**muted** awareness directive so neither the digest nor Kinara's acknowledgment badges the
+operator; dedupe against R12 direct cards by shared item ids.
 
 **Test scenarios:**
 - Happy path: `@calendar …` from the terminal produces a specialist turn with no Kinara turn
@@ -793,7 +803,12 @@ date.
   separately), `~/bin/letta-continuity` wrapper (transport swap), launchd service set (+1
   service, +1 if the anchor is its own process).
 - **Error propagation:** platform failures surface as journal FAILED-VISIBLE states → surface
-  render + nonzero exits; controller-down = surfaces show reconnecting (they hold no durable
+  render + nonzero exits; **controller-down = total operator lockout** — stated plainly: a
+  worse availability floor than the peer-client model, where a healthy App Server stayed
+  reachable from any terminal. Accepted, with a **full break-glass** (operator decision
+  2026-08-15): the direct raw-WS terminal client remains installable for emergencies, with the
+  runbook stating explicitly that single-submitter ownership and attribution guarantees are
+  suspended while it is in use. Surfaces otherwise show reconnecting (they hold no durable
   state to lose); App-Server-down = controller journals the gap and reconciles via
   `sync`/`conversation_messages_list` on return.
 - **State lifecycle risks:** journal double-ingest (guarded by `idempotency_key`/`otid` tests),
@@ -819,6 +834,13 @@ date.
   gate + the live contract test against the clone; the pin fails loudly, not silently.
 - **#99-class silent stalls** → wall-clock backstop arm of the terminality disjunction +
   supervisor's forward-progress probe remain independent detectors.
+- **Agent-held control-plane tools — documented, accepted risk (operator decision
+  2026-08-15):** `manage_routes`, `notify_operator`, and `fan_out` are levers a prompt-injected
+  agent could pull (Kinara routinely ingests external email/Slack/web content). The initial
+  build ships **journal audit only** (R25) — no rate caps, fan-out budgets, or confirmation
+  gates. Staged hardening options recorded for when evidence warrants them: per-runtime
+  interrupt rate caps (excess degrades to badge), per-invoker fan-out budget/concurrency caps,
+  awareness events or operator acknowledgment on thread-rebinding.
 - **Scope gravity in Phase D** → C9/C10a/C10b are deliberately coarse, each carrying an
   explicit pickup gate: expand to full unit format in this plan before implementation begins.
 - **Sequencing:** C1 gates Phase B; C5 gates all surfaces; nothing before C10 touches live
