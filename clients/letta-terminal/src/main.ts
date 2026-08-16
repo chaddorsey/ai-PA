@@ -351,11 +351,6 @@ async function runController(
     showReasoning: options.showReasoning,
   });
   const detach = options.json ? attachJson(core, io) : session.attach();
-  // A FAILED-VISIBLE turn is a failed run whichever way it is rendered (same rule as the raw
-  // path's ERROR_DELTA_TYPES hook).
-  core.onTurnOutcome((_cm, outcome) => {
-    if (outcome.startsWith("FAILED") || outcome.startsWith("failed")) exitCode = 1;
-  });
 
   try {
     await core.start();
@@ -415,6 +410,13 @@ async function runController(
     core.stop();
     return code === 0 ? exitCode : code;
   }
+
+  // A LIVE failed turn fails an interactive session's exit — the same rule as the raw path's
+  // ERROR_DELTA_TYPES hook. REPLAYED history is excluded on purpose: a failure that happened
+  // last week must not poison every future attach's exit code.
+  core.onTurnOutcome((_cm: string | null, outcome: string, live: boolean) => {
+    if (live && (outcome.startsWith("FAILED") || outcome.startsWith("failed"))) exitCode = 1;
+  });
 
   io.stderr(
     `— attached via controller to ${sanitize(runtime.agent_id, { maxLength: 120 })} · conversation ${sanitize(runtime.conversation_id, { maxLength: 120 })}

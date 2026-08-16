@@ -226,18 +226,55 @@ describe("run() over the controller transport", () => {
     expect(h2.out.join("")).toContain("finished after you left");
   }, 20_000);
 
-  it("one-shot settles ONLY on its own receipt's outcome — a replayed outcome cannot end it", async () => {
+  it("one-shot settles ONLY on its own receipt's outcome — foreign and replayed outcomes cannot end it", async () => {
     const s = await startStack();
-    // A completed prior turn sits in the journal…
+    // A completed prior turn sits in the journal (replayed at the next attach)…
     const h0 = harness();
     await run([...s.argvTarget, "--message", "first"], {}, h0.io);
-    // …and the NEXT one-shot replays it at attach. The replayed outcome must not settle the
-    // wait: with the server wedged, the only honest exit is the timeout.
     s.server.options.autoTurnOnInput = false;
+    // …and a FOREIGN turn's outcome lands LIVE while the one-shot is waiting: a peer-submitted
+    // message on another runtime is rejected by the server, producing a real FAILED-VISIBLE
+    // live event through the worker's own journal.
+    const foreign = setTimeout(() => {
+      s.server.options.rejectInputWith = "foreign turn dies";
+      s.worker.pipeline.accept({ agent_id: AGENT, conversation_id: "local-conv-2" }, "foreign");
+    }, 300);
     const h = harness();
-    const code = await run([...s.argvTarget, "--message", "second", "--timeout", "1"], {}, h.io);
+    const code = await run([...s.argvTarget, "--message", "second", "--timeout", "1.5"], {}, h.io);
+    clearTimeout(foreign);
+    // Neither the replay nor the live foreign outcome settled it: only the honest timeout did.
     expect(code).toBe(1);
     expect(h.err.join("")).toContain("timed out");
+  }, 20_000);
+
+  it("interactive exit: a LIVE failed turn fails it; REPLAYED historical failure does not", async () => {
+    const s = await startStack();
+    const { db } = openStateDb(s.dir);
+    // Scenario A: a historical failure sits in the journal. A clean session must still exit 0.
+    db.prepare(
+      `INSERT INTO turn_events (agent_id, conversation_id, client_message_id, kind, payload, at)
+       VALUES (?, ?, 'cm-old-failure', 'turn_failed_visible', ?, ?)`,
+    ).run(AGENT, CONV, JSON.stringify({ reason: "ancient history" }), new Date().toISOString());
+    const hA = harness({
+      interactive: async () => {
+        await new Promise((r) => setTimeout(r, 300)); // replay arrives; nothing live fails
+      },
+    });
+    const codeA = await run(s.argvTarget, {}, hA.io);
+    expect(codeA).toBe(0);
+
+    // Scenario B: a failure lands LIVE during the session — a peer-submitted turn the server
+    // rejects, journaled FAILED-VISIBLE through the worker — and the exit must say so.
+    const hB = harness({
+      interactive: async () => {
+        await new Promise((r) => setTimeout(r, 200));
+        s.server.options.rejectInputWith = "died now";
+        s.worker.pipeline.accept(RUNTIME, "fails live");
+        await new Promise((r) => setTimeout(r, 400));
+      },
+    });
+    const codeB = await run(s.argvTarget, {}, hB.io);
+    expect(codeB).toBe(1);
   }, 20_000);
 
   it("/deny answers a pending approval with DENY (the decision is the operator's, verbatim)", async () => {

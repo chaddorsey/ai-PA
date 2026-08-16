@@ -136,13 +136,16 @@ export class ControllerCore {
     return () => this.receiptListeners.delete(cb);
   };
   private readonly outcomeListeners = new Set<
-    (clientMessageId: string | null, outcome: string) => void
+    (clientMessageId: string | null, outcome: string, live: boolean) => void
   >();
   /**
    * Turn outcomes BY client_message_id — controller data, so the one-shot can wait for exactly
-   * the turn its send receipt named instead of inferring from idle heuristics.
+   * the turn its send receipt named instead of inferring from idle heuristics. `live` is false
+   * for REPLAYED history: a failure that happened last week must not poison this run's exit.
    */
-  onTurnOutcome = (cb: (clientMessageId: string | null, outcome: string) => void): (() => void) => {
+  onTurnOutcome = (
+    cb: (clientMessageId: string | null, outcome: string, live: boolean) => void,
+  ): (() => void) => {
     this.outcomeListeners.add(cb);
     return () => this.outcomeListeners.delete(cb);
   };
@@ -302,12 +305,12 @@ export class ControllerCore {
       this.sessionId = frame.session_id as string;
       this.cursor = (frame.cursor as number) ?? this.cursor;
       this.reconnectAttempts = 0;
-      for (const event of (frame.replay as SurfaceFrame[]) ?? []) this.onEvent(event);
+      for (const event of (frame.replay as SurfaceFrame[]) ?? []) this.onEvent(event, false);
       this.transition("connected");
       return;
     }
     if (frame.type === "event") {
-      this.onEvent(frame);
+      this.onEvent(frame, true);
       return;
     }
     if (frame.type === "send_ok") {
@@ -346,7 +349,7 @@ export class ControllerCore {
   }
 
   /** Map one journal event row onto the RenderEvent vocabulary the renderer already speaks. */
-  private onEvent(event: SurfaceFrame): void {
+  private onEvent(event: SurfaceFrame, live: boolean): void {
     const id = event.id as number;
     if (typeof id === "number") this.cursor = Math.max(this.cursor ?? 0, id);
     const kind = event.kind as string;
@@ -396,7 +399,7 @@ export class ControllerCore {
         typeof payload.run_id === "string" ? payload.run_id : (this.activeRunId ?? undefined);
       this.activeRunId = null;
       const failed = outcome.startsWith("FAILED") || outcome.startsWith("failed");
-      for (const cb of this.outcomeListeners) cb(clientMessageId, outcome);
+      for (const cb of this.outcomeListeners) cb(clientMessageId, outcome, live);
       this.emitRender({
         type: "turn_finished",
         eventSeq: id,
@@ -417,7 +420,7 @@ export class ControllerCore {
 
     if (kind === "turn_failed_visible") {
       this.activeRunId = null;
-      for (const cb of this.outcomeListeners) cb(clientMessageId, "FAILED-VISIBLE");
+      for (const cb of this.outcomeListeners) cb(clientMessageId, "FAILED-VISIBLE", live);
       this.emitRender({
         type: "turn_finished",
         eventSeq: id,
