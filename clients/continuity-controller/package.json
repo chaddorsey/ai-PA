@@ -1,0 +1,30 @@
+{
+  "name": "@ai-pa/continuity-controller",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Resident Continuity Controller — the sole interactive WS client of the sole-owner Letta App Server: permanent subscriber (anchor+worker), sole submitter, journal keeper, router, auth boundary (plan 2026-08-15-006, R21).",
+  "bin": {
+    "continuity-controller": "./src/main.ts"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts worker",
+    "start:anchor": "tsx src/main.ts anchor",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src test",
+    "lint:fix": "biome check --write src test",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run lint && npm run test"
+  },
+  "dependencies": {
+    "@ai-pa/letta-continuity-core": "file:../letta-continuity-core",
+    "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@letta-ai/letta-code": "0.30.20",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

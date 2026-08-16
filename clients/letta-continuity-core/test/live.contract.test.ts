@@ -90,10 +90,7 @@ describe.skipIf(!LIVE)(`live contract (opt-in, ${URL}, agent ${AGENT})`, () => {
       await ws.connect();
       expect(
         ws.identity?.actual,
-        `The RUNNING App Server reports ${ws.identity?.actual}, but ${PACKAGE} ${installed.version} ` +
-          `is what is installed (${installed.source}).\n` +
-          "The process is serving a different build from the one on disk — restart the App Server " +
-          "so the two agree, then re-run this gate.",
+        `The RUNNING App Server reports ${ws.identity?.actual}, but ${PACKAGE} ${installed.version} is what is installed (${installed.source}).\nThe process is serving a different build from the one on disk — restart the App Server so the two agree, then re-run this gate.`,
       ).toBe(installed.version);
     } finally {
       ws.close();

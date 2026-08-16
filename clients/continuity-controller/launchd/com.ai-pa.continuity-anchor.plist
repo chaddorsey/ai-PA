@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Tracked REFERENCE copy — the anchor is SEPARATELY supervised from the worker on purpose:
+     its whole value is staying alive while the worker restarts (plan, Key Technical
+     Decisions; C1 S1proc proved a separate-process subscriber holds a detached turn). -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ai-pa.continuity-anchor</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Volumes/main-drive/ai-PA/scripts/run-continuity-controller.sh</string>
+    <string>anchor</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/dorseyhomeserver/Library/Logs/continuity-controller/anchor.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/dorseyhomeserver/Library/Logs/continuity-controller/anchor.log</string>
+</dict>
+</plist>

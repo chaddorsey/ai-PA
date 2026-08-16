@@ -205,6 +205,7 @@ export const Outbound = {
   conversationUpdate: "conversation_update",
   conversationFork: "conversation_fork",
   conversationMessagesList: "conversation_messages_list",
+  sync: "sync",
 } as const;
 
 /** Inbound (server → client) message-type strings. */
@@ -225,6 +226,7 @@ export const Inbound = {
   conversationUpdateResponse: "conversation_update_response",
   conversationForkResponse: "conversation_fork_response",
   conversationMessagesListResponse: "conversation_messages_list_response",
+  syncResponse: "sync_response",
 } as const;
 
 /** Map of an outbound RPC type → the inbound `*_response` type that answers it. */
@@ -237,6 +239,7 @@ export const RpcResponseFor: Record<string, string> = {
   [Outbound.conversationUpdate]: Inbound.conversationUpdateResponse,
   [Outbound.conversationFork]: Inbound.conversationForkResponse,
   [Outbound.conversationMessagesList]: Inbound.conversationMessagesListResponse,
+  [Outbound.sync]: Inbound.syncResponse,
 };
 
 export class ProtocolError extends Error {
@@ -460,8 +463,48 @@ export function buildAppServerInfo(requestId: string): ServerFrame {
   return { type: Outbound.appServerInfo, request_id: requestId };
 }
 
-export function buildRuntimeStart(requestId: string, runtime: Runtime): ServerFrame {
-  return { type: Outbound.runtimeStart, request_id: requestId, ...runtime };
+/**
+ * Options a resident subscriber (the Continuity Controller) sets on `runtime_start`.
+ * Additive and optional — the peer-surface callers keep the bare two-argument shape.
+ */
+export interface RuntimeStartOptions {
+  /**
+   * Resolve the hello only after the initial state replay has been emitted. The controller's
+   * WORKER subscribes with this so "subscribed" means "replay-complete", not "socket said yes"
+   * (C1 findings: the replay is where a mid-flight turn's history comes from).
+   */
+  waitForReplay?: boolean;
+  /** Initial permission mode for this runtime scope. */
+  mode?: string;
+}
+
+export function buildRuntimeStart(
+  requestId: string,
+  runtime: Runtime,
+  options?: RuntimeStartOptions,
+): ServerFrame {
+  const frame: ServerFrame = { type: Outbound.runtimeStart, request_id: requestId, ...runtime };
+  if (options?.waitForReplay !== undefined) frame.wait_for_replay = options.waitForReplay;
+  if (options?.mode !== undefined) frame.mode = options.mode;
+  return frame;
+}
+
+/**
+ * `sync` — the forward-progress liveness round-trip (and runtime-state replay request).
+ * `recover_approvals` defaults FALSE here: the controller's periodic liveness probe must be
+ * lightweight and side-effect-free; approval recovery is an explicit reconnect-time decision.
+ */
+export function buildSync(
+  requestId: string,
+  runtime: Runtime,
+  recoverApprovals = false,
+): ServerFrame {
+  return {
+    type: Outbound.sync,
+    request_id: requestId,
+    runtime,
+    recover_approvals: recoverApprovals,
+  };
 }
 
 /**
@@ -697,6 +740,7 @@ export function validateInboundFrame(frame: ServerFrame): void {
     }
     case Inbound.appServerInfoResponse:
     case Inbound.runtimeStartResponse:
+    case Inbound.syncResponse:
     case Inbound.conversationListResponse:
     case Inbound.conversationCreateResponse:
     case Inbound.conversationRetrieveResponse:

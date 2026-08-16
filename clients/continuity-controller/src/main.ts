@@ -1,0 +1,180 @@
+#!/usr/bin/env tsx
+/**
+ * main.ts — process entry for the Continuity Controller.
+ *
+ *   continuity-controller worker            # the feature-rich daemon (default)
+ *   continuity-controller anchor            # the subscribe-only crash-overlap daemon
+ *   continuity-controller registry list
+ *   continuity-controller registry add --agent <id> [--label <s>] [--temp hot|cold]
+ *   continuity-controller registry set-temp --agent <id> --conversation <id> --temp hot|cold
+ *
+ * `registry add` CREATES the conversation over WS (`conversation_create`) and registers the
+ * returned real id — never the `default` alias (C1 S3: the alias is unresolvable by
+ * `conversation_messages_list`, which C4's reconciliation depends on).
+ *
+ * Exit codes: 0 clean stop · 75 (EX_TEMPFAIL) reconnect budget exhausted or state missing —
+ * launchd's KeepAlive+ThrottleInterval is the outer retry loop, visible in Console.
+ */
+
+import { Outbound, buildConversationCreate } from "@ai-pa/letta-continuity-core/protocol";
+import { WsConnection } from "@ai-pa/letta-continuity-core/ws";
+import { AnchorDaemon } from "./anchor.js";
+import { loadConfig } from "./config.js";
+import { ReadOnlyRegistry, Registry } from "./registry.js";
+import { openStateDb, openStateDbReadOnly } from "./state/db.js";
+import { Journal } from "./state/journal.js";
+import { WorkerDaemon } from "./worker.js";
+
+const EX_TEMPFAIL = 75;
+
+function log(msg: string): void {
+  console.error(`${new Date().toISOString()} ${msg}`);
+}
+
+function flag(args: string[], name: string): string | undefined {
+  const i = args.indexOf(`--${name}`);
+  return i >= 0 ? args[i + 1] : undefined;
+}
+
+function installSignalStop(stop: () => void): void {
+  for (const sig of ["SIGINT", "SIGTERM"] as const) {
+    process.on(sig, () => {
+      log(`${sig} — stopping`);
+      stop();
+      process.exit(0);
+    });
+  }
+}
+
+async function runWorker(): Promise<void> {
+  const config = loadConfig();
+  const { db, degraded } = openStateDb(config.stateDir);
+  const worker = new WorkerDaemon({
+    url: config.wsUrl,
+    registry: new Registry(db),
+    journal: new Journal(db),
+    livenessFile: config.livenessFile,
+    livenessIntervalMs: config.livenessIntervalMs,
+    livenessDeadlineMs: config.livenessDeadlineMs,
+    hotsetPollMs: config.hotsetPollMs,
+    degraded,
+    onWarn: log,
+    onExhausted: () => {
+      log("reconnect budget exhausted — exiting for launchd to restart");
+      process.exit(EX_TEMPFAIL);
+    },
+  });
+  installSignalStop(() => worker.stop());
+  log(`worker starting: ws=${config.wsUrl} state=${config.stateDir}`);
+  await worker.start();
+}
+
+async function runAnchor(): Promise<void> {
+  const config = loadConfig();
+  let registry: ReadOnlyRegistry;
+  try {
+    registry = new ReadOnlyRegistry(openStateDbReadOnly(config.stateDir));
+  } catch (e) {
+    log(e instanceof Error ? e.message : String(e));
+    process.exit(EX_TEMPFAIL);
+  }
+  const anchor = new AnchorDaemon({
+    url: config.wsUrl,
+    registry,
+    hotsetPollMs: config.hotsetPollMs,
+    onWarn: log,
+    onExhausted: () => {
+      log("reconnect budget exhausted — exiting for launchd to restart");
+      process.exit(EX_TEMPFAIL);
+    },
+  });
+  installSignalStop(() => anchor.stop());
+  log(`anchor starting: ws=${config.wsUrl} state=${config.stateDir} (read-only)`);
+  await anchor.start();
+}
+
+async function runRegistry(args: string[]): Promise<void> {
+  const config = loadConfig();
+  const command = args[0];
+  const { db, degraded } = openStateDb(config.stateDir);
+  if (degraded) log(`WARNING — state db degraded: ${degraded}`);
+  const registry = new Registry(db);
+  const journal = new Journal(db);
+
+  if (command === "list") {
+    for (const row of registry.list()) {
+      const broken = row.broken ? `  BROKEN: ${row.broken}` : "";
+      console.log(
+        `${row.temp.padEnd(4)} ${row.agent_id} ${row.conversation_id} [${row.label}]${broken}`,
+      );
+    }
+    console.log(`hotset_version=${registry.hotsetVersion()}`);
+    return;
+  }
+
+  if (command === "add") {
+    const agentId = flag(args, "agent");
+    if (!agentId) throw new Error("registry add requires --agent <id>");
+    const label = flag(args, "label") ?? "";
+    const temp = (flag(args, "temp") ?? "hot") as "hot" | "cold";
+    const conn = new WsConnection({ url: config.wsUrl, versionPolicy: "warn", onWarn: log });
+    await conn.connectBare();
+    try {
+      const created = await conn.request(
+        (rid) => buildConversationCreate(rid, agentId, label || "continuity"),
+        Outbound.conversationCreate,
+      );
+      if (created.success !== true) {
+        throw new Error(`conversation_create failed: ${String(created.error ?? "refused")}`);
+      }
+      const conversationId = (created.conversation as { id?: string } | null)?.id;
+      if (typeof conversationId !== "string") throw new Error("no conversation id in response");
+      registry.upsert({ agent_id: agentId, conversation_id: conversationId, label, temp });
+      journal.append("registry_upsert", {
+        agent_id: agentId,
+        conversation_id: conversationId,
+        label,
+        temp,
+        via: "cli",
+      });
+      console.log(`${agentId} ${conversationId} [${label}] ${temp}`);
+    } finally {
+      conn.close();
+    }
+    return;
+  }
+
+  if (command === "set-temp") {
+    const agentId = flag(args, "agent");
+    const conversationId = flag(args, "conversation");
+    const temp = flag(args, "temp") as "hot" | "cold" | undefined;
+    if (!agentId || !conversationId || !temp) {
+      throw new Error("registry set-temp requires --agent, --conversation, --temp");
+    }
+    registry.setTemp({ agent_id: agentId, conversation_id: conversationId }, temp);
+    journal.append("registry_set_temp", {
+      agent_id: agentId,
+      conversation_id: conversationId,
+      temp,
+      via: "cli",
+    });
+    console.log(`ok hotset_version=${registry.hotsetVersion()}`);
+    return;
+  }
+
+  throw new Error(`unknown registry command: ${String(command)}`);
+}
+
+async function main(): Promise<void> {
+  const [role = "worker", ...rest] = process.argv.slice(2);
+  if (role === "worker") return runWorker();
+  if (role === "anchor") return runAnchor();
+  if (role === "registry") return runRegistry(rest);
+  console.error(`usage: continuity-controller <worker|anchor|registry> …  (got: ${role})`);
+  process.exit(2);
+}
+
+main().catch((e) => {
+  log(e instanceof Error ? (e.stack ?? e.message) : String(e));
+  process.exit(1);
+});

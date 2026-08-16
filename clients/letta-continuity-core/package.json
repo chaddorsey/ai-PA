@@ -9,6 +9,8 @@
     ".": "./src/index.ts",
     "./protocol": "./src/protocol.ts",
     "./pointer": "./src/pointer.ts",
+    "./ws": "./src/ws.ts",
+    "./connection": "./src/connection.ts",
     "./testing": "./test/helpers/mockServer.ts",
     "./testing/harness": "./test/helpers/harness.ts"
   },

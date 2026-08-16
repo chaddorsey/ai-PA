@@ -68,7 +68,15 @@ export class FaultyWsConnection extends WsConnection {
 interface ConnState {
   socket: WebSocket;
   seq: number;
+  /** Most recent `runtime_start` on this connection (kept for single-runtime callers). */
   runtime: { agent_id: string; conversation_id: string } | null;
+  /**
+   * EVERY runtime this connection has `runtime_start`ed, keyed `agent_id:conversation_id`.
+   * The real server holds N concurrent subscriptions per socket (C1 spike S6/S6b, live) — a
+   * later hello ADDS a subscription, it does not re-home the connection. The controller's
+   * anchor/worker sockets depend on exactly this, so the double must model it.
+   */
+  runtimes: Map<string, { agent_id: string; conversation_id: string }>;
   /** True while this connection is refusing to answer a close handshake. */
   held: boolean;
   /** 0-based order of acceptance, so a test can single out the FIRST attach. */
@@ -188,6 +196,12 @@ export interface MockServerOptions {
   erroredTurn?: "deltas" | "turn-finished";
   /** Text carried by the `error_message` delta. */
   errorText?: string;
+  /**
+   * Conversation ids whose `runtime_start` fails with success:false ("Conversation not found"),
+   * the way the real server answers a registry row for a conversation it does not know. The
+   * controller must mark that row broken and keep subscribing the others.
+   */
+  failRuntimeStartFor?: string[];
 }
 
 /** Default `error_message` body — recognisable in assertions, and shaped like the real one. */
@@ -324,6 +338,7 @@ export class MockAppServer {
       socket,
       seq: 0,
       runtime: null,
+      runtimes: new Map(),
       held: false,
       index: this.acceptedCount,
     };
@@ -388,6 +403,19 @@ export class MockAppServer {
       if (this.guard(isObj(msg.body))) this.handleConversationCreate(conn, msg);
     } else if (type === Outbound.conversationMessagesList) {
       if (this.guard(typeof msg.conversation_id === "string")) this.handleMessagesList(conn, msg);
+    } else if (type === Outbound.sync) {
+      // The real command requires a runtime scope (vendor SyncCommand). The response is a plain
+      // RPC ack — the controller uses it as its forward-progress liveness round-trip.
+      if (this.guard(isObj(msg.runtime) && typeof msg.runtime.agent_id === "string")) {
+        conn.socket.send(
+          JSON.stringify({
+            type: Inbound.syncResponse,
+            request_id: msg.request_id,
+            runtime: msg.runtime,
+            success: true,
+          }),
+        );
+      }
     }
   }
 
@@ -435,10 +463,26 @@ export class MockAppServer {
   }
 
   private handleRuntimeStart(conn: ConnState, msg: Record<string, unknown>): void {
+    if (this.options.failRuntimeStartFor?.includes(msg.conversation_id as string)) {
+      conn.socket.send(
+        JSON.stringify({
+          type: Inbound.runtimeStartResponse,
+          request_id: msg.request_id,
+          success: false,
+          runtime: null,
+          agent: null,
+          conversation: null,
+          created: { agent: false, conversation: false },
+          error: `Conversation ${msg.conversation_id as string} not found`,
+        }),
+      );
+      return;
+    }
     conn.runtime = {
       agent_id: msg.agent_id as string,
       conversation_id: msg.conversation_id as string,
     };
+    conn.runtimes.set(`${conn.runtime.agent_id}:${conn.runtime.conversation_id}`, conn.runtime);
     const hello: Record<string, unknown> = {
       type: Inbound.runtimeStartResponse,
       request_id: msg.request_id,
@@ -451,7 +495,7 @@ export class MockAppServer {
     // NOTE: no version field here — the real hello carries none. Version lives in app_server_info.
     conn.socket.send(JSON.stringify(hello));
     // initial loop status like the real server
-    this.sendBroadcast(conn, Inbound.updateLoopStatus, {
+    this.sendBroadcast(conn, conn.runtime, Inbound.updateLoopStatus, {
       loop_status: {
         status: LoopStatuses.waitingOnInput,
         active_run_ids: [],
@@ -658,7 +702,7 @@ export class MockAppServer {
   ): void {
     if (!runtime) return;
     for (const conn of this.subscribers(runtime)) {
-      this.sendBroadcast(conn, Inbound.updateLoopStatus, {
+      this.sendBroadcast(conn, runtime, Inbound.updateLoopStatus, {
         loop_status: {
           status: LoopStatuses.sendingApiRequest,
           active_run_ids: [runId],
@@ -672,7 +716,7 @@ export class MockAppServer {
         // bug that depends on it — which is exactly how the "agent › HE / LL / O" defect shipped.
         const chunks = splitIntoChunks(m.text);
         for (const [i, chunk] of chunks.entries()) {
-          this.sendBroadcast(conn, Inbound.streamDelta, {
+          this.sendBroadcast(conn, runtime, Inbound.streamDelta, {
             delta: {
               id: `${m.id}-${i}`,
               date: "2026-08-13T00:00:00.000Z",
@@ -690,7 +734,7 @@ export class MockAppServer {
       }
       // Every real turn ends with these two control deltas. `stop_reason` carries NO delta.id —
       // the frame that used to be rejected by the watermark guard on every single turn.
-      this.sendBroadcast(conn, Inbound.streamDelta, {
+      this.sendBroadcast(conn, runtime, Inbound.streamDelta, {
         delta: {
           id: `${runId}-usage`,
           message_type: DeltaMessageTypes.usage,
@@ -699,7 +743,7 @@ export class MockAppServer {
           type: WireEnvelope.message,
         },
       });
-      this.sendBroadcast(conn, Inbound.streamDelta, {
+      this.sendBroadcast(conn, runtime, Inbound.streamDelta, {
         delta: {
           message_type: DeltaMessageTypes.stopReason,
           stop_reason: stopReason,
@@ -708,12 +752,12 @@ export class MockAppServer {
           type: WireEnvelope.message,
         },
       });
-      this.sendBroadcast(conn, Inbound.turnFinished, {
+      this.sendBroadcast(conn, runtime, Inbound.turnFinished, {
         turn_id: `batch-${runId}`,
         stop_reason: stopReason,
         run_id: runId,
       });
-      this.sendBroadcast(conn, Inbound.updateLoopStatus, {
+      this.sendBroadcast(conn, runtime, Inbound.updateLoopStatus, {
         loop_status: {
           status: LoopStatuses.waitingOnInput,
           active_run_ids: [],
@@ -750,14 +794,14 @@ export class MockAppServer {
     if (!runtime) return;
     for (const conn of this.subscribers(runtime)) {
       const toolCallId = `toolu_${firstRunId}`;
-      this.sendBroadcast(conn, Inbound.updateLoopStatus, {
+      this.sendBroadcast(conn, runtime, Inbound.updateLoopStatus, {
         loop_status: {
           status: LoopStatuses.sendingApiRequest,
           active_run_ids: [firstRunId],
           executing_tool_call_ids: [],
         },
       });
-      this.sendBroadcast(conn, Inbound.streamDelta, {
+      this.sendBroadcast(conn, runtime, Inbound.streamDelta, {
         delta: {
           id: `${firstRunId}-toolcall`,
           date: "2026-08-13T00:00:00.000Z",
@@ -770,7 +814,7 @@ export class MockAppServer {
           type: WireEnvelope.message,
         },
       });
-      this.sendBroadcast(conn, Inbound.updateLoopStatus, {
+      this.sendBroadcast(conn, runtime, Inbound.updateLoopStatus, {
         loop_status: {
           status: LoopStatuses.executingClientSideTool,
           active_run_ids: [firstRunId],
@@ -778,7 +822,7 @@ export class MockAppServer {
         },
       });
       // The continuation. Note there is NO turn_finished for firstRunId — not here, not later.
-      this.sendBroadcast(conn, Inbound.updateLoopStatus, {
+      this.sendBroadcast(conn, runtime, Inbound.updateLoopStatus, {
         loop_status: {
           status: LoopStatuses.sendingApiRequest,
           active_run_ids: [continuationRunId],
@@ -787,7 +831,7 @@ export class MockAppServer {
       });
       for (const m of messages) {
         for (const [i, chunk] of splitIntoChunks(m.text).entries()) {
-          this.sendBroadcast(conn, Inbound.streamDelta, {
+          this.sendBroadcast(conn, runtime, Inbound.streamDelta, {
             delta: {
               id: `${m.id}-${i}`,
               date: "2026-08-13T00:00:00.000Z",
@@ -803,7 +847,7 @@ export class MockAppServer {
           });
         }
       }
-      this.sendBroadcast(conn, Inbound.streamDelta, {
+      this.sendBroadcast(conn, runtime, Inbound.streamDelta, {
         delta: {
           message_type: DeltaMessageTypes.stopReason,
           stop_reason: stopReason,
@@ -815,14 +859,14 @@ export class MockAppServer {
       // IDLE BEFORE FINISHED, as captured. The ordering is not cosmetic: it is why a one-shot
       // that waits for its own run's `turn_finished` hangs, and why the client terminates on the
       // runtime going idle instead.
-      this.sendBroadcast(conn, Inbound.updateLoopStatus, {
+      this.sendBroadcast(conn, runtime, Inbound.updateLoopStatus, {
         loop_status: {
           status: LoopStatuses.waitingOnInput,
           active_run_ids: [],
           executing_tool_call_ids: [],
         },
       });
-      this.sendBroadcast(conn, Inbound.turnFinished, {
+      this.sendBroadcast(conn, runtime, Inbound.turnFinished, {
         turn_id: `batch-${continuationRunId}`,
         stop_reason: stopReason,
         run_id: continuationRunId,
@@ -857,7 +901,7 @@ export class MockAppServer {
   ): void {
     if (!runtime) return;
     for (const conn of this.subscribers(runtime)) {
-      this.sendBroadcast(conn, Inbound.updateLoopStatus, {
+      this.sendBroadcast(conn, runtime, Inbound.updateLoopStatus, {
         loop_status: {
           status: LoopStatuses.sendingApiRequest,
           active_run_ids: [runId],
@@ -867,7 +911,7 @@ export class MockAppServer {
       // `LoopErrorMessage extends UmiLifecycleMessageBase` — so `id` and `date` are REQUIRED and
       // the body is `message`. It also carries `stop_reason` and `is_terminal`, which is a
       // per-run "this turn is over" signal the client does not read yet.
-      this.sendBroadcast(conn, Inbound.streamDelta, {
+      this.sendBroadcast(conn, runtime, Inbound.streamDelta, {
         delta: {
           id: `${runId}-loop-error`,
           date: "2026-08-13T00:00:00.000Z",
@@ -883,7 +927,7 @@ export class MockAppServer {
       // `run_id`, and optional `detail`/`seq_id`. This shape is the whole point of the fixture:
       // emitting it WITH an id (as an earlier version did) hides that the real frame is rejected
       // as drift unless `error_message` is a CONTROL delta.
-      this.sendBroadcast(conn, Inbound.streamDelta, {
+      this.sendBroadcast(conn, runtime, Inbound.streamDelta, {
         delta: {
           message_type: DeltaMessageTypes.errorMessage,
           error_type: "LLMError",
@@ -894,7 +938,7 @@ export class MockAppServer {
         },
       });
       // Idle, and then nothing. No turn_finished is emitted for this run, ever.
-      this.sendBroadcast(conn, Inbound.updateLoopStatus, {
+      this.sendBroadcast(conn, runtime, Inbound.updateLoopStatus, {
         loop_status: {
           status: LoopStatuses.waitingOnInput,
           active_run_ids: [],
@@ -919,7 +963,7 @@ export class MockAppServer {
   ): void {
     if (!runtime) return;
     for (const conn of this.subscribers(runtime)) {
-      this.sendBroadcast(conn, Inbound.updateLoopStatus, {
+      this.sendBroadcast(conn, runtime, Inbound.updateLoopStatus, {
         loop_status: {
           status: LoopStatuses.sendingApiRequest,
           active_run_ids: [runId],
@@ -927,7 +971,7 @@ export class MockAppServer {
         },
       });
       // Same `LettaErrorMessage` shape as the other errored path — no `id`, body in `message`.
-      this.sendBroadcast(conn, Inbound.streamDelta, {
+      this.sendBroadcast(conn, runtime, Inbound.streamDelta, {
         delta: {
           message_type: DeltaMessageTypes.errorMessage,
           error_type: "LLMError",
@@ -937,7 +981,7 @@ export class MockAppServer {
           type: WireEnvelope.message,
         },
       });
-      this.sendBroadcast(conn, Inbound.turnFinished, {
+      this.sendBroadcast(conn, runtime, Inbound.turnFinished, {
         turn_id: `batch-${runId}`,
         stop_reason: StopReasons.error,
         run_id: runId,
@@ -1021,20 +1065,27 @@ export class MockAppServer {
   }
 
   private subscribers(runtime: { agent_id: string; conversation_id: string }): ConnState[] {
-    return [...this.conns].filter(
-      (c) =>
-        c.runtime?.agent_id === runtime.agent_id &&
-        c.runtime?.conversation_id === runtime.conversation_id,
+    // Membership in the FULL subscription set, not equality with the latest hello — one socket
+    // subscribed to N runtimes receives broadcasts for all of them (real-server behaviour, S6).
+    return [...this.conns].filter((c) =>
+      c.runtimes.has(`${runtime.agent_id}:${runtime.conversation_id}`),
     );
   }
 
-  private sendBroadcast(conn: ConnState, type: string, payload: Record<string, unknown>): void {
+  private sendBroadcast(
+    conn: ConnState,
+    runtime: ConnState["runtime"],
+    type: string,
+    payload: Record<string, unknown>,
+  ): void {
     conn.seq += 1;
     conn.socket.send(
       JSON.stringify({
         type,
         ...payload,
-        runtime: conn.runtime,
+        // Stamped with the runtime the event BELONGS to — the real server does this; stamping
+        // the connection's latest hello instead mis-attributed every multi-runtime broadcast.
+        runtime,
         event_seq: conn.seq,
         emitted_at: "2026-08-13T00:00:00.000Z",
         idempotency_key: idem(type, conn.seq),
@@ -1048,6 +1099,6 @@ export class MockAppServer {
     payload: Record<string, unknown>,
   ): void {
     if (!runtime) return;
-    for (const conn of this.subscribers(runtime)) this.sendBroadcast(conn, type, payload);
+    for (const conn of this.subscribers(runtime)) this.sendBroadcast(conn, runtime, type, payload);
   }
 }

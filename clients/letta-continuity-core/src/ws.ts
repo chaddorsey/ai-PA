@@ -32,7 +32,12 @@ import { assertLoopbackUrl } from "./trust.js";
 
 export interface WsConnectionOptions {
   url: string;
-  runtime: Runtime;
+  /**
+   * The runtime `connect()` hellos onto. OPTIONAL since the controller: a resident connection
+   * is not born onto one runtime (`connectBare()` + per-registry-row `runtime_start`s). A
+   * runtime-less connection that calls `connect()` fails loudly.
+   */
+  runtime?: Runtime;
   pinnedVersion?: string | readonly string[];
   versionPolicy?: VersionPolicy;
   openTimeoutMs?: number;
@@ -126,9 +131,9 @@ export class WsConnection implements ContinuityTransport {
   private readonly errorListeners = new Set<(err: Error) => void>();
   private readonly closeListeners = new Set<(code: number, reason: string) => void>();
   private readonly opts: Required<
-    Omit<WsConnectionOptions, "pinnedVersion" | "versionPolicy" | "clientNonce">
+    Omit<WsConnectionOptions, "pinnedVersion" | "versionPolicy" | "clientNonce" | "runtime">
   > &
-    Pick<WsConnectionOptions, "pinnedVersion" | "versionPolicy" | "clientNonce">;
+    Pick<WsConnectionOptions, "pinnedVersion" | "versionPolicy" | "clientNonce" | "runtime">;
   private closedByUs = false;
   private lastIdentity: ServerIdentityCheck | null = null;
 
@@ -174,6 +179,23 @@ export class WsConnection implements ContinuityTransport {
 
   /** Open the socket, send the hello, assert version. Bounded by open + hello timeouts. */
   async connect(): Promise<RuntimeStartResponseFrame> {
+    await this.openAndGate();
+    return this.doHello();
+  }
+
+  /**
+   * Open the socket and run the version gate WITHOUT a `runtime_start` hello.
+   *
+   * The resident controller's connections are not born onto one runtime: the hot set may be
+   * empty at boot, and subscriptions are issued per registry row afterwards (S6 proved one
+   * socket carries N concurrent runtimes). The version gate still runs unconditionally — a
+   * bare connection to a drifted server must fail exactly as loudly as a hello'd one.
+   */
+  async connectBare(): Promise<void> {
+    await this.openAndGate();
+  }
+
+  private async openAndGate(): Promise<void> {
     this.closedByUs = false;
     const socket = new WebSocket(this.opts.url);
     this.socket = socket;
@@ -187,8 +209,6 @@ export class WsConnection implements ContinuityTransport {
     // Version gate BEFORE the hello: fail fast on a drifted server rather than after
     // starting a runtime on it. Verified live — `app_server_info` answers pre-runtime_start.
     this.lastIdentity = await this.assertIdentity();
-
-    return this.doHello();
   }
 
   /**
@@ -252,6 +272,11 @@ export class WsConnection implements ContinuityTransport {
   }
 
   private doHello(): Promise<RuntimeStartResponseFrame> {
+    if (!this.opts.runtime) {
+      throw new ProtocolError(
+        "connect() requires a `runtime` — a runtime-less connection must use connectBare()",
+      );
+    }
     const requestId = nextRequestId("rt", this.opts.clientNonce);
     const responseType = RpcResponseFor[Outbound.runtimeStart];
     if (!responseType) throw new ProtocolError("no known response type for `runtime_start`");

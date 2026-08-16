@@ -12,6 +12,7 @@
 
 const CORE = "letta-continuity-core";
 const TERMINAL = "letta-terminal";
+const CONTROLLER = "continuity-controller";
 
 export const MUTATIONS = [
   // ── 1-13: the set that used to survive ─────────────────────────────────
@@ -1027,5 +1028,119 @@ export const MUTATIONS = [
         const handle = core.send(oneShotMessage);
         io.stdout(ndjson({ kind: "sent", requestId: handle.requestId, text: oneShotMessage }));`,
     expect: /reads a line the same way the human path does/,
+  },
+  // ── 64-72: Unit C3 — controller skeleton (plan 2026-08-15-006) ─────────────
+  {
+    id: 64,
+    pkg: CORE,
+    file: "src/ws.ts",
+    label: "C3: connectBare skips the version gate (a bare socket attaches to a drifted server)",
+    tests: ["test/ws.bare.test.ts"],
+    find: `    this.lastIdentity = await this.assertIdentity();`,
+    replace: `    this.lastIdentity = null;`,
+    expect: /drifted server is REFUSED before any runtime exists/,
+  },
+  {
+    id: 65,
+    pkg: CORE,
+    file: "test/helpers/mockServer.ts",
+    label: "C3: the double regresses to one-runtime-per-socket (latest hello re-homes the connection)",
+    tests: ["test/ws.bare.test.ts"],
+    find: `    return [...this.conns].filter((c) =>
+      c.runtimes.has(\`\${runtime.agent_id}:\${runtime.conversation_id}\`),
+    );`,
+    replace: `    return [...this.conns].filter(
+      (c) =>
+        c.runtime?.agent_id === runtime.agent_id &&
+        c.runtime?.conversation_id === runtime.conversation_id,
+    );`,
+    expect: /receives broadcasts for the FIRST after a second hello/,
+  },
+  {
+    id: 66,
+    pkg: CONTROLLER,
+    file: "src/hotset.ts",
+    label: "C3: the worker's subscription stops being replay-complete (wait_for_replay dropped)",
+    tests: ["test/hotset.test.ts"],
+    find: `          buildRuntimeStart(rid, ref, options.waitForReplay ? { waitForReplay: true } : undefined),`,
+    replace: `          buildRuntimeStart(rid, ref),`,
+    expect: /wait_for_replay for the worker/,
+  },
+  {
+    id: 67,
+    pkg: CONTROLLER,
+    file: "src/worker.ts",
+    label: "C3: a failed liveness probe still writes a fresh liveness file (watchdog blinded)",
+    tests: ["test/worker.test.ts"],
+    find: `      const detail = e instanceof Error ? e.message : String(e);
+      this.opts.journal.append("liveness_probe_failed", { detail });
+      this.loop.bounce(\`liveness probe failed: \${detail}\`);`,
+    replace: `      void e;
+      this.writeLiveness(this.opts.registry.hotRows().length);`,
+    expect: /liveness probe MISS bounces the connection/,
+  },
+  {
+    id: 68,
+    pkg: CONTROLLER,
+    file: "src/state/db.ts",
+    label: "C3: a corrupt authority is rebuilt SILENTLY (degraded report suppressed)",
+    tests: ["test/registry.test.ts"],
+    find: `      degraded = \`\${degraded}; damaged db preserved at \${aside}; starting with a REBUILT (empty) authority\`;`,
+    replace: `      degraded = null;`,
+    expect: /corrupt db DEGRADES VISIBLY/,
+  },
+  {
+    id: 69,
+    pkg: CONTROLLER,
+    file: "src/anchor.ts",
+    label: "C3: the anchor sees the hotset_version bump and does nothing",
+    tests: ["test/anchor.test.ts"],
+    find: `    if (version === this.seenHotsetVersion) return;
+    await this.subscribePass(conn);`,
+    replace: `    if (version === this.seenHotsetVersion) return;`,
+    expect: /follows a hotset_version bump within one poll/,
+  },
+  {
+    id: 70,
+    pkg: CONTROLLER,
+    file: "src/registry.ts",
+    label: "C3: the created-conversations-only rule vanishes (a `default` row severs reconciliation)",
+    tests: ["test/registry.test.ts"],
+    find: `    if (input.conversation_id === "default") {
+      throw new RegistryError(
+        "registry rows must reference CREATED conversations — the \`default\` alias is " +
+          "unresolvable by conversation_messages_list (C1 S3), which would sever this thread " +
+          "from transcript reconciliation",
+      );
+    }`,
+    replace: ``,
+    expect: /REFUSES a .default. conversation row/,
+  },
+  {
+    id: 71,
+    pkg: CONTROLLER,
+    file: "src/connection-loop.ts",
+    label: "C3: budget exhaustion becomes a silent unbounded retry (onExhausted never fires)",
+    tests: ["test/connection-loop.test.ts"],
+    find: `    if (!this.sm.dropped()) {
+      this.opts.onExhausted();
+      return;
+    }`,
+    replace: `    this.sm.dropped();`,
+    expect: /reports exhaustion after the bounded budget/,
+  },
+  {
+    id: 72,
+    pkg: CONTROLLER,
+    file: "src/worker.ts",
+    label: "C3: a refused registry row is skipped without being marked or journaled",
+    tests: ["test/worker.test.ts"],
+    find: `          this.opts.registry.markBroken(b.runtime, b.reason);
+          this.opts.journal.append("registry_row_broken", {
+            runtime: b.runtime,
+            reason: b.reason,
+          });`,
+    replace: ``,
+    expect: /marked broken in the REGISTRY and journaled/,
   },
 ];
