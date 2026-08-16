@@ -562,7 +562,7 @@ in the package README.
 
 ### Phase C — Surfaces and delivery
 
-- [ ] **Unit C6: Terminal surface on the controller**
+- [x] **Unit C6: Terminal surface on the controller** *(UX contract green through the swap; detach-mid-turn inversion demonstrated live on clone)*
 
 **Goal:** `letta-continuity` (terminal) speaks the surface protocol instead of raw App-Server
 WS — the first real surface, core tier + approvals + direct-lane addressing.

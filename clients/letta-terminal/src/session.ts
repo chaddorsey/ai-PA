@@ -163,9 +163,15 @@ export class TerminalSession {
    * are deliberately never surfaced — they routinely carry file contents or credentials.
    */
   private onApproval(e: { toolName: string | undefined; outcome: string }): void {
+    // Two regimes share this channel: the raw path's auto-deny backstop, and the controller
+    // path's operator-answerable arbitration (C6).
+    const detail =
+      e.outcome === "pending"
+        ? "/approve or /deny to answer"
+        : `auto-${e.outcome}; no approval UI in this milestone`;
     this.emit(
       this.renderer.renderNotice(
-        `tool approval requested (${e.toolName ?? "unknown tool"}) — auto-${e.outcome}; no approval UI in this milestone`,
+        `tool approval requested (${e.toolName ?? "unknown tool"}) — ${detail}`,
         "warn",
       ),
     );

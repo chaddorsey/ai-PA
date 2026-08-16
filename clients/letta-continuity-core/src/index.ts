@@ -221,7 +221,8 @@ export interface ContinuityCoreConfig {
 export interface ApprovalEvent {
   requestId: string;
   toolName: string | undefined;
-  outcome: "denied";
+  /** "denied" = the M1 auto-deny backstop; "pending" = a controller-arbitrated approval awaiting the operator. */
+  outcome: "denied" | "pending";
 }
 
 export class ContinuityCore {

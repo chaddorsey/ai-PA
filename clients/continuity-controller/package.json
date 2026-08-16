@@ -7,6 +7,17 @@
   "bin": {
     "continuity-controller": "./src/main.ts"
   },
+  "exports": {
+    "./worker": "./src/worker.ts",
+    "./anchor": "./src/anchor.ts",
+    "./registry": "./src/registry.ts",
+    "./journal": "./src/journal.ts",
+    "./turns": "./src/turns.ts",
+    "./state/db": "./src/state/db.ts",
+    "./state/journal": "./src/state/journal.ts",
+    "./surface/auth": "./src/surface/auth.ts",
+    "./surface/protocol": "./src/surface/protocol.ts"
+  },
   "scripts": {
     "start": "tsx src/main.ts worker",
     "start:anchor": "tsx src/main.ts anchor",

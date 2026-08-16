@@ -31,6 +31,17 @@ export interface CliOptions {
   strictVersion: boolean;
   /** Permit a non-loopback App Server URL. Off by default — loopback is the trust boundary. */
   allowRemote: boolean;
+  /**
+   * Which transport carries the session. `controller` (default since C6) speaks the
+   * Continuity Controller's surface protocol; `direct` is the raw-WS BREAK-GLASS path
+   * (operator decision 2026-08-15) — single-submitter ownership and attribution guarantees
+   * are suspended while it is in use.
+   */
+  transport: "controller" | "direct";
+  /** Controller surface endpoint. */
+  controllerUrl: string;
+  /** Controller surface token file. */
+  tokenFile: string;
 }
 
 export class CliError extends Error {
@@ -56,6 +67,14 @@ const DEFAULT_TIMEOUT_SECONDS = 180;
 const MAX_TIMEOUT_SECONDS = Math.floor((2 ** 31 - 1) / 1000);
 
 export const DEFAULT_POINTER_PATH = join(homedir(), ".letta", "continuity-pointer.json");
+export const DEFAULT_CONTROLLER_URL = "ws://127.0.0.1:4610/surface";
+export const DEFAULT_TOKEN_FILE = join(
+  homedir(),
+  "Library",
+  "Application Support",
+  "continuity-controller",
+  "surface-token",
+);
 
 export const USAGE = `letta-continuity — terminal client for the sole-owner Letta App Server
 
@@ -71,8 +90,9 @@ appear in the same transcript.
 OPTIONS
   --pointer <path>   Pointer file to read (default: ${DEFAULT_POINTER_PATH},
                      or $LETTA_CONTINUITY_POINTER)
-  --url <ws-url>     App Server WS URL (default: the core's ws://127.0.0.1:4577/ws,
-                     or $LETTA_CONTINUITY_WS_URL)
+  --url <ws-url>     App Server WS URL for the DIRECT path (implies --direct when given as a
+                     flag; default: the core's ws://127.0.0.1:4577/ws, or
+                     $LETTA_CONTINUITY_WS_URL)
   --agent <id>       Attach to this agent (with --conversation), instead of reading a pointer
   --conversation <id>
   --message <text>   Send one message, print the reply, exit. Also the default when stdin is
@@ -83,6 +103,15 @@ OPTIONS
   --write-pointer <path>
                      conversations create: write the resulting pointer file, so the seed loop
                      closes without hand-rolling JSON
+  --direct           BREAK-GLASS: attach to the App Server's raw WS instead of the Continuity
+                     Controller. Single-submitter ownership and attribution guarantees are
+                     SUSPENDED while this is in use; detaching mid-turn may cancel the turn
+  --controller-url <ws-url>
+                     Controller surface endpoint (default: ${DEFAULT_CONTROLLER_URL},
+                     or $LETTA_CONTINUITY_CONTROLLER_URL)
+  --token-file <path>
+                     Controller surface token (default: the controller state dir's
+                     surface-token, or $LETTA_CONTINUITY_TOKEN_FILE)
   --reasoning        Show the model's reasoning stream (hidden by default)
   --strict-version   Refuse to attach unless the server is a contract-verified version
   --allow-remote     Permit a non-loopback --url (loopback is the trust boundary; there is no
@@ -134,9 +163,13 @@ export function parseArgs(argv: readonly string[], env: NodeJS.ProcessEnv = {}):
     command: "attach",
     title: undefined,
     writePointer: undefined,
+    transport: env.LETTA_CONTINUITY_TRANSPORT === "direct" ? "direct" : "controller",
+    controllerUrl: env.LETTA_CONTINUITY_CONTROLLER_URL || DEFAULT_CONTROLLER_URL,
+    tokenFile: env.LETTA_CONTINUITY_TOKEN_FILE || DEFAULT_TOKEN_FILE,
   };
 
   // Subcommands are positional and must come first, so they cannot be confused with a value.
+  let urlFromFlag = false;
   let args = argv;
   if (args[0] === "conversations") {
     const verb = args[1];
@@ -165,6 +198,21 @@ export function parseArgs(argv: readonly string[], env: NodeJS.ProcessEnv = {}):
       case "--allow-remote":
         opts.allowRemote = true;
         break;
+      case "--direct":
+        opts.transport = "direct";
+        break;
+      case "--controller-url": {
+        const value = args[++i];
+        if (!value) throw new CliError("--controller-url requires a ws:// URL");
+        opts.controllerUrl = value;
+        break;
+      }
+      case "--token-file": {
+        const value = args[++i];
+        if (!value) throw new CliError("--token-file requires a path");
+        opts.tokenFile = resolve(value);
+        break;
+      }
       case "--pointer": {
         const value = args[++i];
         if (!value) throw new CliError("--pointer requires a path");
@@ -223,6 +271,7 @@ export function parseArgs(argv: readonly string[], env: NodeJS.ProcessEnv = {}):
         const value = args[++i];
         if (!value) throw new CliError("--url requires a ws:// URL");
         opts.url = value;
+        urlFromFlag = true;
         break;
       }
       default:
@@ -230,6 +279,14 @@ export function parseArgs(argv: readonly string[], env: NodeJS.ProcessEnv = {}):
     }
   }
   if (opts.url) assertLoopbackUrl(opts.url, opts.allowRemote);
+  // The controller boundary is loopback-only — same trust rule, same friendly error.
+  assertLoopbackUrl(opts.controllerUrl, false);
+  // A `--url` FLAG names the raw App Server, so it implies the direct transport — silently
+  // attaching somewhere other than the URL the caller just typed would be worse than the
+  // implication. An ENV-supplied URL does not flip the transport: env lingers from pre-C6
+  // installs, and ambient state must not quietly suspend the controller's guarantees (the
+  // direct path announces itself at startup either way).
+  if (urlFromFlag && opts.transport === "controller") opts.transport = "direct";
   if ((opts.agentId === undefined) !== (opts.conversationId === undefined)) {
     throw new CliError("--agent and --conversation must be given together");
   }

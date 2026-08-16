@@ -143,3 +143,17 @@ describe("agent-native surface", () => {
     );
   });
 });
+
+describe("transport selection (C6)", () => {
+  it("defaults to the controller; a --url FLAG implies the direct break-glass path", () => {
+    expect(parseArgs([], {}).transport).toBe("controller");
+    expect(parseArgs(["--url", "ws://127.0.0.1:4599/ws"], {}).transport).toBe("direct");
+    expect(parseArgs(["--direct"], {}).transport).toBe("direct");
+  });
+
+  it("an ENV-supplied URL does NOT flip the transport (ambient state must not suspend guarantees)", () => {
+    const o = parseArgs([], { LETTA_CONTINUITY_WS_URL: "ws://127.0.0.1:4599/ws" });
+    expect(o.transport).toBe("controller");
+    expect(o.url).toBe("ws://127.0.0.1:4599/ws");
+  });
+});

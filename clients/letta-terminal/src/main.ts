@@ -21,13 +21,13 @@ import { fileURLToPath } from "node:url";
 import {
   ContinuityCore,
   type ContinuityCoreConfig,
-  type ContinuityFatalError,
   type RenderEvent,
   evictOldest,
   protocol,
   writePointer,
 } from "@ai-pa/letta-continuity-core";
 import { CliError, USAGE, parseArgs } from "./cli.js";
+import { ControllerCore } from "./controller-core.js";
 import { MAX_TRACKED_ORIGINS } from "./render.js";
 import { sanitize } from "./sanitize.js";
 import { TerminalSession, classifyInput } from "./session.js";
@@ -160,7 +160,9 @@ export interface JsonBridgeCore {
   onRender: (cb: (e: RenderEvent) => void) => () => void;
   onConnectionState: (cb: (state: string) => void) => () => void;
   onApproval: (cb: (a: { requestId: string; outcome: string }) => void) => () => void;
-  onFatal: (cb: (err: ContinuityFatalError) => void) => () => void;
+  onFatal: (
+    cb: (err: { reason: string; requestId?: string; origin?: string; message: string }) => void,
+  ) => () => void;
   onError: (cb: (err: Error) => void) => () => void;
   ownsRun: (runId: string | undefined) => boolean;
   attributeRun: (runId: string | undefined) => string;
@@ -215,7 +217,7 @@ export function attachJson(
     }),
     core.onConnectionState((state) => io.stderr(ndjson({ kind: "connection_state", state }))),
     core.onApproval((a) => io.stderr(ndjson({ kind: "approval", ...a }))),
-    core.onFatal((err: ContinuityFatalError) =>
+    core.onFatal((err) =>
       io.stderr(
         ndjson({
           kind: "fatal",
@@ -299,6 +301,157 @@ async function runConversationsCommand(
   return 0;
 }
 
+/**
+ * The controller-transport session (C6): the terminal as a SURFACE. Reuses the reviewed,
+ * mutation-bound render/sanitize/NDJSON machinery through the same seams the raw path uses —
+ * only the transport under them changed. Session commands beyond plain text: `/abort`
+ * (operator turn kill), `/approve` · `/deny` (approval arbitration). An `@specialist` address
+ * is NOT parsed here — the controller owns routing; the terminal passes the line through.
+ */
+async function runController(
+  options: ReturnType<typeof parseArgs>,
+  io: TerminalIO,
+): Promise<number> {
+  if (options.command !== "attach") {
+    io.stderr(
+      "— conversation management over the controller arrives with the web-surface unit (C9); use --direct (break-glass) for now\n",
+    );
+    return 2;
+  }
+  let runtime: { agent_id: string; conversation_id: string };
+  if (options.agentId && options.conversationId) {
+    runtime = { agent_id: options.agentId, conversation_id: options.conversationId };
+  } else {
+    const { readPointer } = await import("@ai-pa/letta-continuity-core");
+    try {
+      const pointer = await readPointer(options.pointerPath);
+      runtime = { agent_id: pointer.agentId, conversation_id: pointer.conversationId };
+    } catch (err) {
+      io.stderr(`\nCould not attach: ${sanitize((err as Error).message, { maxLength: 512 })}\n`);
+      return 1;
+    }
+  }
+
+  const core = new ControllerCore({
+    url: options.controllerUrl,
+    tokenFile: options.tokenFile,
+    runtime,
+    onWarn: (msg) => io.stderr(`— ${sanitize(msg, { maxLength: 512 })}\n`),
+  });
+
+  let exitCode = 0;
+  core.onFatal(() => {
+    exitCode = 1;
+  });
+
+  const session = new TerminalSession(core, {
+    write: io.stdout,
+    writeErr: io.stderr,
+    color: options.color ?? io.isStdoutTTY,
+    showReasoning: options.showReasoning,
+  });
+  const detach = options.json ? attachJson(core, io) : session.attach();
+  // A FAILED-VISIBLE turn is a failed run whichever way it is rendered (same rule as the raw
+  // path's ERROR_DELTA_TYPES hook).
+  core.onTurnOutcome((_cm, outcome) => {
+    if (outcome.startsWith("FAILED") || outcome.startsWith("failed")) exitCode = 1;
+  });
+
+  try {
+    await core.start();
+  } catch (err) {
+    io.stderr(`\nCould not attach: ${sanitize((err as Error).message, { maxLength: 512 })}\n`);
+    detach();
+    core.stop();
+    return 1;
+  }
+
+  const oneShotMessage = options.message ?? (await io.readPipedMessage());
+  if (oneShotMessage !== undefined) {
+    const code = await new Promise<number>((resolve) => {
+      let settled = false;
+      let myCm: string | null = null;
+      const finish = (c: number): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(c);
+      };
+      const timer = setTimeout(() => {
+        io.stderr(`— timed out after ${options.timeoutSeconds}s waiting for a reply\n`);
+        finish(1);
+      }, options.timeoutSeconds * 1000);
+      core.onReceipt((cm) => {
+        myCm = cm;
+        if (options.json) io.stdout(ndjson({ kind: "sent", clientMessageId: cm }));
+      });
+      // Controller data ends the wait: the outcome row for EXACTLY our receipt's turn.
+      core.onTurnOutcome((cm, outcome) => {
+        if (cm !== null && cm === myCm) {
+          finish(outcome.startsWith("FAILED") || outcome.startsWith("failed") ? 1 : 0);
+        }
+      });
+      core.onFatal(() => finish(1));
+      const intent = classifyInput(oneShotMessage);
+      if (intent.kind !== "send") return finish(0);
+      const outcome = options.json
+        ? ((): InputOutcome => {
+            try {
+              core.send(intent.text);
+              return "sent";
+            } catch (err) {
+              io.stderr(ndjson({ kind: "error", message: (err as Error).message }));
+              return "failed";
+            }
+          })()
+        : session.handleInput(oneShotMessage);
+      if (outcome !== "sent") {
+        io.stderr("— message was not delivered\n");
+        finish(1);
+      }
+    });
+    session.finish();
+    detach();
+    core.stop();
+    return code === 0 ? exitCode : code;
+  }
+
+  io.stderr(
+    `— attached via controller to ${sanitize(runtime.agent_id, { maxLength: 120 })} · conversation ${sanitize(runtime.conversation_id, { maxLength: 120 })}
+— type a message and press Enter; /exit leaves, /abort kills the running turn, /approve · /deny answer approvals
+`,
+  );
+
+  await io.interactive((line) => {
+    const trimmed = line.trim();
+    if (trimmed === "/abort") {
+      try {
+        core.abort();
+        io.stderr("— abort requested\n");
+      } catch (err) {
+        io.stderr(`— abort failed: ${sanitize((err as Error).message, { maxLength: 256 })}\n`);
+      }
+      return "ignored";
+    }
+    if (trimmed === "/approve" || trimmed === "/deny") {
+      const answered = core.answerApproval(trimmed === "/approve" ? "allow" : "deny");
+      io.stderr(answered ? `— ${trimmed.slice(1)} sent\n` : "— no approval is pending\n");
+      return "ignored";
+    }
+    const outcome = session.handleInput(line);
+    if (outcome === "failed") exitCode = 1;
+    return outcome;
+  });
+
+  session.finish();
+  detach();
+  core.stop();
+  // The INVERSE of the raw-WS detach caveat, by architecture: the controller's anchor+worker
+  // hold the runtime's subscriptions, so a running turn continues without this terminal.
+  io.stderr("— detached (the controller keeps the turn running; re-attach to catch up)\n");
+  return exitCode;
+}
+
 /** The whole program. Returns the exit code; writes nothing except through `io`. */
 export async function run(
   argv: readonly string[],
@@ -326,6 +479,13 @@ export async function run(
     io.stdout(`${USAGE}\n`);
     return 0;
   }
+
+  // C6: the controller transport is the DEFAULT. The raw-WS path below survives as the
+  // break-glass client (operator decision 2026-08-15) and announces its suspended guarantees.
+  if (options.transport === "controller") return runController(options, io);
+  io.stderr(
+    "— DIRECT (break-glass) transport: single-submitter ownership and attribution guarantees are suspended; detaching mid-turn may cancel the turn\n",
+  );
 
   const color = options.color ?? io.isStdoutTTY;
   const config: ContinuityCoreConfig = {
@@ -459,7 +619,9 @@ export async function run(
   // over — and in ordinary terminal use this IS the only client. Verified live: a turn executing
   // a 25s tool was dead within 6s of detaching, runtime back to WAITING_ON_INPUT with no output.
   // The old message told the operator the opposite of what happens at the moment it printed.
-  io.stderr("— detached (a turn still running may have been cancelled; the conversation remains)\n");
+  io.stderr(
+    "— detached (a turn still running may have been cancelled; the conversation remains)\n",
+  );
   return exitCode;
 }
 
