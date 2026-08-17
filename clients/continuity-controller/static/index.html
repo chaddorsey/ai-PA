@@ -469,6 +469,12 @@ el("composer").addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value.trim();
   if (!text || !attached) return;
+  if (text === "/model" || text.startsWith("/model ")) {
+    handleModelCommand(text.slice("/model".length).trim());
+    input.value = "";
+    input.style.height = "";
+    return;
+  }
   const request_id = crypto.randomUUID();
   const b = bubble("you pending", text);
   pendingSends.set(request_id, b);
@@ -486,6 +492,44 @@ input.addEventListener("input", () => {
   input.style.height = "";
   input.style.height = Math.min(input.scrollHeight, 120) + "px";
 });
+
+/* ---- /model command ----
+   `/model`        show the runtime's current model
+   `/model list`   list what the server's provider config (litellm harness) can reach
+   `/model <id>`   switch THIS runtime live (update_model under the hood)              */
+async function handleModelCommand(arg) {
+  const dir = location.pathname.replace(/[^/]*$/, "");
+  try {
+    if (!arg) {
+      const r = await fetch(`${dir}agent-info?agent=${encodeURIComponent(store.agent)}`);
+      const info = await r.json();
+      line(`model · ${info.model || "?"} — /model list to enumerate, /model <id> to switch`);
+      return;
+    }
+    if (arg === "list") {
+      const r = await fetch(`${dir}models`);
+      const m = await r.json();
+      if (m.error) { line(`models: ${m.error}`, "error"); return; }
+      const handles = (m.available_handles || [])
+        .map((h) => (typeof h === "string" ? h : h && h.handle) || "")
+        .filter(Boolean);
+      line(handles.length ? `available: ${handles.join("  ")}` : "no models reported");
+      return;
+    }
+    line(`switching model to ${arg}…`);
+    const r = await fetch(`${dir}agent-model`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${store.token}` },
+      body: JSON.stringify({ agent_id: store.agent, conversation_id: store.conv, model: arg }),
+    });
+    const out = await r.json();
+    if (!r.ok || out.error) { line(`model switch failed: ${out.error || r.status}`, "error"); return; }
+    line(`model switched · ${out.model}`);
+    refreshModelFooter();
+  } catch (err) {
+    line(`model command failed: ${err && err.message ? err.message : err}`, "error");
+  }
+}
 
 /* ---- model footer ---- */
 async function refreshModelFooter() {

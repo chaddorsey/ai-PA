@@ -64,6 +64,16 @@ function isAgentInfoPath(rawUrl: string | undefined): boolean {
   return pathname === "/agent-info" || pathname.endsWith("/agent-info");
 }
 
+function isModelsPath(rawUrl: string | undefined): boolean {
+  const pathname = (rawUrl ?? "").split("?")[0] ?? "";
+  return pathname === "/models" || pathname.endsWith("/models");
+}
+
+function isAgentModelPath(rawUrl: string | undefined): boolean {
+  const pathname = (rawUrl ?? "").split("?")[0] ?? "";
+  return pathname === "/agent-model" || pathname.endsWith("/agent-model");
+}
+
 /** Models change rarely; a short TTL keeps footer fetches off the WS. */
 const AGENT_INFO_CACHE_TTL_MS = 60_000;
 
@@ -90,6 +100,13 @@ export interface SurfaceServerOptions {
    * Serves the web slice's `GET …/agent-info` model footer. Optional: absent → 501.
    */
   agentInfo?: (agentId: string) => Promise<Record<string, unknown>>;
+  /** `GET …/models`: what the provider config (litellm harness included) can reach. */
+  listModels?: () => Promise<{ entries: unknown[]; available_handles: unknown[] }>;
+  /**
+   * `POST …/agent-model` (Bearer surface token — HTTP can carry the header browsers can't
+   * set on a WS upgrade): RUNTIME-scoped live switch via `update_model`.
+   */
+  setModel?: (runtime: RuntimeRef, modelIdentifier: string) => Promise<string>;
   onWarn?: (msg: string) => void;
 }
 
@@ -108,6 +125,14 @@ export class SurfaceServer {
     this.http = createServer((req, res) => {
       if (req.method === "GET" && isAgentInfoPath(req.url)) {
         this.serveAgentInfo(req.url ?? "", res);
+        return;
+      }
+      if (req.method === "GET" && isModelsPath(req.url)) {
+        this.serveModels(res);
+        return;
+      }
+      if (req.method === "POST" && isAgentModelPath(req.url)) {
+        this.serveAgentModel(req, res);
         return;
       }
       if ((req.method === "GET" || req.method === "HEAD") && isPagePath(req.url)) {
@@ -181,6 +206,81 @@ export class SurfaceServer {
         json(503, JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
       },
     );
+  }
+
+  /** `GET …/models` → `{entries, available_handles}` (60s cache; read-only, no auth). */
+  private modelsCache: { at: number; body: string } | null = null;
+  private serveModels(res: import("node:http").ServerResponse): void {
+    const json = (code: number, body: string) => {
+      res.statusCode = code;
+      res.setHeader("content-type", "application/json; charset=utf-8");
+      res.end(body);
+    };
+    if (!this.opts.listModels) {
+      json(501, JSON.stringify({ error: "models not wired" }));
+      return;
+    }
+    if (this.modelsCache && Date.now() - this.modelsCache.at < AGENT_INFO_CACHE_TTL_MS) {
+      json(200, this.modelsCache.body);
+      return;
+    }
+    this.opts.listModels().then(
+      (models) => {
+        const body = JSON.stringify(models);
+        this.modelsCache = { at: Date.now(), body };
+        json(200, body);
+      },
+      (err: unknown) =>
+        json(503, JSON.stringify({ error: err instanceof Error ? err.message : String(err) })),
+    );
+  }
+
+  /**
+   * `POST …/agent-model` `{agent_id, conversation_id, model}` → live runtime switch.
+   * MUTATING, so Bearer-token-gated with the same surface token the WS attach uses.
+   */
+  private serveAgentModel(
+    req: import("node:http").IncomingMessage,
+    res: import("node:http").ServerResponse,
+  ): void {
+    const json = (code: number, body: string) => {
+      res.statusCode = code;
+      res.setHeader("content-type", "application/json; charset=utf-8");
+      res.end(body);
+    };
+    if (!this.opts.setModel) {
+      json(501, JSON.stringify({ error: "agent-model not wired" }));
+      return;
+    }
+    const presented = (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
+    if (!presented || !verifySurfaceToken(this.opts.token, presented)) {
+      json(401, JSON.stringify({ error: "bad token" }));
+      return;
+    }
+    const chunks: Buffer[] = [];
+    req.on("data", (c: Buffer) => chunks.push(c));
+    req.on("end", () => {
+      let body: { agent_id?: string; conversation_id?: string; model?: string };
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      } catch {
+        json(400, JSON.stringify({ error: "invalid JSON body" }));
+        return;
+      }
+      const { agent_id, conversation_id, model } = body;
+      if (!agent_id || !conversation_id || !model) {
+        json(400, JSON.stringify({ error: "need agent_id, conversation_id, model" }));
+        return;
+      }
+      this.opts.setModel?.({ agent_id, conversation_id }, model).then(
+        (handle) => {
+          this.agentInfoCache.delete(agent_id); // the footer must not serve the stale model
+          json(200, JSON.stringify({ agent_id, model: handle }));
+        },
+        (err: unknown) =>
+          json(502, JSON.stringify({ error: err instanceof Error ? err.message : String(err) })),
+      );
+    });
   }
 
   async stop(): Promise<void> {

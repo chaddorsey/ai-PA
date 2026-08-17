@@ -209,6 +209,9 @@ export const Outbound = {
   conversationFork: "conversation_fork",
   conversationMessagesList: "conversation_messages_list",
   agentRetrieve: "agent_retrieve",
+  agentUpdate: "agent_update",
+  listModels: "list_models",
+  updateModel: "update_model",
   sync: "sync",
   abortMessage: "abort_message",
 } as const;
@@ -232,6 +235,9 @@ export const Inbound = {
   conversationForkResponse: "conversation_fork_response",
   conversationMessagesListResponse: "conversation_messages_list_response",
   agentRetrieveResponse: "agent_retrieve_response",
+  agentUpdateResponse: "agent_update_response",
+  listModelsResponse: "list_models_response",
+  updateModelResponse: "update_model_response",
   syncResponse: "sync_response",
   abortMessageResponse: "abort_message_response",
 } as const;
@@ -247,6 +253,9 @@ export const RpcResponseFor: Record<string, string> = {
   [Outbound.conversationFork]: Inbound.conversationForkResponse,
   [Outbound.conversationMessagesList]: Inbound.conversationMessagesListResponse,
   [Outbound.agentRetrieve]: Inbound.agentRetrieveResponse,
+  [Outbound.agentUpdate]: Inbound.agentUpdateResponse,
+  [Outbound.listModels]: Inbound.listModelsResponse,
+  [Outbound.updateModel]: Inbound.updateModelResponse,
   [Outbound.sync]: Inbound.syncResponse,
   [Outbound.abortMessage]: Inbound.abortMessageResponse,
 };
@@ -587,6 +596,65 @@ export interface AgentRetrieveResponseFrame extends ServerFrame {
   error?: string;
 }
 
+/**
+ * `agent_update` — PATCH the agent record (management tier). Verified against the
+ * 0.30.25 bundle: `{type, request_id, agent_id, body}` → same response shape as
+ * agent_retrieve (the updated record). Used by /model to PERSIST what update_model
+ * applied to the live runtime.
+ */
+export function buildAgentUpdate(
+  requestId: string,
+  agentId: string,
+  body: Record<string, unknown>,
+): ServerFrame {
+  return { type: Outbound.agentUpdate, request_id: requestId, agent_id: agentId, body };
+}
+
+/**
+ * `list_models` — enumerate the models the server's provider config can reach (for the
+ * lmstudio/* family this reflects the litellm harness's catalog). Verified against the
+ * 0.30.25 bundle: `{type, request_id, force?}` → `{entries, available_handles}`.
+ */
+export function buildListModels(requestId: string): ServerFrame {
+  return { type: Outbound.listModels, request_id: requestId };
+}
+
+export interface ListModelsResponseFrame extends ServerFrame {
+  type: "list_models_response";
+  request_id: string;
+  success: boolean;
+  entries?: unknown[];
+  available_handles?: unknown[];
+  error?: string;
+}
+
+/**
+ * `update_model` — RUNTIME-SCOPED model switch (the machinery behind the stock TUI's
+ * /model): applies to the LIVE runtime and persists. Verified against the 0.30.25 bundle:
+ * `{type, request_id, runtime, payload:{model_id?, model_handle?}}`; the vendor's own
+ * channel-gateway passes the identifier as BOTH model_id and model_handle.
+ */
+export function buildUpdateModel(
+  requestId: string,
+  runtime: Runtime,
+  modelIdentifier: string,
+): ServerFrame {
+  return {
+    type: Outbound.updateModel,
+    request_id: requestId,
+    runtime,
+    payload: { model_id: modelIdentifier, model_handle: modelIdentifier },
+  };
+}
+
+export interface UpdateModelResponseFrame extends ServerFrame {
+  type: "update_model_response";
+  request_id: string;
+  success: boolean;
+  model_handle?: string;
+  error?: string;
+}
+
 export function buildConversationList(requestId: string, agentId: string): ServerFrame {
   // The agent filter belongs in `query` — the server passes `parsed.query` straight to
   // listConversations(), so a top-level agent_id silently returns EVERY agent's conversations.
@@ -784,6 +852,9 @@ export function validateInboundFrame(frame: ServerFrame): void {
     case Inbound.conversationUpdateResponse:
     case Inbound.conversationForkResponse:
     case Inbound.agentRetrieveResponse:
+    case Inbound.agentUpdateResponse:
+    case Inbound.listModelsResponse:
+    case Inbound.updateModelResponse:
     case Inbound.conversationMessagesListResponse: {
       if (typeof frame.request_id !== "string")
         throw new ProtocolError(`${frame.type}: missing \`request_id\``);

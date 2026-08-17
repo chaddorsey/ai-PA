@@ -16,10 +16,15 @@ import type { DatabaseSync } from "node:sqlite";
 import type { ReconnectPolicy } from "@ai-pa/letta-continuity-core/connection";
 import {
   type AgentRetrieveResponseFrame,
+  type ListModelsResponseFrame,
   Outbound,
+  type UpdateModelResponseFrame,
   buildAgentRetrieve,
+  buildAgentUpdate,
   buildAppServerInfo,
+  buildListModels,
   buildSync,
+  buildUpdateModel,
 } from "@ai-pa/letta-continuity-core/protocol";
 import type { WsConnection } from "@ai-pa/letta-continuity-core/ws";
 import { ApprovalArbiter } from "./approvals.js";
@@ -286,6 +291,40 @@ export class WorkerDaemon {
           );
           if (!resp.success || !resp.agent) throw new Error(resp.error ?? "agent_retrieve failed");
           return resp.agent;
+        },
+        // /model support for the web slice: enumerate what the provider config (litellm
+        // harness included) can reach, and switch the LIVE runtime via update_model.
+        listModels: async () => {
+          const conn = this.loop.current;
+          if (!conn) throw new Error("app server connection down");
+          const resp = await conn.request<ListModelsResponseFrame>(
+            buildListModels,
+            Outbound.listModels,
+          );
+          if (!resp.success) throw new Error(resp.error ?? "list_models failed");
+          return { entries: resp.entries ?? [], available_handles: resp.available_handles ?? [] };
+        },
+        setModel: async (runtime: RuntimeRef, modelIdentifier: string) => {
+          const conn = this.loop.current;
+          if (!conn) throw new Error("app server connection down");
+          // update_model is a PER-RUNTIME override (verified live: the agent record keeps
+          // its old model) — live effect now, then agent_update persists the record so a
+          // runtime restart keeps the choice and agent-info/footer stay truthful.
+          const resp = await conn.request<UpdateModelResponseFrame>(
+            (rid) => buildUpdateModel(rid, runtime, modelIdentifier),
+            Outbound.updateModel,
+          );
+          if (!resp.success) throw new Error(resp.error ?? "update_model failed");
+          const handle = resp.model_handle ?? modelIdentifier;
+          const persisted = await conn.request<AgentRetrieveResponseFrame>(
+            (rid) => buildAgentUpdate(rid, runtime.agent_id, { model: handle }),
+            Outbound.agentUpdate,
+          );
+          if (!persisted.success)
+            throw new Error(
+              `live switch applied but persisting failed: ${persisted.error ?? "agent_update failed"}`,
+            );
+          return handle;
         },
       });
       this.surfaceBoundPort = await this.surface.start(this.opts.surfacePort);

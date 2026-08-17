@@ -89,6 +89,26 @@ describe("surface web slice (page + prefixed WS)", () => {
     expect(noParamBody.error).toContain("agent");
   });
 
+  it("POST /agent-model is token-gated and validates its body before touching the WS", async () => {
+    const { port, token } = await startStack();
+
+    const noAuth = await fetch(`http://127.0.0.1:${port}/agent-model`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agent_id: "a", conversation_id: "c", model: "m" }),
+    });
+    expect(noAuth.status).toBe(401);
+
+    const badBody = await fetch(`http://127.0.0.1:${port}/pa/agent-model`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ agent_id: "a" }),
+    });
+    expect(badBody.status).toBe(400);
+    const badBodyJson = (await badBody.json()) as { error: string };
+    expect(badBodyJson.error).toContain("model");
+  });
+
   it("WS attach works under a mount prefix, and a non-surface upgrade path is destroyed", async () => {
     const { port, token } = await startStack();
 
