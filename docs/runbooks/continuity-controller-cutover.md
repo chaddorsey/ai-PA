@@ -131,7 +131,18 @@ Each step names its clone rehearsal. Total attended time ≈ 20 min.
 10. **Announce**: new semantics (202-accept, detach inversion, /approve·/deny, @alias,
     /bind) to the operator surfaces that care.
 
-## 3. Rollback (< 1 minute, rehearsed)
+## 3. Rollback and full switch-back
+
+**The structural guarantee first: no step in this cutover migrates data.** Same backend
+files, same installed letta build — every step is a process swap over unchanged state. The
+controller's own state is an additive SQLite file on the side. Turns created during
+controller operation live in NEW (registry-created) conversations; rolling back strands
+them readable in the backend, corrupts nothing. Runbook step 1's backup is the backstop
+under all of the below.
+
+### 3a. Partial rollback — controller only (< 1 minute, rehearsed)
+
+Use when the controller misbehaves but the sole-owner App Server is fine:
 
 ```
 launchctl unload ~/Library/LaunchAgents/com.ai-pa.continuity-controller.plist \
@@ -141,9 +152,44 @@ launchctl unload ~/Library/LaunchAgents/com.ai-pa.continuity-controller.plist \
 ```
 
 Clone rehearsal 2026-08-16: unload → break-glass one-shot (exit 0, banner shown) → reload
-measured **1s total**; liveness fresh again within one probe interval. The controller's state (registry,
-journal, queue, routes) is SQLite — nothing to roll back; a re-load resumes from it
-(recovery reconciles in-flight turns via the transcript, proven as P3/P4).
+measured **1s total**; liveness fresh again within one probe interval. The controller's
+state (registry, journal, queue, routes) is SQLite — nothing to roll back; a re-load
+resumes from it (recovery reconciles in-flight turns via the transcript, proven as P3/P4).
+The App Server, enrichment, and the scheduler re-point (if kept) all keep working; the
+fleet stays quiesced or on break-glass until the controller reloads.
+
+### 3b. Full switch-back — restore the incumbent stack (≈ 2 minutes, all steps mechanical)
+
+Use to abandon the cutover entirely. Order matters: controller down BEFORE incumbent
+writers return (the sole owner's foreign-writer tripwire is still armed until its plist is
+unloaded).
+
+1. Unload the controller pair (3a's `launchctl unload`).
+2. Unload the sole-owner App Server:
+   `launchctl unload ~/Library/LaunchAgents/com.ai-pa.letta-app-server.plist`.
+3. Restore the incumbent server: `python3 scripts/restore-letta-app-server.py` (daemonizes,
+   restores `:4577 --openai-api` — this is the exact process that ran the system before the
+   cutover; verify with an `app_server_info` probe on :4577). Enrichment resumes
+   automatically (it was 503-retrying).
+4. Scheduler: restore the previous `LETTA_CALLBACK_URL` env value and
+   `docker-compose up -d --no-deps scheduler-service`. If the two `route=local` jobs were
+   PATCHed to `route=letta`, PATCH them back to `route=local` (job ids `6afa76c3`,
+   `1ccfae03`).
+5. Runner: `launchctl load ~/Library/LaunchAgents/com.ai-pa.letta-local-runner.plist`
+   (the plist stays on disk through bootout). memfs sync, extension tools, and warm-pool
+   recipes return with it.
+6. Fleet TUIs: reopen the tmux sessions (`tmux new -A -s kinara ~/bin/agent-supervise mc
+   ~/bin/letta-mc`, and likewise email/tasks/calendar/pulse) — only AFTER steps 2–3, since
+   they are direct writers.
+7. Letta Desktop: relaunch the app if it was in use (its cron lease has no tasks; nothing
+   depends on it).
+8. Terminal: the old `~/bin/letta-<slug>` wrappers were never deleted; `letta-continuity`
+   simply stops being the default surface.
+
+Post-switch-back state: byte-identical incumbent behaviour, plus some orphaned-but-harmless
+artifacts (the controller's SQLite state dir, the registry-created conversations in the
+backend, the ingress secret in the plist). Leave them; they make a second cutover attempt
+cheaper.
 
 ## 4. Operational notes
 

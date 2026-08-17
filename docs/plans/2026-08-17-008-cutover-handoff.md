@@ -64,6 +64,11 @@ Run runbook §2 top to bottom. Facts the fresh session would otherwise rediscove
 - **Same-sitting follow-ups**: PATCH the two `route=local` jobs (`6afa76c3`, `1ccfae03`) to
   `route=letta` (agent ids unchanged — already local ids); archive the fired rehearsal job
   `e054f4b5`; add the controller state dir to `deployment/scripts/backup.sh` host-data.
+- **Rollback**: runbook §3 — 3a partial (controller only, 1s, rehearsed) and 3b **full
+  switch-back to the incumbent stack** (≈2 min: controller down → sole owner down →
+  `restore-app-server.py` → scheduler env revert → runner reload → tmux TUIs → Desktop).
+  No data migrates anywhere; order matters (writers return only after the tripwire-armed
+  server is down).
 - **Verification** = runbook §2 step 9 checklist (P1/P2/C4 vitest live gates against `:4577`
   with a scratch agent via `clients/tools/scratch-agent.mjs`, scripted P3/P4, a 10:55
   one-off job, an `@specialist` exchange). P5 stays clone-only.
