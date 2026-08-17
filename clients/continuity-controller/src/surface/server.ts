@@ -391,7 +391,24 @@ export class SurfaceServer {
           if ((CAPABILITIES as readonly string[]).includes(cap)) declared.add(cap as Capability);
           else warnings.push(`unknown capability "${cap}" ignored (R28: degrade, never drop)`);
         }
-        const replayRows = this.opts.journal.rowsSince(command.runtime, command.cursor);
+        // Cursor semantics (fixed 2026-08-17 after the phone froze in the morning):
+        //  - null cursor  → the RECENT tail window (a fresh surface wants current context,
+        //    not the oldest 1000 rows of a 6k-row journal).
+        //  - numeric      → full catch-up, chunked: one capped chunk left a >1000-behind
+        //    surface with a silent gap (live fan-out then jumped its cursor past it).
+        let replayRows: TurnEventRow[];
+        if (command.cursor === null || command.cursor === undefined) {
+          replayRows = this.opts.journal.tailRows(command.runtime);
+        } else {
+          replayRows = [];
+          let from: number | null = command.cursor;
+          for (;;) {
+            const chunk = this.opts.journal.rowsSince(command.runtime, from);
+            replayRows.push(...chunk);
+            if (chunk.length < 1000) break;
+            from = chunk.at(-1)?.id ?? from;
+          }
+        }
         const replay = replayRows.map((row) => this.toEvent(row));
         const cursor = replayRows.length > 0 ? (replayRows.at(-1)?.id ?? 0) : (command.cursor ?? 0);
         session = {

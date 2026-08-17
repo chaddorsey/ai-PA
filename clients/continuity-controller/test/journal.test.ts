@@ -52,4 +52,32 @@ describe("TurnJournal", () => {
     for (const kind of ["a", "b", "c"]) journal.record({ runtime: RUNTIME, kind });
     expect(journal.eventsFor(RUNTIME).map((r) => r.kind)).toEqual(["a", "b", "c"]);
   });
+
+  it("tailRows returns the NEWEST window ascending — a fresh attach must not replay the morning", () => {
+    // Regression (2026-08-17, phone web slice): a null-cursor attach replayed from id 0
+    // with an ASC LIMIT, freezing fresh surfaces on a busy thread's oldest rows.
+    const journal = fresh();
+    for (let i = 0; i < 700; i++) journal.record({ runtime: RUNTIME, kind: `k${i}` });
+    const tail = journal.tailRows(RUNTIME, 500);
+    expect(tail).toHaveLength(500);
+    expect(tail[0]?.kind).toBe("k200"); // newest 500 of 700
+    expect(tail.at(-1)?.kind).toBe("k699"); // …ending at the true tail
+    const ids = tail.map((r) => r.id);
+    expect([...ids].sort((a, b) => a - b)).toEqual(ids); // ascending for the renderer
+  });
+
+  it("rowsSince pages forward chunk by chunk to the true tail (no silent 1000-row gap)", () => {
+    const journal = fresh();
+    for (let i = 0; i < 1200; i++) journal.record({ runtime: RUNTIME, kind: `k${i}` });
+    const all: string[] = [];
+    let cursor: number | null = 0;
+    for (;;) {
+      const chunk = journal.rowsSince(RUNTIME, cursor);
+      all.push(...chunk.map((r) => r.kind));
+      if (chunk.length < 1000) break;
+      cursor = chunk.at(-1)?.id ?? cursor;
+    }
+    expect(all).toHaveLength(1200);
+    expect(all.at(-1)).toBe("k1199");
+  });
 });

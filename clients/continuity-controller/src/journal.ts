@@ -111,6 +111,33 @@ export class TurnJournal {
     }));
   }
 
+  /**
+   * The NEWEST `limit` rows for a runtime, ascending. A cursor-less attach replays this
+   * tail window — replaying from id 0 with an ASC LIMIT served a busy thread its OLDEST
+   * rows and froze fresh surfaces in the morning (found live 2026-08-17, phone web slice).
+   */
+  tailRows(runtime: RuntimeRef, limit = 500): TurnEventRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM (
+           SELECT * FROM turn_events WHERE agent_id = ? AND conversation_id = ?
+           ORDER BY id DESC LIMIT ?
+         ) ORDER BY id ASC`,
+      )
+      .all(runtime.agent_id, runtime.conversation_id, limit) as Array<Record<string, unknown>>;
+    return rows.map((r) => ({
+      id: r.id as number,
+      agent_id: r.agent_id as string,
+      conversation_id: r.conversation_id as string,
+      client_message_id: (r.client_message_id as string | null) ?? null,
+      event_seq: (r.event_seq as number | null) ?? null,
+      idempotency_key: (r.idempotency_key as string | null) ?? null,
+      kind: r.kind as string,
+      payload: JSON.parse(r.payload as string) as Record<string, unknown>,
+      at: r.at as string,
+    }));
+  }
+
   eventsFor(runtime: RuntimeRef, limit = 500): TurnEventRow[] {
     const rows = this.db
       .prepare(

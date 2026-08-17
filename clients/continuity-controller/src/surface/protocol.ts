@@ -42,7 +42,7 @@ export interface AttachFrame {
   protocol_version: number;
   capabilities: string[];
   runtime: RuntimeAddress;
-  /** Last journal row id this surface has seen for the runtime; null = tail only. */
+  /** Last journal row id this surface has seen; null = the recent tail window (last ~500). */
   cursor: number | null;
 }
 export interface SendFrame {
