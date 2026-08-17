@@ -1,6 +1,6 @@
 ---
 title: "Continuity Controller cutover (terminal-first) — runbook"
-status: REHEARSED-ON-CLONE (2026-08-16); live execution is a separate operator-attended goal
+status: EXECUTED-LIVE (2026-08-17, operator attended) — see §5 execution record; previously REHEARSED-ON-CLONE (2026-08-16)
 origin: docs/plans/2026-08-15-006-feat-continuity-controller-plan.md (Unit C10b)
 ---
 
@@ -203,3 +203,39 @@ cheaper.
 - Known risks accepted by operator decision 2026-08-15: uncapped `notify_operator` /
   `manage_routes` / fan-out levers (journal audit only); controller-down = operator lockout
   except break-glass.
+
+## 5. Execution record (2026-08-17, ~08:50–09:15 ET, operator attended)
+
+All §2 steps executed; §9 checklist green. Deviations and facts a future reader needs:
+
+- **Snapshot (step 1)**: a fresh full backup could not run to completion in-session; the
+  02:00 nightly (`pa-ecosystem-backup-20260817_020000`, 130G) is the snapshot of record,
+  plus a **quiet-point** tar of `~/.letta/lc-local-backend` taken AFTER quiesce with zero
+  writers (`lc-local-backend-preCutover-20260817_0855.tar.gz`, 289M). HEAD at cutover:
+  `586907f0`. backup.sh now includes the controller state dir (host-data item 12).
+- **Server version drift (step 3)**: letta-code's vendored auto-updater bumped the global
+  install 0.30.20→0.30.23→0.30.25 overnight (~02:30/03:30). Operator decision at cutover:
+  proceed on **0.30.25**; the §9 gates served as the version-bump validation (all green).
+  Pins updated: `PINNED_SERVER_VERSION`/`VALIDATED_SERVER_VERSIONS` (protocol.ts) and the
+  controller's `@letta-ai/letta-code` devDependency. NOTE the updater will keep moving the
+  binary; the drift gate + live gates are the guard, and a restart of the App Server picks
+  up whatever is installed.
+- **letta-app-server console script** was missing from the pipx venv (install predated it);
+  fixed with `pipx install --force letta-push-receiver` + receiver restart.
+- The stopgap `restore-app-server.py` had NO trigger (hand-started nohup) — nothing to
+  unload; the script remains for §3b rollback.
+- **Registry**: six runtimes seeded (kinara default, tasks/docs/email/calendar/pulse) +
+  five `@alias` routes. A seventh scratch runtime used for P3/P4 was set cold and its agent
+  deleted (row `local-conv-2191` remains, inert by design — no registry delete exists).
+- **§9 evidence**: P1 (26.8s), P2 (5 tests), C4 gate green against live :4577 on 0.30.25.
+  P3 = worker `kickstart -k` mid-tool → `reconciled_still_running` → single `end_turn`,
+  journal exactly-once. P4 = App Server `kickstart -k` mid-turn →
+  `FAILED-VISIBLE:lost-to-restart`, next turn clean. 10:55 = one-off scheduler job
+  (`80920dcc`) → ingress → unseen row → presented+consumed on first attach. `@pulse`
+  exchange `cm-ff93e03e-f8da` → end_turn in the pulse thread, zero interactive Kinara
+  turns, muted digest flush carrying the exchange id.
+- **Scheduler**: `LETTA_CALLBACK_URL` set in `.env` (path-token ingress form); jobs
+  `6afa76c3`/`1ccfae03` PATCHed to `route=letta`; rehearsal job `e054f4b5` archived.
+- Clone rehearsal plists deleted from `~/Library/LaunchAgents`;
+  `/private/tmp/lc-clone-c1` + `/private/tmp/continuity-clone-state` kept until the
+  cutover soaks.

@@ -24,9 +24,12 @@
  *  - 0.30.19 — original Unit 4 capture (live :4577)
  *  - 0.30.20 — verified 2026-08-13 on a clone: protocol_version still 1, capabilities
  *    identical, all frames round-trip, real streamed turn completes without error.
+ *  - 0.30.25 — verified 2026-08-17 at cutover on the LIVE :4577 sole owner (operator
+ *    present; vendored auto-updater had bumped the install overnight): protocol_version
+ *    still 1, capabilities identical, P1/P2/C4 live gates green, P3/P4 scripted green.
  */
 /** The newest validated version — what a restart of the App Server brings up today. */
-export const PINNED_SERVER_VERSION = "0.30.20";
+export const PINNED_SERVER_VERSION = "0.30.25";
 
 /**
  * Derived FROM the pin rather than the other way round. Indexing a tuple under
@@ -34,7 +37,7 @@ export const PINNED_SERVER_VERSION = "0.30.20";
  * with `??` — so a refactor of this list could have made the mock omit the version field entirely
  * and silently downgrade the whole drift gate to a no-op.
  */
-export const VALIDATED_SERVER_VERSIONS = ["0.30.19", PINNED_SERVER_VERSION] as const;
+export const VALIDATED_SERVER_VERSIONS = ["0.30.19", "0.30.20", PINNED_SERVER_VERSION] as const;
 
 /**
  * The pinned App Server protocol version (`app_server_info_response.protocol_version`).

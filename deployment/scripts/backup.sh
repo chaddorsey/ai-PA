@@ -485,6 +485,37 @@ backup_host_data() {
         fi
     fi
 
+    # 12. Continuity Controller state dir (registry/journal/queue SQLite +
+    #     surface token + liveness). Host-local by design (journals through
+    #     Docker outages) — see clients/continuity-controller/README.md.
+    #     SQLite uses the online .backup API (safe while the worker runs);
+    #     the small non-DB files (surface-token, liveness.json) are tar'd.
+    local controller_state="$HOME/Library/Application Support/continuity-controller"
+    if [[ -d "$controller_state" ]]; then
+        log "Backing up Continuity Controller state..."
+        local cc_db="$controller_state/controller.sqlite3"
+        local cc_out="$backup_dir/continuity-controller-state_$TIMESTAMP"
+        mkdir -p "$cc_out"
+        if [[ -f "$cc_db" ]]; then
+            if command -v sqlite3 >/dev/null 2>&1; then
+                sqlite3 "$cc_db" ".backup '$cc_out/controller.sqlite3'" 2>/dev/null \
+                    || log_warning "sqlite3 .backup failed for controller DB; falling back to cp"
+            fi
+            [[ -f "$cc_out/controller.sqlite3" ]] || cp "$cc_db" "$cc_out/controller.sqlite3" 2>/dev/null
+        fi
+        tar czf "$cc_out/state-files.tar.gz" \
+            --exclude='controller.sqlite3*' --exclude='._*' --exclude='.DS_Store' \
+            -C "$controller_state" . 2>/dev/null \
+            || log_warning "Continuity Controller state-files tar had issues"
+        if [[ -f "$cc_out/controller.sqlite3" || -f "$cc_out/state-files.tar.gz" ]]; then
+            local size=$(du -sh "$cc_out" 2>/dev/null | cut -f1)
+            log_success "Continuity Controller state backed up ($size)"
+            ((host_backup_count++)) || true
+        else
+            log_warning "Continuity Controller state backup had issues"
+        fi
+    fi
+
     log_success "Host data backup complete: $host_backup_count items backed up"
 }
 
