@@ -76,21 +76,40 @@ Run runbook §2 top to bottom. Facts the fresh session would otherwise rediscove
   the operator's pattern) + `letta-continuity` — the whole point of the controller is that
   a phone SSH session detaching mid-turn loses nothing.
 
-## Session 2: the minimal web slice (phone browser)
+## Session 2: the minimal web slice (phone browser) — TAILSCALE-FIRST
 
 C9 carries a **pickup gate**: expand it to full unit format in the parent plan before
-implementing. For the *minimal* slice the operator wants (basic chat from a phone browser),
-scope it as: a single-page client speaking **surface protocol v1** (`core` + `notify` tiers
-— attach/replay/send/presence; protocol doc = `clients/continuity-controller/src/surface/protocol.ts`
-+ README table) against `:4610`, plus the ONE real design item: **ticket auth**.
-`mintTicket` in `src/surface/auth.ts` is a deliberate throwing stub; the C5-decided design is
-single-use seconds-TTL tickets minted over an EXISTING authenticated HTTPS path, consumed as
-a first-frame auth message, never in the WS URL. Naming that HTTPS path (pa-web-ui's
-authed ingress vs Cloudflare Access) is the security dependency the gate exists for — decide
-it with the operator, then the rest is small. Loopback-token testing on the desktop browser
-needs none of that and can validate the page first. Rail CRUD / fork / archive stay in full
-C9. Test assets that carry over: `test/helpers/surfaceClient.ts` shows the exact frames; the
-two-surface + 10:55 tests define expected behavior.
+implementing. For the *minimal* slice (basic chat from the phone browser), the
+**recommended transport is the operator's tailnet** (raised by the operator 2026-08-17;
+confirm at pickup, then it is decided):
+
+- **Verified on this box**: the Mini, the MacBook, and the iPhone are all on the tailnet,
+  and `tailscale serve` is ALREADY serving `https://dorseys-mac-mini.tailf9b999.ts.net`
+  (tailnet-only, real cert) proxying `/` → `localhost:5140`. Add a PATH mount (do not
+  clobber the existing `/` mount) proxying to `127.0.0.1:4610` — `tailscale serve` proxies
+  WebSockets, so `wss://…ts.net/<path>/surface` reaches the controller with **zero
+  controller code change** and TLS handled by Tailscale.
+- **Auth simplification, and why it is sound**: the surface protocol authenticates with the
+  token in the FIRST WS FRAME (never a header, never the URL) — the browsers-can't-set-WS-
+  headers problem that motivated tickets does not apply to our own protocol. Tickets were
+  about PUBLIC exposure (secrets leaking through proxy logs, long-lived tokens on
+  internet-reachable pages). Inside the tailnet, WireGuard device identity is the network
+  gate and the existing 0600 surface token (pasted once on the phone, kept in
+  localStorage) remains the app-layer gate — defense in depth, no new auth code.
+  **`mintTicket` stays a throwing stub**; the ticket design is deferred to genuine public
+  (Cloudflare) exposure in full C9.
+- **What to build**: a single static page speaking surface protocol v1 (`core` + `notify`;
+  protocol = `clients/continuity-controller/src/surface/protocol.ts` + README table).
+  Serve it either via a second `tailscale serve` path → static dir, or by teaching the
+  controller's `:4610` HTTP handler to answer `GET /` (it deliberately 501s today — a
+  small, honest addition). Validate on the desktop browser via loopback first.
+- **Laptop terminal over the tailnet** (nice-to-have follow-up): `letta-continuity
+  --controller-url` currently hard-pins loopback (`assertLoopbackUrl(…, false)` in
+  `cli.ts`); an explicit opt-in for `ts.net`/tailnet URLs would let the MacBook attach
+  directly. Until then, mosh+tmux covers the laptop exactly as it covers the phone.
+- Rail CRUD / fork / archive stay in full C9. Test assets that carry over:
+  `test/helpers/surfaceClient.ts` shows the exact frames; the two-surface + 10:55 tests
+  define expected behavior.
 
 ## Cleanup (any time)
 
