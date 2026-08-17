@@ -103,6 +103,12 @@
     border-bottom-right-radius: 3px;
   }
   .msg.peer::before { content: "peer · "; font-size: 0.75rem; opacity: 0.8; }
+  .msg a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    word-break: break-all;
+  }
   .line {
     align-self: center;
     font-family: var(--mono);
@@ -303,10 +309,41 @@ function line(text, cls) {
   transcript.appendChild(div);
   scrollDown();
 }
+/* Linkify by DOM construction — never innerHTML, so message text can never become
+   markup. Bubbles keep their raw text and re-render per append because a URL can be
+   SPLIT ACROSS STREAMED CHUNKS; matching only the latest chunk would miss it. */
+const URL_RE = /https?:\/\/[^\s<>"']+/g;
+function renderRich(el, raw) {
+  el.textContent = "";
+  let last = 0;
+  for (const m of raw.matchAll(URL_RE)) {
+    let url = m[0];
+    // Trailing punctuation is usually prose; strip ")" only while they OUTNUMBER "(" —
+    // so https://x/a_(b) keeps its paren but a wrapping (…) sheds the wrapper's.
+    for (;;) {
+      if (/[.,;:!?]$/.test(url)) { url = url.slice(0, -1); continue; }
+      if (url.endsWith(")") && url.split(")").length > url.split("(").length) {
+        url = url.slice(0, -1);
+        continue;
+      }
+      break;
+    }
+    el.appendChild(document.createTextNode(raw.slice(last, m.index)));
+    const a = document.createElement("a");
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.textContent = url;
+    el.appendChild(a);
+    last = m.index + url.length;
+  }
+  el.appendChild(document.createTextNode(raw.slice(last)));
+}
 function bubble(cls, text) {
   const div = document.createElement("div");
   div.className = "msg " + cls;
-  div.textContent = text || "";
+  div._raw = text || "";
+  renderRich(div, div._raw);
   transcript.appendChild(div);
   scrollDown();
   return div;
@@ -453,7 +490,8 @@ function onEvent(ev) {
 function appendTo(key, cls, text) {
   let b = bubbles.get(key);
   if (!b) { b = bubble(cls, ""); bubbles.set(key, b); }
-  b.textContent += text;
+  b._raw += text;
+  renderRich(b, b._raw);
   scrollDown();
 }
 
