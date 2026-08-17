@@ -40,13 +40,16 @@ mount on the existing `dorseys-mac-mini.tailf9b999.ts.net` ident (which already 
 
 ## Tasks
 
-- [ ] 1. `server.ts`: serve `GET /` from `static/index.html`; prefix-tolerant WS upgrade;
+- [x] 1. `server.ts`: serve `GET /` from `static/index.html`; prefix-tolerant WS upgrade;
         offline tests for both (page served; prefixed-path attach works; other paths still
-        refuse).
-- [ ] 2. `static/index.html`: the page (protocol v1 core+notify, per decisions above).
-- [ ] 3. `npm run check` green; restart controller pair; validate on desktop browser via
-        loopback (Playwright): attach, replay renders, live exchange round-trips.
-- [ ] 4. `tailscale serve --bg --set-path /pa http://127.0.0.1:4610`; verify the existing
-        `/` mount intact; validate page + WS over `https://…ts.net/pa/` from the box.
-- [ ] 5. Operator phone validation (paste token, exchange, detach/reattach). Commit +
-        update memory/handoff status.
+        refuse). — `test/surface.web.test.ts`, suite 81 green.
+- [x] 2. `static/index.html`: the page (protocol v1 core+notify, per decisions above).
+        Learned the terminal's lesson live: delta chunks carry DIFFERENT `delta.id`s, so
+        bubbles key on `run_id|message_type` (render.ts precedent).
+- [x] 3. Validated on desktop via loopback (Playwright): first-run settings flow, attach,
+        replay renders coherently, live exchange round-trips with send receipts.
+- [x] 4. Tailnet mount live: `/pa` → `127.0.0.1:4610` alongside the existing `/` mount
+        (whose 502 is its own backend being down — nothing listens on :5140; config
+        intact). `attach_ok` verified over `wss://…ts.net/pa/surface`. Surface token
+        ROTATED post-validation (the old one transited the build session).
+- [ ] 5. Operator phone validation (paste token, exchange, detach/reattach).

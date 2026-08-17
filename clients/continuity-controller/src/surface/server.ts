@@ -10,8 +10,11 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { type Server as HttpServer, createServer } from "node:http";
 import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ApprovalArbiter, ApprovalDecision, PendingApproval } from "../approvals.js";
 import type { TurnEventRow, TurnJournal } from "../journal.js";
 import type { RuntimeRef } from "../registry.js";
@@ -30,6 +33,30 @@ import {
 
 const require = createRequire(import.meta.url);
 const { WebSocketServer, WebSocket } = require("ws") as typeof import("ws");
+
+/**
+ * The minimal web slice (2026-08-17 handoff, session 2): the surface's own HTTP handler
+ * serves ONE static page so a single tailnet path mount covers page + WS together. Read
+ * per-request (no restart to iterate on the page; it is operator-tooling, not a hot path).
+ */
+const STATIC_PAGE_PATH = join(dirname(fileURLToPath(import.meta.url)), "../../static/index.html");
+
+/**
+ * `tailscale serve --set-path` prefix behaviour differs across versions (stripped vs
+ * passed through), so the WS endpoint accepts `/surface` under ANY mount prefix rather
+ * than betting on one. Suffix matching cannot collide: the surface serves exactly one page
+ * and one WS endpoint.
+ */
+function isSurfacePath(rawUrl: string | undefined): boolean {
+  const pathname = (rawUrl ?? "").split("?")[0] ?? "";
+  return pathname === "/surface" || pathname.endsWith("/surface");
+}
+
+/** The page answers on `/`, any directory-style path, or an explicit index.html. */
+function isPagePath(rawUrl: string | undefined): boolean {
+  const pathname = (rawUrl ?? "").split("?")[0] ?? "";
+  return pathname === "/" || pathname.endsWith("/") || pathname.endsWith("/index.html");
+}
 
 interface Session {
   id: string;
@@ -65,13 +92,34 @@ export class SurfaceServer {
   /** Loopback only. Port 0 = ephemeral (tests). Returns the bound port. */
   async start(port: number): Promise<number> {
     this.http = createServer((req, res) => {
+      if ((req.method === "GET" || req.method === "HEAD") && isPagePath(req.url)) {
+        readFile(STATIC_PAGE_PATH).then(
+          (html) => {
+            res.statusCode = 200;
+            res.setHeader("content-type", "text/html; charset=utf-8");
+            res.setHeader("cache-control", "no-cache");
+            res.end(req.method === "HEAD" ? undefined : html);
+          },
+          () => {
+            res.statusCode = 500;
+            res.end("continuity-controller surface: static/index.html missing\n");
+          },
+        );
+        return;
+      }
       // The ticket-mint endpoint is a C9 deliverable; refusing loudly beats a silent 404.
       res.statusCode = 501;
-      res.end("continuity-controller surface: WS only; browser tickets land with C9\n");
-      void req;
+      res.end("continuity-controller surface: page at /, WS at /surface; tickets land with C9\n");
     });
-    this.wss = new WebSocketServer({ server: this.http, path: "/surface" });
+    this.wss = new WebSocketServer({ noServer: true });
     this.wss.on("connection", (socket) => this.onConnection(socket));
+    this.http.on("upgrade", (req, socket, head) => {
+      if (!isSurfacePath(req.url)) {
+        socket.destroy();
+        return;
+      }
+      this.wss?.handleUpgrade(req, socket, head, (ws) => this.wss?.emit("connection", ws, req));
+    });
     await new Promise<void>((resolve) => this.http?.listen(port, "127.0.0.1", resolve));
     this.unsubscribeJournal = this.opts.journal.onRecord((row) => this.fanOutEvent(row));
     const address = this.http.address();
