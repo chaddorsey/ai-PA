@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Kinara">
 <title>Kinara</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%23e8a33d'/%3E%3C/svg%3E">
 <style>
@@ -242,10 +245,32 @@ const runtimeLabel = el("runtime-label");
 const working = el("working");
 const settings = el("settings");
 
+/* iOS home-screen icons run in their own storage container, and that storage is not
+   reliably persistent — so a saved bookmark may arrive with empty localStorage. The
+   TEMPORARY workaround (until C9's ticket design): the bookmark itself can carry
+   `#token=…` (+ optional agent/conv). A fragment is never sent in the HTTP request, so
+   it cannot appear in any proxy or serve log; it lives only in the operator's own
+   bookmark. Fragment wins over localStorage; localStorage is kept as best-effort cache. */
+const frag = (() => {
+  const h = location.hash.replace(/^#/, "");
+  if (!h) return {};
+  const p = new URLSearchParams(h);
+  return {
+    token: p.get("token") || p.get("t") || "",
+    agent: p.get("agent") || "",
+    conv: p.get("conv") || "",
+  };
+})();
+const lsGet = (k) => { try { return localStorage.getItem(k) || ""; } catch { return ""; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } };
+if (frag.token) lsSet(LS.token, frag.token);
+if (frag.agent) lsSet(LS.agent, frag.agent);
+if (frag.conv) lsSet(LS.conv, frag.conv);
+
 const store = {
-  get token() { return localStorage.getItem(LS.token) || ""; },
-  get agent() { return localStorage.getItem(LS.agent) || DEFAULTS.agent_id; },
-  get conv() { return localStorage.getItem(LS.conv) || DEFAULTS.conversation_id; },
+  get token() { return frag.token || lsGet(LS.token); },
+  get agent() { return frag.agent || lsGet(LS.agent) || DEFAULTS.agent_id; },
+  get conv() { return frag.conv || lsGet(LS.conv) || DEFAULTS.conversation_id; },
 };
 
 let ws = null;
@@ -468,9 +493,11 @@ function openSettings() {
 el("settings-btn").addEventListener("click", openSettings);
 settings.addEventListener("close", () => {
   if (settings.returnValue !== "save") return;
-  localStorage.setItem(LS.token, el("set-token").value.trim());
-  localStorage.setItem(LS.agent, el("set-agent").value.trim() || DEFAULTS.agent_id);
-  localStorage.setItem(LS.conv, el("set-conv").value.trim() || DEFAULTS.conversation_id);
+  lsSet(LS.token, el("set-token").value.trim());
+  lsSet(LS.agent, el("set-agent").value.trim() || DEFAULTS.agent_id);
+  lsSet(LS.conv, el("set-conv").value.trim() || DEFAULTS.conversation_id);
+  // An explicit save outranks whatever the launch fragment carried, for this session.
+  frag.token = ""; frag.agent = ""; frag.conv = "";
   // Re-attach from scratch: new runtime means the transcript no longer applies.
   transcript.textContent = "";
   bubbles.clear(); myCms.clear(); foreignCms.clear(); pendingSends.clear();
