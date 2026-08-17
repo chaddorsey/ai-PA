@@ -288,6 +288,7 @@ let cursor = null;            // max journal row id seen; reconnects resume here
 let backoff = 1000;
 let attached = false;
 let closedByUser = false;
+let lastFrameAt = 0;          // any WS frame; resume logic distrusts a long-quiet socket
 
 /* Rendering state */
 const bubbles = new Map();    // delta message id -> element (streaming append)
@@ -329,9 +330,13 @@ function connect() {
   if (!store.token) { openSettings(); return; }
   closedByUser = false;
   setState("connecting");
-  ws = new WebSocket(wsUrl());
-  ws.onopen = () => {
-    ws.send(JSON.stringify({
+  // Stale sockets' handlers must be inert: resume logic can close-and-reconnect while an
+  // old socket's onclose is still pending, and two live reconnect loops would stack.
+  const socket = new WebSocket(wsUrl());
+  ws = socket;
+  socket.onopen = () => {
+    if (ws !== socket) return;
+    socket.send(JSON.stringify({
       type: "attach",
       token: store.token,
       protocol_version: 1,
@@ -340,16 +345,21 @@ function connect() {
       cursor,
     }));
   };
-  ws.onmessage = (m) => { try { onFrame(JSON.parse(m.data)); } catch (e) { console.error(e); } };
-  ws.onclose = () => {
+  socket.onmessage = (m) => {
+    if (ws !== socket) return;
+    lastFrameAt = Date.now();
+    try { onFrame(JSON.parse(m.data)); } catch (e) { console.error(e); }
+  };
+  socket.onclose = () => {
+    if (ws !== socket) return;
     attached = false;
     working.className = "";
-    if (closedByUser) { setState("down"); return; }
     setState("down");
-    setTimeout(connect, backoff);
+    if (closedByUser) return;
+    setTimeout(() => { if (ws === socket) connect(); }, backoff);
     backoff = Math.min(backoff * 2, 15000);
   };
-  ws.onerror = () => { /* onclose follows */ };
+  socket.onerror = () => { /* onclose follows */ };
 }
 
 function onFrame(f) {
@@ -544,12 +554,39 @@ async function refreshModelFooter() {
   }
 }
 
-/* ---- presence ---- */
+/* ---- presence + resume liveness ----
+   iOS suspends the standalone app; its socket dies SILENTLY and can still report OPEN
+   on resume until TCP notices (minutes of stale transcript under a confident dot). On
+   every return to the foreground, distrust the socket: reconnect if it is not OPEN,
+   not attached, or has been quiet longer than the doubt window. Reconnects are
+   cursor-resumed against the journal, so a false positive costs one cheap replay. */
+const RESUME_DOUBT_MS = 90_000;
 function sendPresence() {
   if (!attached || !ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify({ type: "presence", state: document.hidden ? "background" : "focused" }));
 }
-document.addEventListener("visibilitychange", sendPresence);
+function ensureLive() {
+  if (document.hidden) { sendPresence(); return; }
+  const suspect =
+    !ws || ws.readyState !== WebSocket.OPEN || !attached ||
+    (lastFrameAt && Date.now() - lastFrameAt > RESUME_DOUBT_MS);
+  if (suspect && !closedByUser) {
+    backoff = 1000;
+    setState("connecting");
+    const suspectSocket = ws;
+    try { ws?.close(); } catch { /* already dead */ }
+    // If 400ms later the suspect socket is still current, rebuild unconditionally —
+    // onclose may never fire on a half-dead (or already-closed) socket, and any timer
+    // it did schedule no-ops once `ws` is replaced (socket-identity guard).
+    setTimeout(() => { if (ws === suspectSocket) connect(); }, 400);
+    return;
+  }
+  sendPresence();
+}
+document.addEventListener("visibilitychange", ensureLive);
+window.addEventListener("pageshow", ensureLive);
+window.addEventListener("focus", ensureLive);
+window.addEventListener("online", ensureLive);
 
 /* ---- settings ---- */
 function openSettings() {
