@@ -208,6 +208,7 @@ export const Outbound = {
   conversationUpdate: "conversation_update",
   conversationFork: "conversation_fork",
   conversationMessagesList: "conversation_messages_list",
+  agentRetrieve: "agent_retrieve",
   sync: "sync",
   abortMessage: "abort_message",
 } as const;
@@ -230,6 +231,7 @@ export const Inbound = {
   conversationUpdateResponse: "conversation_update_response",
   conversationForkResponse: "conversation_fork_response",
   conversationMessagesListResponse: "conversation_messages_list_response",
+  agentRetrieveResponse: "agent_retrieve_response",
   syncResponse: "sync_response",
   abortMessageResponse: "abort_message_response",
 } as const;
@@ -244,6 +246,7 @@ export const RpcResponseFor: Record<string, string> = {
   [Outbound.conversationUpdate]: Inbound.conversationUpdateResponse,
   [Outbound.conversationFork]: Inbound.conversationForkResponse,
   [Outbound.conversationMessagesList]: Inbound.conversationMessagesListResponse,
+  [Outbound.agentRetrieve]: Inbound.agentRetrieveResponse,
   [Outbound.sync]: Inbound.syncResponse,
   [Outbound.abortMessage]: Inbound.abortMessageResponse,
 };
@@ -566,6 +569,24 @@ export function buildInput(
  *   conversation_messages_list → top-level `conversation_id` + optional `query`
  */
 
+/**
+ * `agent_retrieve` — read one agent's record (name, `model`, model_settings, …) from the
+ * management tier. Read-only; verified against the 0.30.25 bundle:
+ * `{type, request_id, agent_id}` → `{type: "agent_retrieve_response", success, agent}`.
+ */
+export function buildAgentRetrieve(requestId: string, agentId: string): ServerFrame {
+  return { type: Outbound.agentRetrieve, request_id: requestId, agent_id: agentId };
+}
+
+/** Answer to `agent_retrieve`: the agent record, or null with `error` on failure. */
+export interface AgentRetrieveResponseFrame extends ServerFrame {
+  type: "agent_retrieve_response";
+  request_id: string;
+  success: boolean;
+  agent: Record<string, unknown> | null;
+  error?: string;
+}
+
 export function buildConversationList(requestId: string, agentId: string): ServerFrame {
   // The agent filter belongs in `query` — the server passes `parsed.query` straight to
   // listConversations(), so a top-level agent_id silently returns EVERY agent's conversations.
@@ -762,6 +783,7 @@ export function validateInboundFrame(frame: ServerFrame): void {
     case Inbound.conversationRetrieveResponse:
     case Inbound.conversationUpdateResponse:
     case Inbound.conversationForkResponse:
+    case Inbound.agentRetrieveResponse:
     case Inbound.conversationMessagesListResponse: {
       if (typeof frame.request_id !== "string")
         throw new ProtocolError(`${frame.type}: missing \`request_id\``);

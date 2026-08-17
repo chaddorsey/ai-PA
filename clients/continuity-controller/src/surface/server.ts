@@ -58,6 +58,15 @@ function isPagePath(rawUrl: string | undefined): boolean {
   return pathname === "/" || pathname.endsWith("/") || pathname.endsWith("/index.html");
 }
 
+/** Mount-prefix-tolerant like the WS path (see isSurfacePath). */
+function isAgentInfoPath(rawUrl: string | undefined): boolean {
+  const pathname = (rawUrl ?? "").split("?")[0] ?? "";
+  return pathname === "/agent-info" || pathname.endsWith("/agent-info");
+}
+
+/** Models change rarely; a short TTL keeps footer fetches off the WS. */
+const AGENT_INFO_CACHE_TTL_MS = 60_000;
+
 interface Session {
   id: string;
   socket: import("ws").WebSocket;
@@ -76,6 +85,11 @@ export interface SurfaceServerOptions {
   awareness?: AwarenessManager;
   /** C8's direct-lane route table. Optional so earlier callers keep working. */
   routes?: RouteTable;
+  /**
+   * Read-only agent-record lookup (worker-provided, rides the worker's own WS connection).
+   * Serves the web slice's `GET …/agent-info` model footer. Optional: absent → 501.
+   */
+  agentInfo?: (agentId: string) => Promise<Record<string, unknown>>;
   onWarn?: (msg: string) => void;
 }
 
@@ -92,6 +106,10 @@ export class SurfaceServer {
   /** Loopback only. Port 0 = ephemeral (tests). Returns the bound port. */
   async start(port: number): Promise<number> {
     this.http = createServer((req, res) => {
+      if (req.method === "GET" && isAgentInfoPath(req.url)) {
+        this.serveAgentInfo(req.url ?? "", res);
+        return;
+      }
       if ((req.method === "GET" || req.method === "HEAD") && isPagePath(req.url)) {
         readFile(STATIC_PAGE_PATH).then(
           (html) => {
@@ -124,6 +142,45 @@ export class SurfaceServer {
     this.unsubscribeJournal = this.opts.journal.onRecord((row) => this.fanOutEvent(row));
     const address = this.http.address();
     return typeof address === "object" && address !== null ? address.port : port;
+  }
+
+  private readonly agentInfoCache = new Map<string, { at: number; body: string }>();
+
+  /** `GET …/agent-info?agent=<id>` → `{agent_id, name, model}` (60s cache). */
+  private serveAgentInfo(rawUrl: string, res: import("node:http").ServerResponse): void {
+    const json = (code: number, body: string) => {
+      res.statusCode = code;
+      res.setHeader("content-type", "application/json; charset=utf-8");
+      res.end(body);
+    };
+    if (!this.opts.agentInfo) {
+      json(501, JSON.stringify({ error: "agent-info not wired" }));
+      return;
+    }
+    const agentId = new URLSearchParams(rawUrl.split("?")[1] ?? "").get("agent") ?? "";
+    if (!agentId) {
+      json(400, JSON.stringify({ error: "missing ?agent=<id>" }));
+      return;
+    }
+    const cached = this.agentInfoCache.get(agentId);
+    if (cached && Date.now() - cached.at < AGENT_INFO_CACHE_TTL_MS) {
+      json(200, cached.body);
+      return;
+    }
+    this.opts.agentInfo(agentId).then(
+      (agent) => {
+        const body = JSON.stringify({
+          agent_id: agentId,
+          name: typeof agent.name === "string" ? agent.name : null,
+          model: typeof agent.model === "string" ? agent.model : null,
+        });
+        this.agentInfoCache.set(agentId, { at: Date.now(), body });
+        json(200, body);
+      },
+      (err: unknown) => {
+        json(503, JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+      },
+    );
   }
 
   async stop(): Promise<void> {

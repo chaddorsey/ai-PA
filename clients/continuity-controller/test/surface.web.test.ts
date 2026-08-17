@@ -81,6 +81,12 @@ describe("surface web slice (page + prefixed WS)", () => {
 
     const other = await fetch(`http://127.0.0.1:${port}/tickets`);
     expect(other.status).toBe(501);
+
+    // agent-info validates its parameter immediately (mount-prefix tolerant).
+    const noParam = await fetch(`http://127.0.0.1:${port}/pa/agent-info`);
+    expect(noParam.status).toBe(400);
+    const noParamBody = (await noParam.json()) as { error: string };
+    expect(noParamBody.error).toContain("agent");
   });
 
   it("WS attach works under a mount prefix, and a non-surface upgrade path is destroyed", async () => {

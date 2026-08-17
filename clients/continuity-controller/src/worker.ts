@@ -14,7 +14,13 @@ import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import type { ReconnectPolicy } from "@ai-pa/letta-continuity-core/connection";
-import { Outbound, buildAppServerInfo, buildSync } from "@ai-pa/letta-continuity-core/protocol";
+import {
+  type AgentRetrieveResponseFrame,
+  Outbound,
+  buildAgentRetrieve,
+  buildAppServerInfo,
+  buildSync,
+} from "@ai-pa/letta-continuity-core/protocol";
 import type { WsConnection } from "@ai-pa/letta-continuity-core/ws";
 import { ApprovalArbiter } from "./approvals.js";
 import { ConnectionLoop } from "./connection-loop.js";
@@ -269,6 +275,18 @@ export class WorkerDaemon {
         awareness: this.awareness,
         routes: this.routes,
         onWarn: this.opts.onWarn,
+        // Read-only agent-record lookup for the web slice's model footer, on the
+        // worker's OWN connection (the sole client — no side channel to :4577).
+        agentInfo: async (agentId: string) => {
+          const conn = this.loop.current;
+          if (!conn) throw new Error("app server connection down");
+          const resp = await conn.request<AgentRetrieveResponseFrame>(
+            (rid) => buildAgentRetrieve(rid, agentId),
+            Outbound.agentRetrieve,
+          );
+          if (!resp.success || !resp.agent) throw new Error(resp.error ?? "agent_retrieve failed");
+          return resp.agent;
+        },
       });
       this.surfaceBoundPort = await this.surface.start(this.opts.surfacePort);
     }
