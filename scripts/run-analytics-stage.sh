@@ -16,18 +16,27 @@ LOG="$LOG_DIR/${STAGE}.log"
 ts(){ date -u "+%Y-%m-%dT%H:%M:%SZ"; }
 log(){ echo "[$(ts)] $*" | tee -a "$LOG"; }
 
-AGENT="agent-local-d48b128a-b3a8-4930-a27f-b4127c96fe3a"
-RUNNER="http://127.0.0.1:8920/invoke"
+# 2026-08-17 runner migration (docs/plans/2026-08-17-010): agent stages ride the
+# sole-owner App Server's /v1/responses (the enrichment path) instead of the retired
+# letta-local-runner. Same semantics: fresh conversation per call, memfs is the durable
+# memory. /v1/responses targets agents by FRIENDLY model name, not agent-local-* id.
+MODEL="pulse-monitor-agent-local"
+APP_SERVER="http://127.0.0.1:4577/v1/responses"
 
 invoke_agent(){ # $1=message $2=timeout
-  python3 - "$AGENT" "$RUNNER" "$1" "$2" <<'PY'
-import json,sys,urllib.request
-aid,url,msg,to=sys.argv[1],sys.argv[2],sys.argv[3],int(sys.argv[4])
-req=urllib.request.Request(url,data=json.dumps({"agent_id":aid,"message":msg,"timeout":to}).encode(),
+  python3 - "$MODEL" "$APP_SERVER" "$1" "$2" <<'PY'
+import json,sys,time,urllib.request
+model,url,msg,to=sys.argv[1],sys.argv[2],sys.argv[3],int(sys.argv[4])
+req=urllib.request.Request(url,data=json.dumps({"model":model,"input":msg}).encode(),
     headers={"Content-Type":"application/json"},method="POST")
+t0=time.time()
 r=json.load(urllib.request.urlopen(req,timeout=to+20))
-print("runner_status:",r.get("status"),"exit:",r.get("letta_exit"),"dur:",r.get("duration_seconds"))
-print((r.get("agent_response") or "")[:400])
+text=""
+for item in r.get("output",[]):
+    if item.get("type")=="message" and item.get("content"):
+        text=item["content"][0].get("text","")
+print("app_server_status:",r.get("status","?"),"dur:",round(time.time()-t0,1))
+print((text or "")[:400])
 PY
 }
 
@@ -53,7 +62,7 @@ case "$STAGE" in
     python3 /Volumes/main-drive/ai-PA/scripts/materialize-current-signal.py vibe 2>&1 | tee -a "$LOG" || true
     ;;
   mentions)
-    invoke_agent "Intra-day mentions refresh (rolling 48h, today+yesterday ET): find @-mentions directed AT Chad in DMs and channels, update your stored mentions view. Reply DONE." 400 2>&1 | tee -a "$LOG" || rc=$?
+    invoke_agent "Intra-day mentions refresh (rolling 48h, today+yesterday ET): find @-mentions directed AT Chad in DMs and channels. Then REPLACE the entire contents of system/slack_mentions_view.md with a SINGLE current rolling-48h snapshot: keep the frontmatter, write one up-to-date section, and do NOT append/prepend a new dated section or retain any prior refresh sections. The file must contain exactly one current snapshot (this keeps the file small so every turn stays fast/cheap). Reply DONE." 400 2>&1 | tee -a "$LOG" || rc=$?
     ;;
   *) log "unknown stage: $STAGE"; exit 2 ;;
 esac

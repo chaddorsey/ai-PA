@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Tracked REFERENCE copy (repo convention: live copies under ~/Library/LaunchAgents are
+     hand-synced). Periodic memfs Gitea sweep — replaces the retired letta-local-runner's
+     per-invocation sync (2026-08-17 runner migration, docs/plans/2026-08-17-010).
+     Logs MUST live under ~/Library/Logs (a /Volumes path = silent EX_CONFIG/78). -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ai-pa.memfs-gitea-sync</string>
+  <!-- /bin/bash <script> (not a direct Program exec): matches the letta-code-verify
+       convention and sidesteps macOS provenance-xattr exec refusals on repo scripts. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Volumes/main-drive/ai-PA/scripts/memfs-gitea-sync.sh</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>300</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>/Users/dorseyhomeserver/Library/Logs/memfs-gitea-sync/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/dorseyhomeserver/Library/Logs/memfs-gitea-sync/launchd.err.log</string>
+</dict>
+</plist>

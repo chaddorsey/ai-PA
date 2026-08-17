@@ -126,6 +126,16 @@ def build_runtime_env(backend_dir: Optional[str] = None) -> Dict[str, str]:
         v = dotenv.get(k)
         if v:
             env[k] = v
+    # 2026-08-17 runner migration: extension tools that shell to host CLIs were built
+    # against the retired letta-local-runner's env, whose canonical creds file is
+    # ~/.letta/pa-tools.env (SUPABASE_*, PA_WEB_POSTGRES_URL, TWITTER_CONFIG_PATH, …).
+    # Source it ADDITIVELY: keys already set above — including the single-writer-safety
+    # pins (PATH, HOME, LETTA_LOCAL_BACKEND_DIR, TERM) — are never overridden, so a
+    # stray entry in pa-tools.env can never repoint the backend or the PATH.
+    pa_tools = _load_dotenv_file(os.path.expanduser("~/.letta/pa-tools.env"))
+    for k, v in pa_tools.items():
+        if v and k not in env:
+            env[k] = v
     return env
 
 
