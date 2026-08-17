@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 import { ContinuityCore } from "../src/index.js";
-import { TrustBoundaryError, assertLoopbackUrl } from "../src/trust.js";
+import { TrustBoundaryError, assertLoopbackUrl, assertTailnetOrLoopbackUrl } from "../src/trust.js";
 import { WsConnection } from "../src/ws.js";
 
 const RT = { agent_id: "agent-local-x", conversation_id: "local-conv-1" };
@@ -43,6 +43,38 @@ describe("assertLoopbackUrl", () => {
 
   it("honours an explicit opt-out", () => {
     expect(() => assertLoopbackUrl("ws://evil.example/ws", true)).not.toThrow();
+  });
+});
+
+describe("assertTailnetOrLoopbackUrl", () => {
+  it("always accepts loopback, either scheme", () => {
+    expect(() => assertTailnetOrLoopbackUrl("ws://127.0.0.1:4610/surface")).not.toThrow();
+    expect(() => assertTailnetOrLoopbackUrl("wss://localhost:4610/surface")).not.toThrow();
+  });
+
+  it("accepts tailnet destinations over wss only", () => {
+    expect(() =>
+      assertTailnetOrLoopbackUrl("wss://dorseys-mac-mini.tailf9b999.ts.net/pa/surface"),
+    ).not.toThrow();
+    expect(() => assertTailnetOrLoopbackUrl("wss://100.99.171.119:4610/surface")).not.toThrow();
+    expect(() =>
+      assertTailnetOrLoopbackUrl("ws://dorseys-mac-mini.tailf9b999.ts.net/pa/surface"),
+    ).toThrow(/wss/);
+  });
+
+  it("refuses non-tailnet hosts — this is not a general remote escape hatch", () => {
+    expect(() => assertTailnetOrLoopbackUrl("wss://evil.example/surface")).toThrow(/non-tailnet/);
+    // 100.x outside the CGNAT /10 is NOT a tailnet address.
+    expect(() => assertTailnetOrLoopbackUrl("wss://100.128.0.1/surface")).toThrow(/non-tailnet/);
+    expect(() => assertTailnetOrLoopbackUrl("wss://100.63.255.255/surface")).toThrow(/non-tailnet/);
+    // A .ts.net LABEL inside another domain must not pass.
+    expect(() => assertTailnetOrLoopbackUrl("wss://x.ts.net.evil.example/surface")).toThrow(
+      /non-tailnet/,
+    );
+    // Userinfo that merely looks tailnet-ish: the real host is evil.example.
+    expect(() => assertTailnetOrLoopbackUrl("wss://a.ts.net@evil.example/surface")).toThrow(
+      /non-tailnet/,
+    );
   });
 });
 

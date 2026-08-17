@@ -4,7 +4,10 @@
 
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { assertLoopbackUrl as coreAssertLoopbackUrl } from "@ai-pa/letta-continuity-core";
+import {
+  assertLoopbackUrl as coreAssertLoopbackUrl,
+  assertTailnetOrLoopbackUrl as coreAssertTailnetOrLoopbackUrl,
+} from "@ai-pa/letta-continuity-core";
 
 export interface CliOptions {
   pointerPath: string;
@@ -31,6 +34,12 @@ export interface CliOptions {
   strictVersion: boolean;
   /** Permit a non-loopback App Server URL. Off by default — loopback is the trust boundary. */
   allowRemote: boolean;
+  /**
+   * Permit a TAILNET controller URL (wss to *.ts.net or 100.64/10 only). The laptop-attach
+   * relaxation (2026-08-17): the controller surface authenticates every attach, so inside
+   * the tailnet WireGuard identity + the surface token = the web slice's trust model.
+   */
+  allowTailnet: boolean;
   /**
    * Which transport carries the session. `controller` (default since C6) speaks the
    * Continuity Controller's surface protocol; `direct` is the raw-WS BREAK-GLASS path
@@ -114,6 +123,10 @@ OPTIONS
                      surface-token, or $LETTA_CONTINUITY_TOKEN_FILE)
   --reasoning        Show the model's reasoning stream (hidden by default)
   --strict-version   Refuse to attach unless the server is a contract-verified version
+  --allow-tailnet    Permit a TAILNET --controller-url: wss:// to *.ts.net or 100.64/10 only
+                     (also via LETTA_CONTINUITY_ALLOW_TAILNET=1). The controller authenticates
+                     every attach with the surface token, so tailnet device identity + token
+                     match the web slice's trust model. Not a general remote escape hatch.
   --allow-remote     Permit a non-loopback --url (loopback is the trust boundary; there is no
                      client authentication, so only do this if you understand the exposure)
   --no-color         Disable ANSI colour (also honours $NO_COLOR)
@@ -146,6 +159,15 @@ export function assertLoopbackUrl(raw: string, allowRemote: boolean): void {
   }
 }
 
+/** Same CliError-friendly wrapper for the tailnet relaxation (see core trust.ts). */
+export function assertTailnetOrLoopbackUrl(raw: string): void {
+  try {
+    coreAssertTailnetOrLoopbackUrl(raw);
+  } catch (err) {
+    throw new CliError(err instanceof Error ? err.message : String(err));
+  }
+}
+
 export function parseArgs(argv: readonly string[], env: NodeJS.ProcessEnv = {}): CliOptions {
   const opts: CliOptions = {
     pointerPath: env.LETTA_CONTINUITY_POINTER || DEFAULT_POINTER_PATH,
@@ -155,6 +177,7 @@ export function parseArgs(argv: readonly string[], env: NodeJS.ProcessEnv = {}):
     help: false,
     strictVersion: false,
     allowRemote: false,
+    allowTailnet: env.LETTA_CONTINUITY_ALLOW_TAILNET === "1",
     agentId: undefined,
     conversationId: undefined,
     message: undefined,
@@ -194,6 +217,9 @@ export function parseArgs(argv: readonly string[], env: NodeJS.ProcessEnv = {}):
         break;
       case "--no-color":
         opts.color = false;
+        break;
+      case "--allow-tailnet":
+        opts.allowTailnet = true;
         break;
       case "--allow-remote":
         opts.allowRemote = true;
@@ -279,8 +305,14 @@ export function parseArgs(argv: readonly string[], env: NodeJS.ProcessEnv = {}):
     }
   }
   if (opts.url) assertLoopbackUrl(opts.url, opts.allowRemote);
-  // The controller boundary is loopback-only — same trust rule, same friendly error.
-  assertLoopbackUrl(opts.controllerUrl, false);
+  // The controller boundary: loopback by default; --allow-tailnet admits tailnet-only wss
+  // destinations (the controller authenticates every attach, unlike the raw App Server —
+  // so --allow-remote/--direct semantics are deliberately NOT reused here).
+  if (opts.allowTailnet) {
+    assertTailnetOrLoopbackUrl(opts.controllerUrl);
+  } else {
+    assertLoopbackUrl(opts.controllerUrl, false);
+  }
   // A `--url` FLAG names the raw App Server, so it implies the direct transport — silently
   // attaching somewhere other than the URL the caller just typed would be worse than the
   // implication. An ENV-supplied URL does not flip the transport: env lingers from pre-C6

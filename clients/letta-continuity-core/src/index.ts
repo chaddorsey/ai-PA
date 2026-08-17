@@ -846,7 +846,7 @@ export type { RenderEvent, RenderListener } from "./stream.js";
 export type { ConnectionState } from "./connection.js";
 export type { ContinuityPointer } from "./pointer.js";
 export { readPointer, writePointer, PointerError } from "./pointer.js";
-export { assertLoopbackUrl, TrustBoundaryError } from "./trust.js";
+export { assertLoopbackUrl, assertTailnetOrLoopbackUrl, TrustBoundaryError } from "./trust.js";
 export type { Attribution, OwnershipSnapshot } from "./ownership.js";
 /**
  * Exported because BOTH clients keep bounded id caches and each had rolled its own loop. The

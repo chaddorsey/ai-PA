@@ -31,6 +31,31 @@ describe("endpoint validation (loopback is the trust boundary)", () => {
   it("allows remote only with an explicit opt-in", () => {
     expect(() => parseArgs(["--url", "ws://evil.example/ws", "--allow-remote"], {})).not.toThrow();
   });
+
+  it("controller URL stays loopback-pinned without --allow-tailnet", () => {
+    expect(() =>
+      parseArgs(["--controller-url", "wss://dorseys-mac-mini.tailf9b999.ts.net/pa/surface"], {}),
+    ).toThrow(/non-loopback/);
+  });
+
+  it("--allow-tailnet admits tailnet wss controller URLs, and ONLY those", () => {
+    const argv = (url: string) => ["--allow-tailnet", "--controller-url", url];
+    expect(() =>
+      parseArgs(argv("wss://dorseys-mac-mini.tailf9b999.ts.net/pa/surface"), {}),
+    ).not.toThrow();
+    // Plaintext ws to the tailnet: refused (tailscale serve fronts the surface with TLS).
+    expect(() => parseArgs(argv("ws://dorseys-mac-mini.tailf9b999.ts.net/pa/surface"), {})).toThrow(
+      /wss/,
+    );
+    // Arbitrary internet host: refused even with the flag — not a remote escape hatch.
+    expect(() => parseArgs(argv("wss://evil.example/surface"), {})).toThrow(/non-tailnet/);
+    // Env form works like the flag.
+    expect(() =>
+      parseArgs(["--controller-url", "wss://dorseys-mac-mini.tailf9b999.ts.net/pa/surface"], {
+        LETTA_CONTINUITY_ALLOW_TAILNET: "1",
+      }),
+    ).not.toThrow();
+  });
 });
 
 describe("parseArgs", () => {
