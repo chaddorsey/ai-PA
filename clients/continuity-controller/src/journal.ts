@@ -138,6 +138,34 @@ export class TurnJournal {
     }));
   }
 
+  /**
+   * The newest `limit` rows STRICTLY BEFORE `beforeId`, ascending — the scroll-up history
+   * page for a surface whose oldest rendered row is `beforeId` (2026-08-17 web slice).
+   */
+  rowsBefore(runtime: RuntimeRef, beforeId: number, limit = 300): TurnEventRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM (
+           SELECT * FROM turn_events WHERE agent_id = ? AND conversation_id = ? AND id < ?
+           ORDER BY id DESC LIMIT ?
+         ) ORDER BY id ASC`,
+      )
+      .all(runtime.agent_id, runtime.conversation_id, beforeId, limit) as Array<
+      Record<string, unknown>
+    >;
+    return rows.map((r) => ({
+      id: r.id as number,
+      agent_id: r.agent_id as string,
+      conversation_id: r.conversation_id as string,
+      client_message_id: (r.client_message_id as string | null) ?? null,
+      event_seq: (r.event_seq as number | null) ?? null,
+      idempotency_key: (r.idempotency_key as string | null) ?? null,
+      kind: r.kind as string,
+      payload: JSON.parse(r.payload as string) as Record<string, unknown>,
+      at: r.at as string,
+    }));
+  }
+
   eventsFor(runtime: RuntimeRef, limit = 500): TurnEventRow[] {
     const rows = this.db
       .prepare(

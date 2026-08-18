@@ -74,6 +74,13 @@ function isAgentModelPath(rawUrl: string | undefined): boolean {
   return pathname === "/agent-model" || pathname.endsWith("/agent-model");
 }
 
+function isHistoryPath(rawUrl: string | undefined): boolean {
+  const pathname = (rawUrl ?? "").split("?")[0] ?? "";
+  return pathname === "/history" || pathname.endsWith("/history");
+}
+
+const HISTORY_PAGE_LIMIT = 500;
+
 /** Models change rarely; a short TTL keeps footer fetches off the WS. */
 const AGENT_INFO_CACHE_TTL_MS = 60_000;
 
@@ -133,6 +140,10 @@ export class SurfaceServer {
       }
       if (req.method === "POST" && isAgentModelPath(req.url)) {
         this.serveAgentModel(req, res);
+        return;
+      }
+      if (req.method === "GET" && isHistoryPath(req.url)) {
+        this.serveHistory(req, res);
         return;
       }
       if ((req.method === "GET" || req.method === "HEAD") && isPagePath(req.url)) {
@@ -281,6 +292,42 @@ export class SurfaceServer {
           json(502, JSON.stringify({ error: err instanceof Error ? err.message : String(err) })),
       );
     });
+  }
+
+  /**
+   * `GET …/history?agent&conversation&before&limit` → `{events}` — the journal page
+   * strictly before `before`, ascending (scroll-up in the web slice). Conversation
+   * CONTENT, so Bearer-token-gated like the model mutation.
+   */
+  private serveHistory(
+    req: import("node:http").IncomingMessage,
+    res: import("node:http").ServerResponse,
+  ): void {
+    const json = (code: number, body: string) => {
+      res.statusCode = code;
+      res.setHeader("content-type", "application/json; charset=utf-8");
+      res.end(body);
+    };
+    const presented = (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
+    if (!presented || !verifySurfaceToken(this.opts.token, presented)) {
+      json(401, JSON.stringify({ error: "bad token" }));
+      return;
+    }
+    const q = new URLSearchParams((req.url ?? "").split("?")[1] ?? "");
+    const agentId = q.get("agent") ?? "";
+    const conversationId = q.get("conversation") ?? "";
+    const before = Number(q.get("before"));
+    if (!agentId || !conversationId || !Number.isFinite(before) || before <= 0) {
+      json(400, JSON.stringify({ error: "need agent, conversation, and a positive before id" }));
+      return;
+    }
+    const limit = Math.min(Number(q.get("limit")) || 300, HISTORY_PAGE_LIMIT);
+    const rows = this.opts.journal.rowsBefore(
+      { agent_id: agentId, conversation_id: conversationId },
+      before,
+      limit,
+    );
+    json(200, JSON.stringify({ events: rows.map((row) => this.toEvent(row)) }));
   }
 
   async stop(): Promise<void> {

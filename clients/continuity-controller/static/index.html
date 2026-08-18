@@ -109,6 +109,30 @@
     text-underline-offset: 2px;
     word-break: break-all;
   }
+  .msg.md { white-space: normal; }
+  .msg.md p { margin: 0.35rem 0; }
+  .msg.md > :first-child { margin-top: 0; }
+  .msg.md > :last-child { margin-bottom: 0; }
+  .msg.md ul, .msg.md ol { margin: 0.35rem 0; padding-left: 1.3rem; }
+  .msg.md li { margin: 0.15rem 0; }
+  .msg.md h1, .msg.md h2, .msg.md h3, .msg.md h4 {
+    font-size: 1rem; font-weight: 700; margin: 0.6rem 0 0.3rem;
+  }
+  .msg.md h1 { font-size: 1.08rem; }
+  .msg.md code {
+    font-family: var(--mono); font-size: 0.85em;
+    background: rgba(0,0,0,0.35); padding: 0.08em 0.35em; border-radius: 5px;
+  }
+  .msg.md pre {
+    background: rgba(0,0,0,0.35); border-radius: 8px;
+    padding: 0.6rem 0.7rem; overflow-x: auto; margin: 0.4rem 0;
+  }
+  .msg.md pre code { background: none; padding: 0; font-size: 0.8em; }
+  .msg.md blockquote {
+    border-left: 3px solid var(--ink-dim); padding-left: 0.6rem;
+    margin: 0.35rem 0; color: var(--ink-dim);
+  }
+  .msg.md hr { border: none; border-top: 1px solid #313c4d; margin: 0.5rem 0; }
   .line {
     align-self: center;
     font-family: var(--mono);
@@ -297,6 +321,8 @@ let closedByUser = false;
 let lastFrameAt = 0;          // any WS frame; resume logic distrusts a long-quiet socket
 
 /* Rendering state */
+let renderTarget = transcript; // history loads render into a detached fragment
+let historyMode = false;       // suppresses live-only side effects while rendering history
 const bubbles = new Map();    // delta message id -> element (streaming append)
 const myCms = new Set();      // client_message_ids this surface sent (attribution)
 const foreignCms = new Set();
@@ -306,8 +332,8 @@ function line(text, cls) {
   const div = document.createElement("div");
   div.className = "line" + (cls ? " " + cls : "");
   div.textContent = text;
-  transcript.appendChild(div);
-  scrollDown();
+  renderTarget.appendChild(div);
+  if (renderTarget === transcript) scrollDown();
 }
 /* Linkify by DOM construction — never innerHTML, so message text can never become
    markup. Bubbles keep their raw text and re-render per append because a URL can be
@@ -339,13 +365,140 @@ function renderRich(el, raw) {
   }
   el.appendChild(document.createTextNode(raw.slice(last)));
 }
+/* ---- markdown (agent/peer bubbles) ----
+   A deliberately small renderer for the shapes kinara actually emits: headings, bold/
+   italic, `code`, ``` fences, -/1. lists (indent-nested), > quotes, ---, [t](url), bare
+   URLs. DOM-built like renderRich — never innerHTML — and STREAMING-LENIENT: an unclosed
+   fence renders as code until its close arrives on a later chunk re-render. */
+function inlineInto(el, text) {
+  const IN_RE = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*\s][^*]*\*)|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>"']+)/g;
+  let last = 0;
+  for (const m of text.matchAll(IN_RE)) {
+    el.appendChild(document.createTextNode(text.slice(last, m.index)));
+    last = m.index + m[0].length;
+    if (m[1]) {
+      const c = document.createElement("code");
+      c.textContent = m[1].slice(1, -1);
+      el.appendChild(c);
+    } else if (m[2]) {
+      const b = document.createElement("strong");
+      inlineInto(b, m[2].slice(2, -2));
+      el.appendChild(b);
+    } else if (m[3]) {
+      const i = document.createElement("em");
+      inlineInto(i, m[3].slice(1, -1));
+      el.appendChild(i);
+    } else if (m[4] !== undefined) {
+      el.appendChild(makeLink(m[5], m[4]));
+    } else if (m[6]) {
+      let url = m[6];
+      for (;;) {
+        if (/[.,;:!?]$/.test(url)) { url = url.slice(0, -1); continue; }
+        if (url.endsWith(")") && url.split(")").length > url.split("(").length) {
+          url = url.slice(0, -1);
+          continue;
+        }
+        break;
+      }
+      last = m.index + url.length;
+      el.appendChild(makeLink(url, url));
+    }
+  }
+  el.appendChild(document.createTextNode(text.slice(last)));
+}
+function makeLink(url, label) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.textContent = label;
+  return a;
+}
+function renderMarkdown(el, raw) {
+  el.textContent = "";
+  const lines = raw.split("\n");
+  let para = null;            // open <p>
+  let listStack = [];         // [{indent, el}]
+  const closePara = () => { para = null; };
+  const closeLists = () => { listStack = []; };
+  const openP = () => {
+    if (!para) { para = document.createElement("p"); el.appendChild(para); }
+    else para.appendChild(document.createElement("br"));
+    return para;
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i];
+    let m;
+    if (/^\s*```/.test(ln)) {                       // fence: consume to close or end
+      closePara(); closeLists();
+      const buf = [];
+      for (i++; i < lines.length && !/^\s*```/.test(lines[i]); i++) buf.push(lines[i]);
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      code.textContent = buf.join("\n");
+      pre.appendChild(code);
+      el.appendChild(pre);
+      continue;
+    }
+    if (/^\s*$/.test(ln)) { closePara(); closeLists(); continue; }
+    if ((m = /^(#{1,4})\s+(.*)$/.exec(ln))) {
+      closePara(); closeLists();
+      const h = document.createElement("h" + m[1].length);
+      inlineInto(h, m[2]);
+      el.appendChild(h);
+      continue;
+    }
+    if (/^\s*(---+|\*\*\*+)\s*$/.test(ln)) {
+      closePara(); closeLists();
+      el.appendChild(document.createElement("hr"));
+      continue;
+    }
+    if ((m = /^>\s?(.*)$/.exec(ln))) {
+      closePara(); closeLists();
+      let q = el.lastElementChild;
+      if (!q || q.tagName !== "BLOCKQUOTE") { q = document.createElement("blockquote"); el.appendChild(q); }
+      else q.appendChild(document.createElement("br"));
+      inlineInto(q, m[1]);
+      continue;
+    }
+    if ((m = /^(\s*)([-*+]|\d+\.)\s+(.*)$/.exec(ln))) {
+      closePara();
+      const indent = m[1].length;
+      const ordered = /\d/.test(m[2]);
+      while (listStack.length && listStack.at(-1).indent > indent) listStack.pop();
+      let top = listStack.at(-1);
+      if (!top || top.indent < indent || top.ordered !== ordered) {
+        const listEl = document.createElement(ordered ? "ol" : "ul");
+        if (top && top.indent < indent && top.el.lastElementChild) top.el.lastElementChild.appendChild(listEl);
+        else el.appendChild(listEl);
+        top = { indent, ordered, el: listEl };
+        listStack.push(top);
+      }
+      const li = document.createElement("li");
+      inlineInto(li, m[3]);
+      top.el.appendChild(li);
+      continue;
+    }
+    if (listStack.length) {                          // continuation of the last list item
+      const lastLi = listStack.at(-1).el.lastElementChild;
+      if (lastLi) {
+        lastLi.appendChild(document.createElement("br"));
+        inlineInto(lastLi, ln.trim());
+        continue;
+      }
+    }
+    inlineInto(openP(), ln.trim() === "" ? ln : ln);
+  }
+}
 function bubble(cls, text) {
   const div = document.createElement("div");
-  div.className = "msg " + cls;
+  const md = cls.startsWith("agent") || cls.startsWith("peer");
+  div.className = "msg " + cls + (md ? " md" : "");
   div._raw = text || "";
-  renderRich(div, div._raw);
-  transcript.appendChild(div);
-  scrollDown();
+  div._md = md;
+  (md ? renderMarkdown : renderRich)(div, div._raw);
+  renderTarget.appendChild(div);
+  if (renderTarget === transcript) scrollDown();
   return div;
 }
 function scrollDown() {
@@ -406,7 +559,12 @@ function onFrame(f) {
       backoff = 1000;
       setState("live");
       runtimeLabel.textContent = shortRuntime();
-      for (const ev of f.replay || []) onEvent(ev);
+      const replayRows = f.replay || [];
+      if (replayRows.length > 0) {
+        const first = replayRows[0].id;
+        oldestId = oldestId === null ? first : Math.min(oldestId, first);
+      }
+      for (const ev of replayRows) onEvent(ev);
       const unseen = f.unseen || [];
       if (unseen.length > 0) line(`${unseen.length} update${unseen.length > 1 ? "s" : ""} arrived while you were away ↑`, "unseen");
       sendPresence();
@@ -455,8 +613,10 @@ function onEvent(ev) {
     const text = deltaText(delta);
     if (text === undefined) return;
     // Chunks of one message carry DIFFERENT delta.ids (verified live — see
-    // letta-terminal render.ts); the stable identity is run + message_type.
-    const key = (delta.run_id || "?") + "|" + delta.message_type;
+    // letta-terminal render.ts); the stable identity is run + message_type. History
+    // batches get their own namespace so a mid-run window boundary can never append
+    // EARLIER chunks to the bottom of a LATER bubble.
+    const key = (ev.__hist ? "h" + ev.__hist + "|" : "") + (delta.run_id || "?") + "|" + delta.message_type;
     if (delta.message_type === "user_message") {
       // My own sends already rendered optimistically; a user delta is a peer's.
       if (cm && myCms.has(cm)) return;
@@ -464,23 +624,23 @@ function onEvent(ev) {
       return;
     }
     if (delta.message_type === "assistant_message") {
-      working.className = "";
+      if (!historyMode) working.className = "";
       appendTo(key, "agent", text);
       return;
     }
-    // Reasoning / tool traffic: collapse to the working indicator.
-    working.className = "on";
+    // Reasoning / tool traffic: collapse to the working indicator (live only).
+    if (!historyMode) working.className = "on";
     return;
   }
 
   if (kind === "turn_terminal") {
-    working.className = "";
+    if (!historyMode) working.className = "";
     const outcome = String(payload.outcome || "");
     if (outcome && outcome !== "end_turn") line(`turn ended: ${outcome}`, "error");
     return;
   }
   if (kind === "turn_failed_visible") {
-    working.className = "";
+    if (!historyMode) working.className = "";
     line(`turn FAILED: ${payload.reason || "unknown"}`, "error");
     return;
   }
@@ -491,8 +651,8 @@ function appendTo(key, cls, text) {
   let b = bubbles.get(key);
   if (!b) { b = bubble(cls, ""); bubbles.set(key, b); }
   b._raw += text;
-  renderRich(b, b._raw);
-  scrollDown();
+  (b._md ? renderMarkdown : renderRich)(b, b._raw);
+  if (renderTarget === transcript) scrollDown();
 }
 
 function deltaText(delta) {
@@ -539,6 +699,68 @@ input.addEventListener("keydown", (e) => {
 input.addEventListener("input", () => {
   input.style.height = "";
   input.style.height = Math.min(input.scrollHeight, 120) + "px";
+});
+
+/* ---- scroll-up history (journal pages before the oldest rendered row) ----
+   Read-only GET …/history, Bearer-gated (conversation content). Each page renders into a
+   detached fragment in ascending order, then prepends wholesale with scroll anchoring so
+   the viewport does not jump. History reaches back to the journal's creation (the
+   cutover); anything older lives in the qmd archive, not here. */
+let oldestId = null;
+let loadingHistory = false;
+let historyExhausted = false;
+let histBatch = 0;
+const HISTORY_PAGE = 300;
+
+async function loadHistory() {
+  if (loadingHistory || historyExhausted || !attached || oldestId === null) return;
+  loadingHistory = true;
+  const marker = document.createElement("div");
+  marker.className = "line";
+  marker.textContent = "loading earlier…";
+  transcript.prepend(marker);
+  try {
+    const dir = location.pathname.replace(/[^/]*$/, "");
+    const r = await fetch(
+      `${dir}history?agent=${encodeURIComponent(store.agent)}&conversation=${encodeURIComponent(store.conv)}&before=${oldestId}&limit=${HISTORY_PAGE}`,
+      { headers: { Authorization: `Bearer ${store.token}` } },
+    );
+    if (!r.ok) throw new Error(`history ${r.status}`);
+    const events = (await r.json()).events || [];
+    marker.remove();
+    if (events.length < HISTORY_PAGE) historyExhausted = true;
+    if (events.length > 0) {
+      const frag = document.createDocumentFragment();
+      histBatch++;
+      renderTarget = frag;
+      historyMode = true;
+      try {
+        for (const ev of events) onEvent({ ...ev, __hist: histBatch });
+      } finally {
+        renderTarget = transcript;
+        historyMode = false;
+      }
+      const prevH = transcript.scrollHeight;
+      const prevTop = transcript.scrollTop;
+      transcript.prepend(frag);
+      transcript.scrollTop = prevTop + (transcript.scrollHeight - prevH);
+      oldestId = events[0].id;
+    }
+    if (historyExhausted) {
+      const done = document.createElement("div");
+      done.className = "line";
+      done.textContent = "· beginning of journal (older history: archive) ·";
+      transcript.prepend(done);
+    }
+  } catch (err) {
+    marker.remove();
+    console.error("history load failed", err);
+  } finally {
+    loadingHistory = false;
+  }
+}
+transcript.addEventListener("scroll", () => {
+  if (transcript.scrollTop < 200) loadHistory();
 });
 
 /* ---- /model command ----
@@ -645,6 +867,7 @@ settings.addEventListener("close", () => {
   transcript.textContent = "";
   bubbles.clear(); myCms.clear(); foreignCms.clear(); pendingSends.clear();
   cursor = null;
+  oldestId = null; historyExhausted = false;
   closedByUser = true;
   if (ws && ws.readyState <= WebSocket.OPEN) ws.close();
   setTimeout(connect, 50);

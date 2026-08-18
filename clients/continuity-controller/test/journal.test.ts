@@ -66,6 +66,19 @@ describe("TurnJournal", () => {
     expect([...ids].sort((a, b) => a - b)).toEqual(ids); // ascending for the renderer
   });
 
+  it("rowsBefore returns the newest page strictly before the boundary, ascending", () => {
+    const journal = fresh();
+    for (let i = 0; i < 50; i++) journal.record({ runtime: RUNTIME, kind: `k${i}` });
+    const all = journal.eventsFor(RUNTIME, 50);
+    const boundary = all[40]?.id ?? 0; // oldest rendered row on the surface
+    const page = journal.rowsBefore(RUNTIME, boundary, 10);
+    expect(page).toHaveLength(10);
+    expect(page.at(-1)?.id).toBeLessThan(boundary); // strictly before — no overlap
+    expect(page.map((r) => r.kind)).toEqual(
+      Array.from({ length: 10 }, (_, i) => `k${30 + i}`), // the 10 newest below it
+    );
+  });
+
   it("rowsSince pages forward chunk by chunk to the true tail (no silent 1000-row gap)", () => {
     const journal = fresh();
     for (let i = 0; i < 1200; i++) journal.record({ runtime: RUNTIME, kind: `k${i}` });

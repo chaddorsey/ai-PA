@@ -89,6 +89,26 @@ describe("surface web slice (page + prefixed WS)", () => {
     expect(noParamBody.error).toContain("agent");
   });
 
+  it("GET /history is token-gated (conversation content) and validates its params", async () => {
+    const { port, token } = await startStack();
+
+    const noAuth = await fetch(`http://127.0.0.1:${port}/history?agent=a&conversation=c&before=5`);
+    expect(noAuth.status).toBe(401);
+
+    const badParams = await fetch(`http://127.0.0.1:${port}/pa/history?agent=a`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(badParams.status).toBe(400);
+
+    const ok = await fetch(
+      `http://127.0.0.1:${port}/history?agent=${RUNTIME.agent_id}&conversation=${RUNTIME.conversation_id}&before=999999`,
+      { headers: { authorization: `Bearer ${token}` } },
+    );
+    expect(ok.status).toBe(200);
+    const body = (await ok.json()) as { events: unknown[] };
+    expect(Array.isArray(body.events)).toBe(true);
+  });
+
   it("POST /agent-model is token-gated and validates its body before touching the WS", async () => {
     const { port, token } = await startStack();
 
