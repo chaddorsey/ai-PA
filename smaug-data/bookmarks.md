@@ -1,3 +1,543 @@
+# Friday, July 31, 2026
+
+## @TheUfoJoe - Annie Jacobsen on Rogan: UFOs, Extraterrestrials, and Intelligence Community
+
+> New: Annie Jacobsen on Rogan
+>
+> "Extraterrestrial beings [are] certainly going to be a lot more [intelligent] than us. It wouldn't be visible to our spectrum." ~AJ
+>
+> "A lot of really legitimate-thinker people that didn't have an opinion about [UFOs] before, [are now] more open to the idea." ~AJ
+
+- **Tweet:** https://x.com/TheUfoJoe/status/2083245296117780983
+- **What:** Extended interview segment with author/journalist Annie Jacobsen discussing UFO phenomenon on Joe Rogan Experience. Key themes: Jacques Vallée's distinction between UFO as intelligence vs. military problem; skepticism about extraterrestrial explanations; shift in mainstream acceptance of UFO topic over past 15+ years; Jacobsen's bias toward disinformation explanations. References her book "Area 51" and conversations with fighter pilots and astronauts (ISS). Discusses New York Times UFO coverage and its credibility.
+
+---
+
+# Thursday, July 30, 2026
+
+## @TheUfoJoe - Joe Rogan Experience with @dwpasulka
+
+> The latest @joerogan from today features @dwpasulka...
+
+- **Tweet:** https://x.com/TheUfoJoe/status/2082874969068012026
+- **Filed:** [joe-rogan-dwpasulka.md](./knowledge/videos/joe-rogan-dwpasulka.md)
+- **What:** Joe Rogan Experience episode with guest @dwpasulka discussing UAP-related topics. Needs transcript.
+
+---
+
+## @daveweigel - US Government Map of Africa Mislabels Every Country at Global Conference
+
+> "A US government map of Africa mislabeled every country during a state department presentation at a ⁠global conference in Brazil ⁠this week." lmao look at this crud
+
+- **Tweet:** https://x.com/daveweigel/status/2082843798233596096
+- **Filed:** [us-government-africa-map-mislabeling.md](./knowledge/articles/us-government-africa-map-mislabeling.md)
+- **What:** State Department displayed map of Africa with every single country mislabeled at global conference in Brazil. The department took full responsibility for the embarrassing error, which was widely shared on social media.
+
+---
+
+# Tuesday, July 28, 2026
+
+## @TheUfoJoe - DoE Exotic Materials Custody Question and Puthoff Response
+
+> @UAPGERB @RepEricBurlison Full question by Gerb and answer by Puthoff. (Cued up)
+
+- **Tweet:** https://x.com/TheUfoJoe/status/2082203522859515997
+- **Tags:** [[DoE]] [[exotic-materials]] [[UFO]] [[Eric-Davis]]
+- **What:** Question-answer video on whether Department of Energy would be location for storing anomalous/exotic materials from crash retrievals
+
+---
+
+# Monday, July 27, 2026
+
+## @SunOfAbramelin - Whistleblower Matt Brown on "Immaculate Constellation" and UAPs
+
+> Thank you Chris, and the @JudicialWatch crew! This was a great conversation.
+>
+> *Quoting @JudicialWatch:* NEW EPISODE: Whistleblower Matt Brown on "Immaculate Constellation" and UAPs @SunOfAbramelin
+
+- **Tweet:** https://x.com/SunOfAbramelin/status/2081815003040993433
+- **Quoted:** https://x.com/JudicialWatch/status/2081813177411502244
+- **Filed:** [immaculate-constellation-matt-brown.md](./knowledge/podcasts/immaculate-constellation-matt-brown.md)
+- **What:** Episode featuring national security analyst Matthew Brown discussing "Immaculate Constellation," a classified special access program tracking unidentified anomalous phenomena. Available on YouTube, Rumble, Spotify, and Apple Podcasts. Needs transcript.
+
+---
+
+## @DrPhil - White House UAP Disclosure Files Viewed
+
+> I was invited to the White House to view the latest collection of UAP disclosure files before it reached the public. I recently sat down with my friend @piersmorgan to share some of what I saw.
+
+- **Tweet:** https://x.com/DrPhil/status/2081782483981357259
+- **Tags:** [[UAP]] [[disclosure]] [[White-House]]
+- **What:** Personal account of viewing classified UAP files before public release
+
+---
+
+## @ChrisUKSharp - UAP Investigation Whistleblower Intimidation Claims
+
+> James Erdman was part of an investigation which was rocked by claims of whistleblower intimidation, false allegations and efforts to discredit those who came forward regarding UAP.
+
+- **Tweet:** https://x.com/ChrisUKSharp/status/2081787814262288770
+- **Tags:** [[UAP]] [[ODNI]] [[whistleblower]] [[James-Erdman]]
+- **What:** Article on Director of National Intelligence UFO inquiry facing whistleblower intimidation allegations
+
+---
+
+## @forallcurious - NASA Ocean Currents Visualization Released
+
+> NASA has released one of the most detailed visualizations ever created of Earth's ocean currents. Using data from satellites and advanced ocean models, the map reveals massive rivers of moving water, swirling eddies hundreds of miles wide, and the powerful Gulf Stream carrying warm water from the Gulf of Mexico across the Atlantic.
+
+- **Tweet:** https://x.com/forallcurious/status/2081797698819358880
+- **Tags:** [[NASA]] [[oceanography]] [[visualization]] [[climate]]
+- **What:** NASA releases advanced ocean current data visualization using satellite and model data
+
+---
+
+## @planethunter56 - Roswell Non-Human Biologics Claim
+
+> Roswell… it happened, and the biologics involved were NOT human.
+
+- **Tweet:** https://x.com/planethunter56/status/2081861763080056936
+- **Tags:** [[Roswell]] [[UAP]] [[extraterrestrial]] [[1947]]
+- **What:** Assertion about Roswell incident with non-human biological evidence
+
+---
+
+## @UpdatingOnRome - Daily Roman updates
+
+> Gm. https://t.co/HsYAJ5kEL3
+
+- **Tweet:** https://x.com/UpdatingOnRome/status/2081740820600791110
+- **Tags:** [[history]] [[Rome]]
+- **What:** Daily updates and shares from the Daily Roman Updates account
+
+---
+
+# Sunday, July 26, 2026
+
+## @g_knapp - Mystery Wire: Comprehensive Free UFO News and Document Archive
+
+> *Replying to self on 1989 FOIA documents:* We have gigantic UFO storehouse of new (and archival) news reports, rare interviews, documents, and exclusives on Mystery Wire, created by KLAS and are sharing additional content every week. You can download the app. All content is free, no pay wall.
+
+- **Tweet:** https://x.com/g_knapp/status/2081253733963608563
+- **Tags:** [[UFO]] [[journalism]] [[resource-archive]] [[disclosure]]
+- **What:** George Knapp announces Mystery Wire, a comprehensive free app created by KLAS news containing archival and current UFO news reports, rare interviews with researchers and witnesses, classified documents, and exclusive content. Weekly updates. Builds on decades of FOIA work and investigative journalism into UFO phenomena. Mentioned in context of declassified material from Soviet Union/KGB archives and independently verified U.S. intelligence collection.
+
+---
+
+# Saturday, July 25, 2026
+
+## @UAPLuigi - UFO Physicist Confirms Recovered Extraterrestrial Bodies
+
+> UFO Physicist Confirms Recovered ET Bodies https://t.co/cI3eXn0gvd via @YouTube
+
+- **Tweet:** https://x.com/UAPLuigi/status/2081152604399448090
+- **What:** YouTube video testimonial from physicist confirming evidence of recovered extraterrestrial biological entities from classified programs. Needs transcript.
+
+---
+
+## @TheUfoJoe - Dr. Eric Davis Confirms Soviet Recovery of Alien Bodies
+
+> *Replying to @TheUfoJoe:* In-depth discussion on Dr. Eric Davis confirming he saw classified photographs of deceased extraterrestrial beings recovered by the Soviets from a Tic-Tac-shaped UAP crash during the Cold War.
+>
+> @UFOelder https://t.co/dU7zTXnEFa
+
+- **Tweet:** https://x.com/TheUfoJoe/status/2080949739722535398
+- **Parent:** https://x.com/TheUfoJoe/status/2080949500215230603
+- **What:** Comprehensive conversation covering Dr. Davis's classified knowledge of recovered extraterrestrial bodies, distinct ET morphologies (Greys, Nordics, Insectoids, Reptilians), and Cold War intelligence operations. Needs transcript.
+
+---
+
+## @donttouchxanax - Walter Brattain's 28-minute transistor tutorial from Bell Labs
+
+> One of the men who invented the transistor stood at a Bell Labs blackboard and explained how it works. AT&T kept the film. Almost nobody watches it.
+>
+> Walter Brattain shared the 1956 Nobel Prize in physics for the transistor. Every chip training every model in 2026 descends from what he built with Bardeen and Shockley in 1947.
+>
+> This is 28 minutes of the inventor teaching semiconductor physics himself. Properties, simple model, history, impact, new phenomena, written on the board in his own hand.
+
+- **Tweet:** https://x.com/donttouchxanax/status/2081044663792713904
+- **Tags:** [[physics]] [[education]] [[transistor]] [[history]]
+- **What:** Deep dive into Bell Labs' archived film of transistor inventor Walter Brattain explaining semiconductor physics directly - 28 minutes of foundational knowledge most engineers never encounter
+
+---
+
+## @UAPLuigi - UFO Physicist Confirms Recovered ET Bodies
+
+> UFO Physicist Confirms Recovered ET Bodies https://t.co/dU7zTXnEFa
+
+- **Tweet:** https://x.com/UAPLuigi/status/2080975330127208905
+- **Tags:** [[uap]] [[disclosure]] [[whistleblower]]
+- **What:** Report from a physicist with credentials in UFO/aerospace research confirming existence of recovered extraterrestrial biological entities (EBEs), contributing to growing testimony on classified reverse engineering programs.
+
+---
+
+# Sunday, July 26, 2026
+
+## @TheZignal - Remote viewing and the CIA's Stargate program
+
+> Ever wondered if you could be a psychic spy? 🕵️‍♂️
+>
+> I sat down with Paul H. Smith, an original member of the Army's Stargate program, to talk about the reality of remote viewing.
+>
+> Better yet - I'm teaching FREE intro classes on the official CIA protocols!
+
+- **Tweet:** https://x.com/TheZignal/status/2081562749356691525
+- **Tags:** [[remote-viewing]] [[CIA]] [[Stargate]] [[psychic]]
+- **What:** Interview with original Stargate program member Paul H. Smith on remote viewing capabilities and CIA declassified protocols, includes free intro classes on official techniques
+
+---
+
+## @messedupfoods - Food-related share
+
+> https://t.co/IeMKAiEHL6
+
+- **Tweet:** https://x.com/messedupfoods/status/2081389325883674792
+- **Tags:** [[food]]
+- **What:** Short content share from food-focused account
+
+---
+
+## @donttouchxanax - Transistor Inventor's Prescient Warning on AI and Technology
+
+> One of the men who invented the transistor stood and told Congress that we would eventually create a completely new form of life, and that we should be very careful. This was in 1955. Those words still echo today.
+
+- **Tweet:** https://x.com/donttouchxanax/status/2080940844405903793
+- **What:** Historical reference to early warning from transistor co-inventor about artificial life and technology risks given to Congress in 1955, presaging modern AI safety concerns.
+
+---
+
+## @AlchemyAmerican - Skinwalker Ranch: UFO Burial, Dire Wolf Discovery, and Military Surveillance
+
+> Tomorrow we learn about the UFO buried under the mesa at Skinwalker Ranch, the formerly-thought-to be-extinct Dire Wolf found there and the unmarked black hawk helicopters circling the grounds. All with the great Brandon Fugal (@brandonfugal)
+
+- **Tweet:** https://x.com/AlchemyAmerican/status/2081153071074406641
+- **Tags:** [[Skinwalker-Ranch]] [[UFO]] [[cryptozoology]] [[classified-research]]
+- **What:** Announcement of forthcoming podcast or interview episode (from Alchemy media) with Brandon Fugal, owner of Skinwalker Ranch, discussing three major discoveries: UFO buried beneath the ranch mesa, living specimen of Dire Wolf (species thought extinct), and ongoing surveillance by unmarked military Black Hawk helicopters. Jesse Michels hosting.
+
+---
+
+## @TheUfoJoe - Dr. Eric Davis: Recovered Extraterrestrial Bodies and Advanced Technology Analysis
+
+> 👽 Some of my patients think they've, "been abducted," and now I'm thinking...maybe they have. This testimony from a respected scientist on recovered ET bodies, their technology, and retrieval operations will test your logical mind and challenge your thinking.
+
+- **Tweet:** https://x.com/TheUfoJoe/status/2080839202253578496
+- **Video:** https://www.youtube.com/embed/VEZKwKr_nQw
+- **Tags:** [[uap]] [[disclosure]] [[whistleblower]] [[entity-analysis]]
+- **What:** Psychologist sharing Dr. Eric Davis's testimony on classified U.S. government recovery of extraterrestrial biological entities, including physical analysis of recovered specimens, their morphology and biological distinctions, and alleged reverse engineering of advanced technology.
+
+---
+
+# Friday, July 24, 2026
+
+## @AnatoliKopadze - Graph Engineering: What It Is, When to Use It, and When Not to
+
+> https://t.co/fyBGWQbsvn
+
+- **Tweet:** https://x.com/AnatoliKopadze/status/2080668775796314331
+- **Filed:** [graph-engineering.md](./knowledge/articles/graph-engineering.md)
+- **What:** Comprehensive guide to graph engineering for AI systems, explaining nodes, edges, node contracts, the diamond pattern (fan-out/reduce/synthesize), why verification requires fresh context and isolated skeptics, and when NOT to use graphs.
+
+---
+
+## @TheUfoJoe - Dr. Kit Green Interview Part 1 Link
+
+> Part 1...
+
+- **Tweet:** https://x.com/TheUfoJoe/status/2080719976391197045
+- **Link:** https://x.com/TheUfoJoe/status/2076731156465426555 (Part 1 full interview from Dec 3, 2019)
+- **Tags:** [[UAP]] [[interview]] [[kit-green]] [[series]]
+- **What:** Link to Part 1 of extended Dr. Kit Green interview
+
+---
+
+## @TheUfoJoe - Dr. Kit Green Interview Part 2: Experiencer Medical Criteria
+
+> 👽 Some of my patients think they've, "been abducted...or, that they've been injured by aliens." 👽
+>
+> UFOs: My Interview with Former CIA Officer, Dr. Kit Green - Part 2
+>
+> "My clearances are held, today, in the DNI. Prior to that, they were held at the CIA, where I still have them held." ~KG
+>
+> "Physical injuries that occurred in a certain category of very, very close-encounter cases." ~KG
+
+- **Tweet:** https://x.com/TheUfoJoe/status/2080719418024509892
+- **Tags:** [[UAP]] [[UFO]] [[disclosure]] [[dr-kit-green]] [[CIA]] [[experiencer]] [[forensic-medicine]]
+- **What:** Detailed interview with former CIA officer on his medical criteria and case investigations for UAP-related injuries
+
+---
+
+## @marcotomamichel - AI's Impact on Research
+
+> *Replying to @letonyo:* Once you have seen a paper you would usually be very proud of one-shotted by an AI something changes. I have only seen this very recently for my line of work.
+
+- **Tweet:** https://x.com/marcotomamichel/status/2080647439762219280
+- **Parent:** @letonyo - "this has been true for a little while, but the past couple of days feel like the start of the singularity for research. Also, there are two camps: one wants to advance science as fast as possible, the other doesn't really want that it seems."
+- **Tags:** [[AI]] [[research]] [[singularity]]
+- **What:** Reflection on AI's capability to replicate research papers
+
+---
+
+## @SunOfAbramelin - Catch and Kill: Disclosure Strategy Article
+
+> New article is UP!
+>
+> Catch and Kill: How to Advance Disclosure Without Falling Into Deep-State Traps
+
+- **Tweet:** https://x.com/SunOfAbramelin/status/2080638008324145196
+- **Tags:** [[disclosure]] [[UAP]] [[strategy]]
+- **What:** Article on navigating UAP disclosure dynamics
+
+---
+
+## @jamescfox - Moment of Contact: New Revelations - Free on YouTube
+
+> UAP NEWS ALERT: MOC: New Revelations is now available to over 300+K people for free — you heard it right, FREE! This is the case that could settle the debate. Please spread far and wide!
+> 
+> Moment of Contact: New Revelations of Alien Encounters
+
+- **Tweet:** https://x.com/jamescfox/status/2080752089647738914
+- **Tags:** [[uap]] [[disclosure]] [[documentary]] [[video]]
+- **What:** Documentary filmmaker James Fox announces free public release of "Moment of Contact: New Revelations" on YouTube, framed as potentially significant UAP/alien contact evidence with wide potential impact on the disclosure debate.
+
+---
+
+## @TheUfoJoe - Part 1: Extended Interview with Dr. Kit Green on UAP and Classification Challenges
+
+> Part 1...
+
+https://t.co/7GTKy3T8xb
+
+- **Tweet:** https://x.com/TheUfoJoe/status/2080712308837605511
+- **Video:** https://www.youtube.com/watch?v=WsXn6T46-Hw
+- **Tags:** [[uap]] [[disclosure]] [[interview]]
+- **What:** First part of extended interview between Joe Murgia and Dr. Kit Green discussing UAP phenomena, national security classification systems, and challenges in disclosing information about unidentified anomalous phenomena given the complexities of compartmentalized access and classification authorities.
+
+---
+
+## @marcotomamichel - AI Alignment Research: Predicting LLM Behavior from Input Data
+
+> *Replying to @letonyo:* Once you have seen a paper you would usually have to run the experiment yourself to understand it. But with modern language models, you can often get the key ideas straight from the paper much faster. Here's an example of how I do it in my research on predictor models of LLMs.
+
+- **Tweet:** https://x.com/marcotomamichel/status/2080629093748555031
+- **What:** AI researcher discussing technique for understanding LLM papers through direct inquiry with language models rather than manual experimental replication, showing how modern AI tools accelerate research comprehension and knowledge synthesis.
+
+---
+
+## @SunOfAbramelin - Catch and Kill: How to Advance Disclosure
+
+> New article is UP!
+
+Catch and Kill: How to Advance Disclosure
+
+Examining strategies and obstacles in UAP information disclosure and the role of information suppression in preventing public acknowledgment of anomalous phenomena.
+
+- **Tweet:** https://x.com/SunOfAbramelin/status/2080622932632891658
+- **Article:** https://www.substack.com/o/55234142/c/15235635
+- **Filed:** [catch-and-kill-advance-disclosure.md](./knowledge/articles/catch-and-kill-advance-disclosure.md)
+- **What:** Analytical article on UAP disclosure dynamics, examining "catch and kill" strategies used to suppress information, interviewing key figures in the disclosure movement, and proposing approaches to advance public acknowledgment of unidentified anomalous phenomena.
+
+---
+
+# Wednesday, July 22, 2026
+
+## @GrantLavac - AARO FY2025 Consolidated Annual Report on UAP
+
+> "Good breakdown from @BrandiVincient_ at @DefenseScoop on AARO's FY2025 Consolidated Annual Report on UAP."
+
+- **Tweet:** https://x.com/GrantLavac/status/2079871963347198007
+- **Article:** https://defensescoop.com/2026/07/21/pentagon-investigating-ufo-uap-event-near-virginia-coast/
+- **What:** Grant Lavac highlights Brandi Vincent's analysis of the Pentagon's All-domain Anomaly Resolution Office (AARO) latest annual report on unidentified anomalous phenomena, covering recent investigations including Navy reports near Virginia.
+
+---
+
+# Tuesday, July 21, 2026
+
+## @PostDisclosure - UFO Disclosure Speech Reportedly Prepared for Trump
+
+> "Liberation Times understands from multiple sources that a presidential speech confirming that some UFOs are of non-human origin has been prepared."
+> https://t.co/cPORlSyqz2
+
+- **Tweet:** https://x.com/PostDisclosure/status/2079669312990675416
+- **Article:** https://www.liberationtimes.com/home/on-the-brink-ufo-disclosure-speech-believed-to-have-been-prepared-for-trump-amid-expanding-white-house-push
+- **Filed:** [ufo-disclosure-speech-trump.md](./knowledge/articles/ufo-disclosure-speech-trump.md)
+- **What:** Report from Liberation Times that a presidential speech confirming non-human origin of some UFOs has been drafted for Trump, as part of expanding White House UAP disclosure efforts.
+
+---
+
+## @TheUfoJoe - Dr. Eric Davis on Wright Patterson AFB Levitating Craft
+
+> https://t.co/mwziBnt2vF
+
+- **Tweet:** https://x.com/TheUfoJoe/status/2079669660178690142
+- *Replying to @TheUfoJoe:* Dr. Eric Davis describes how TRW aerospace engineers recovered an intact craft at Wright Patterson Air Force Base, with one scientist accidentally activating it, causing it to levitate and remain suspended in a secured hangar because no one could figure out how to deactivate it.
+- **Video:** https://www.youtube.com/watch?si=ytNVc0_9yqgn9RJL&v=KtE4kJ79yjc&feature=youtu.be
+- **Tags:** [[uap]] [[reverse-engineering]] [[disclosure]]
+- **What:** Dr. Eric Davis discussing alleged classified aerospace technology at Wright Patterson including an intact recovered craft that levitated when accidentally activated, highlighting challenges in understanding non-anthropomorphic control systems.
+
+---
+
+## @TheUfoJoe - Reacting to Trump NDA Waiver Announcement
+
+> https://t.co/OM0zdnKH91
+
+- **Tweet:** https://x.com/TheUfoJoe/status/2079623920416849982
+- *Replying to @TheUfoJoe:* "EXCLUSIVE: President Donald Trump has directed federal agencies to waive prior (NDAs) for former government employees and contractors cooperating with [UAP] investigations... Former employees can now share information with AARO or the PURSUE task force without fear of violating agreements."
+- **What:** Commentary on Trump's exclusive directive to waive NDAs for UAP whistleblowers, questioning whether this will be sufficient to encourage behind-the-scenes disclosures.
+
+---
+
+## @setupspawn - AI Job Displacement Commentary
+
+> This is the AI that will be taking your job https://t.co/6fDPSCJDwe
+
+- **Tweet:** https://x.com/setupspawn/status/2079629862197702900
+- **What:** Commentary on AI systems and their potential impact on employment, shared without additional context or details.
+
+---
+
+## @DCNews_Breaks - Trump Administration UFO Disclosure Push
+
+> Long-hidden UFO information at center of Trump push to free former officials
+> https://t.co/PZTkA2Mctx
+
+- **Tweet:** https://x.com/DCNews_Breaks/status/2079601203504164982
+- **What:** Fox News report on Trump directing federal agencies to waive NDAs for former government employees and contractors willing to share UAP information with official investigation task forces.
+
+---
+
+## @GrantLavac - AARO Releases FY2025 Consolidated Annual Report on UAP
+
+> AARO (@DoW_AARO) has released its Fiscal Year 2025 Consolidated Annual Report on Unidentified Anomalous Phenomena.
+>
+> Read at: https://t.co/Ohwi2FOLZQ https://t.co/xb30OsyxHb
+
+- **Tweet:** https://x.com/GrantLavac/status/2079462358523720116
+- **What:** Official announcement of the Department of Defense's All-domain Anomaly Resolution Office (AARO) fiscal year 2025 report on UAP investigations, now publicly available.
+
+---
+
+# Sunday, July 19, 2026
+
+## @BamaExpat - Learning Esoteric Midcentury Stereotypes
+
+> Learning some esoteric midcentury stereotypes here https://t.co/FuDT1gKJXC
+
+- **Tweet:** https://x.com/BamaExpat/status/2079000176744648937
+- **What:** Self-referential tweet about discovering historical cultural stereotypes from mid-20th century.
+
+---
+
+# Sunday, August 9, 2026
+
+## @daniel_mac8 - Simplified Technical English for Claude Prompts
+> Oh my god. It's hard to express how big a positive impact this tip can have on your life if you talk to Claude a lot. > Tell Claude to write in ASD-STE100, or Simplified Technical English. As a bonus, tell Claude to follow Zinsser's four principles of quality writing: 1. Simplicity, 2. Brevity, 3. Clarity, 4. Humanity
+
+- **Tweet:** https://x.com/daniel_mac8/status/2086499981989482719
+- **What:** Writing technique for improving Claude interactions using Simplified Technical English (ASD-STE100) and Zinsser's four core principles of clear, effective writing to maximize LLM response quality.
+
+---
+
+# Wednesday, June 24, 2026
+
+## @KristinFisher - UFO Disclosure Forum: Washington, Hollywood, and The Movement
+> On the eve of the Disclosure Foundation's Forum, a look at the strange convergence of Washington, Hollywood, and the UFO disclosure movement.
+>
+> Featuring: @disclosurefound @RepEricBurlison @JaredEMoskowitz @timburchett @realannapaulina @RepScottPerry @Ice_Alchemist11 @lesliekean @jamescfox @jordanflowers
+
+- **Tweet:** https://x.com/KristinFisher/status/2069907379110453394
+- **What:** Overview of the convergence between Washington political figures, Hollywood personalities, and the UFO disclosure movement surrounding the Disclosure Foundation's Forum.
+
+---
+
+# Sunday, June 28, 2026
+
+## @radioactivered - Plasma Physics Introduction Textbook
+> "Plasma Physics An Introduction to Laboratory, Space, and Fusion Plasmas" by Alexander Piel
+>
+> This is a really solid introduction textbook to plasma physics, it covers everything from lab plasmas and fusion experiments to the solar wind and plasmas in space!
+>
+> (I managed to source all 409 pages of it for free online for you too.😊)
+
+- **Tweet:** https://x.com/radioactivered/status/2071306561226449123
+- **Resource:** https://www.astrosen.unam.mx/~aceves/verano/libros/introPlasma.pdf
+- **What:** Comprehensive introduction to plasma physics by Alexander Piel, covering laboratory plasmas, fusion experiments, solar wind, and space plasmas. A foundational textbook resource shared with a complete online PDF available.
+
+---
+
+## @robjonesreports - Cybersecurity Author Collaboration Story
+> My friend, author and cybersecurity researcher David A. Burkett wrote a wonderful piece about the friendship between he, @MinuteofZombie and myself that turned into collaboration on his new book. He's such a great human being.
+
+- **Tweet:** https://x.com/robjonesreports/status/2071246754033357274
+- **Article:** https://liesabove.com/articles/a-missileman-a-journalist-with-a-burning-passion-and-a-hacker-walk-into-a-ufo-conference/
+- **What:** Personal account of how a friendship between cybersecurity researcher David Burkett, journalist Rob Jones, and "MinuteofZombie" developed into collaboration on Burkett's new book exploring the intersections of missilery, journalism, and hacking in UFO culture.
+
+---
+
+## @Debriefmedia - Seven Wonders of Ancient World Rediscovered
+> Lost for centuries, one of the Seven Wonders of the Ancient World has been rediscovered and is now rising from the Mediterranean Sea.
+
+- **Tweet:** https://x.com/Debriefmedia/status/2071241839110226342
+- **Article:** https://thedebrief.org/lost-for-centuries-one-of-the-seven-wonders-of-the-ancient-world-has-been-rediscovered-and-is-now-rising-from-the-mediterranean-sea/
+- **What:** Report on the rediscovery and recovery of one of the Seven Wonders of the Ancient World from the Mediterranean Sea, ending its centuries-long disappearance.
+
+---
+
+# Monday, June 29, 2026
+
+## @matthew_pines - Physics Formula Discovery via LLM
+> "The results reported in this letter were all derived in the span of less than two days."
+>
+> Physics go brrr…
+>
+> *Quoting @ZoharKo:* Another formula for amplitudes was discovered with the assistance of LLMs. This time Nima Arkani-Hamed et al. Actually, when I was in high school I was fascinated with these deep water surface waves so I'm looking forward to understanding the details!
+
+- **Tweet:** https://x.com/matthew_pines/status/2071563921853448387
+- **Paper:** https://arxiv.org/abs/2606.28280
+- **Quoted:** https://x.com/ZoharKo/status/2071433208080556074
+- **What:** Discussion of a recently discovered formula for surface water wave scattering amplitudes, co-authored by Nima Arkani-Hamed et al., with the interesting note that Claude Opus 4.6 contributed to deriving the general formula. The result resolves a decades-old puzzle from Y.V. Lvov's 1997 computation.
+
+---
+
+# Wednesday, July 8, 2026
+
+## @DrBeaVillarroel - Before Sputnik: The Mystery Lights That Refuse to Die
+> Very grateful to Christopher Carson and Liberation Times for publishing this in-depth, careful, and balanced article on the transients and pre-Sputnik artificial satellites. It is the first article to discuss how the case has evolved following the harsh criticisms, replications, and validation studies, and to summarize where things currently stand. A highly recommended read for anyone who hasn't been following the developments over the past few months.
+
+- **Tweet:** https://x.com/DrBeaVillarroel/status/2074844105058783484
+- **Article:** https://www.liberationtimes.com/home/before-sputnik-the-mystery-lights-that-refuse-to-die
+- **Filed:** [before-sputnik-mystery-lights.md](./knowledge/articles/before-sputnik-mystery-lights.md)
+- **What:** In-depth analysis of pre-Sputnik transient phenomena and unidentified objects, examining how the case has evolved following criticisms, replications, and validation studies.
+
+---
+
+## @DoW_AARO - Naval Postgraduate School Call for Papers on UAP
+> The Naval Postgraduate School's Center on Combating Hybrid Threats is welcoming submissions for its second special edition publication focused on UAP. Learn more here: https://t.co/QyNpqAgep3
+
+- **Tweet:** https://x.com/DoW_AARO/status/2074930503484948908
+- **Article:** https://nps.edu/web/ccht/forthcoming-call-for-papers
+- **Filed:** [nps-uap-call-for-papers.md](./knowledge/articles/nps-uap-call-for-papers.md)
+- **What:** Naval Postgraduate School's Center on Combating Hybrid Threats announcing second special edition publication on UAP research, welcoming academic submissions.
+
+---
+
+## @jamescfox - Congressional Request for 1996 Varginha UAP Records
+> Breaking News on 1996 Varginha, Brazil event: A congressional investigation to the FBI and the CIA is made public. Please be sure to read both FBI and CIA letters from @RepEricBurlison office. LETS GO!
+
+- **Tweet:** https://x.com/jamescfox/status/2074945560029650986
+- **Article:** https://burlison.house.gov/media/press-releases/burlison-presses-cia-and-fbi-records-related-1996-brazil-uap-incident
+- **Filed:** [burlison-1996-varginha-uap.md](./knowledge/articles/burlison-1996-varginha-uap.md)
+- **What:** Congressman Eric Burlison pressing CIA and FBI for records related to the January 1996 Varginha/Campinas, Brazil UAP incident as part of declassification task force work.
+
+---
+
+## @AlchemyAmerican - UFO Debate with Scientific Skeptic
+> HEATED debate on UFOs with America's top scientific skeptic and new White House advisor Michael Shermer (@michaelshermer) out tonight for members, tomorrow for public
+
+- **Tweet:** https://x.com/AlchemyAmerican/status/2074917516669849975
+- **What:** In-depth discussion featuring prominent skeptic Michael Shermer debating UFO claims and unexplained aerial phenomena from a scientific rationalist perspective.
+
+---
+
 # Friday, August 7, 2026
 
 ## @matthew_pines - Time Discrepancy in UAP Incident (FBI Document)
@@ -51,6 +591,33 @@
 
 ---
 
+# Monday, July 6, 2026
+
+## @kenjakuibunya - Ambulance to Camper Van Conversion
+> Transforming a old ambulance into a camper van 🚐
+
+- **Tweet:** https://x.com/kenjakuibunya/status/2074085822350102650
+- **What:** Creative DIY vehicle conversion project transforming an old ambulance into a functional camper van, combining practical modification work with adventure travel capability.
+
+---
+
+## @memeslich - D&D Memes Collection
+> [Shared meme link]
+
+- **Tweet:** https://x.com/memeslich/status/2074176553932423249
+- **What:** Dungeons & Dragons humor and meme content for TTR gaming enthusiasts.
+
+---
+
+## @g_knapp - Area 52 Investigation
+> Area 52, the mysterious neighbor of Area 51 | Mystery Wire
+
+- **Tweet:** https://x.com/g_knapp/status/2074185137743659152
+- **Video:** https://www.youtube.com/watch?v=MU5plRTww18
+- **What:** Investigation into the lesser-known Area 52 military facility and its mysterious operations adjacent to the infamous Area 51 in Nevada.
+
+---
+
 # Wednesday, July 29, 2026
 
 ## @LueElizondo - Setting the record straight on UAP disclosure
@@ -60,6 +627,33 @@
 - **Video:** https://www.youtube.com/watch?v=9i6OH1Re_yA
 - **Status:** Needs transcript
 - **What:** Video statement from Luis Elizondo addressing and clarifying facts related to UFO/UAP disclosure, government transparency, and related claims.
+
+---
+
+# Sunday, July 5, 2026
+
+## @Rainmaker1973 - Prairie Potholes: Flooding Fields for Migratory Birds
+> U.S. farmers are intentionally flooding their fields to revive ancient "prairie potholes," creating temporary "pop-up" wetlands that deliver a huge boost to migratory birds while improving soil health. In regions like California's Central Valley and the Mississippi Delta, innovative programs—most notably BirdReturns (launched by The Nature Conservancy in 2014)—pay farmers to strategically flood low-lying or post-harvest fields at precise times during bird migrations.
+
+- **Tweet:** https://x.com/Rainmaker1973/status/2073703431634895024
+- **What:** Describes how BirdReturns and similar conservation programs incentivize farmers to temporarily flood fields, creating ephemeral wetlands that support migratory birds while improving soil health.
+
+---
+
+## @TheUfoJoe - Four Alien Species: Dr. Eric Davis Discussion
+> 👽 "I can say to you guys that there are a minimum of four different alien species. ~Dr. Eric Davis
+
+- **Tweet:** https://x.com/TheUfoJoe/status/2073881346326556952
+- **YouTube Live:** https://www.youtube.com/live/v-TlUnnJduQ
+- **What:** Joe Murgia shares a clip from a YouTube live discussion where Dr. Eric Davis claims knowledge of at least four distinct alien species.
+
+---
+
+## @AmazingNature00 - Amateur Wins Wildlife Photographer Of The Year
+> Wildlife Photographer Of The Year has been won by amateur photographer. An amateur photographer from the UK has won a prestigious Wildlife Photographer Of The Year award 🏆 Nima Sarikhani captured the image of a sleeping polar bear on an iceberg off Norway's Svalbard archipelago.
+
+- **Tweet:** https://x.com/AmazingNature00/status/2073980073645097414
+- **What:** UK amateur Nima Sarikhani won the prestigious Wildlife Photographer Of The Year award for capturing an evocative image of a polar bear sleeping on an iceberg near Svalbard.
 
 ---
 
@@ -193,6 +787,97 @@
 
 ---
 
+# Saturday, July 4, 2026
+
+## @BeschlossDC - Historical Statue of Liberty Dedication Photo
+> Statue of Liberty photographed as it was dedicated a hundred and forty years ago this fall: https://t.co/elAvKKO1ug
+
+- **Tweet:** https://x.com/BeschlossDC/status/2073259570839843013
+- **What:** Historical photograph showing the Statue of Liberty at the time of its dedication approximately 140 years prior.
+
+---
+
+## @MinuteofZombie - Quantum Space-Time Breakthrough in Electron Tracking
+> Fucking rad.
+
+*Quoted from Phys.org:* Attosecond tunneling microscopy has reached the quantum space-time limit, directly tracking single-electron motion and indicating a 500-attosecond delay before the electron follows the light field.
+
+- **Tweet:** https://x.com/MinuteofZombie/status/2073357255626625157
+- **What:** Enthusiasm for breakthrough research in attosecond tunneling microscopy achieving unprecedented precision in tracking single-electron quantum dynamics.
+
+---
+
+## @LtTimMcMillan - Exceptional 4th of July Fireworks Performance
+> Year after year, this continues to be the best 4th of July fireworks video out there… https://t.co/RAqEOUUoE6
+
+- **Tweet:** https://x.com/LtTimMcMillan/status/2073371536963043498
+- **What:** Recommendation of a standout 4th of July fireworks video that consistently ranks as the best year after year.
+
+---
+
+## @DrBeaVillarroel - "Not for Disclosure" Book with Persistent Mail Damage
+
+> Super excited and happy to receive my signed copy of Jonathan Caplan's extremely interesting book "Not for Disclosure"! Tonight I'll start diving into this goldmine. As usual, it arrived just like about half of my international mail and packages over the past few years -- broken or already opened.
+
+- **Tweet:** https://x.com/DrBeaVillarroel/status/2073380190881755439
+- **What:** Physicist receives signed copy of Jonathan Caplan's "Not for Disclosure" but documents pattern of international mail arriving damaged or opened over several years.
+
+---
+
+## @NotHoodlum - Elaine Chao's China Travel After McConnell's Health Crisis
+
+> Three days after Mitch McConnell suffered a heart attack and received CPR, his wife, Elaine Chao, fled to China.
+
+- **Tweet:** https://x.com/NotHoodlum/status/2073474618455715865
+- **Links:** [[Article: Daily Beast - Mitch McConnell's Wife's Foreign Travel After CPR Drama]]
+- **What:** Daily Beast reports on Elaine Chao's decision to travel to China just three days after her husband Mitch McConnell's cardiac event requiring CPR intervention.
+
+---
+
+## @SicCoP1 - Patriot Front at July 4 DC Metro Celebration
+
+> What a photo
+
+- **Tweet:** https://x.com/SicCoP1/status/2073489220510089276
+- **What:** Photo documentation from July 4, 2026 independence celebration showing Patriot Front members on DC metro system during 250th anniversary of US independence (Reuters photo by Cheney Orr).
+
+---
+
+## @JoeKhalilTV - Close-Up Observation
+
+> Okay this is very cool to see up close
+
+- **Tweet:** https://x.com/JoeKhalilTV/status/2073530014025269721
+- **What:** Brief observation about something viewed in close proximity (image/context not provided in bookmark data).
+
+---
+
+## @MaximeRivest - Fable LLM Transforms Handwriting to Tom Riddle's Diary
+
+> Fable turned my remarkable into Tom Riddle's diary from Harry Potter. My prompts fade, a LLM respond. Magical!
+
+- **Tweet:** https://x.com/MaximeRivest/status/2073544461473169432
+- **Tags:** [[LLM]] [[Fable]] [[AI]]
+- **What:** Developer showcases Anthropic's Fable model transforming handwritten Remarkable notes into interactive Tom Riddle's diary experience from Harry Potter universe.
+
+---
+
+## @matthew_pines - Sweet Land: RetroFuturist Americana Sublime
+> This is some weapons-grade Qposting, Breakaway CivCore, RetroFuturist, Lynchian KenBurns HorrorCut Sublime TechnoAmericana NeoNostalgic SunoSlop. The cultural equivalent of the tidal concrescence one feels falling in on an event horizon and its conjectured liminal firewall…
+
+- **Tweet:** https://x.com/matthew_pines/status/2073580756794855931
+- **What:** Matthew Pines reacts to "Sweet Land," an ode to America's 250th anniversary, with dense cultural commentary on retro-futurist Americana aesthetics and subliminal audiovisual design.
+
+---
+
+## @JoeKhalilTV - National Mall Message Loop
+> This is the message, on loop, from the loudspeakers on the National Mall.
+
+- **Tweet:** https://x.com/JoeKhalilTV/status/2073590229475176865
+- **What:** Joe Khalil reports on a continuous message broadcast from loudspeakers on the National Mall during 4th of July celebrations.
+
+---
+
 # Friday, June 26, 2026
 
 ## @BBGreatMoments - What 40 mph to 100 mph looks like (Baseball)
@@ -210,6 +895,16 @@
 
 - **Tweet:** https://x.com/HurrdatSports/status/2070522484168790176
 - **What:** Account of Savannah Bananas' exceptional customer service recovery, offering free tickets and buyback compensation to fans affected by an email misdirection, resulting in a $6 million cost.
+
+---
+
+# Tuesday, June 16, 2026
+
+## @TheMysteryWire - Area 51 Tour Bus Safety Boundary Violation
+> "Our guys make it a point to tell the passengers that, you know, you can't go over that line, and if you step over that line, you're on their own," Donna Tryon told us in 2014. But in one instance, that rule wasn't followed. Read more: https://t.co/T9SV3nedOG https://t.co/EA5LSsB39e
+
+- **Tweet:** https://x.com/TheMysteryWire/status/2066952839255990465
+- **What:** Investigation into a tour bus operator's account of safety protocols at the Area 51 border, where passengers are warned not to cross a specific line. One incident violated this established safety rule.
 
 ---
 
@@ -247,6 +942,18 @@
 - **Tweet:** https://x.com/MinuteofZombie/status/2068954673231679682
 - **Quoted:** https://x.com/sentdefender/status/2068902231924003128
 - **What:** Security breach commentary highlighting a credential (CAC card) identity mismatch incident, with implied critique of cybersecurity awareness failures in government operations.
+
+---
+
+# Friday, July 3, 2026
+
+## @readswithravi - Personal Growth Through Self-Acceptance
+> I'm in love with this sentence:
+
+"The degree to which a person can grow is directly proportional to the amount of truth he can accept about himself without running away."
+
+- **Tweet:** https://x.com/readswithravi/status/2073247426480148492
+- **What:** Reflection on the relationship between personal growth and the willingness to accept uncomfortable truths about oneself without avoidance.
 
 ---
 
