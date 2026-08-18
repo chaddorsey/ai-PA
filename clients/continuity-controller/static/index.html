@@ -27,7 +27,8 @@
     --sans: -apple-system, system-ui, sans-serif;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100%; }
+  html, body { height: 100%; overflow: hidden; }
+  body { height: 100dvh; }
   body {
     background: var(--bg);
     color: var(--ink);
@@ -69,7 +70,9 @@
 
   main {
     flex: 1;
+    min-height: 0; /* iOS: flex children never shrink below content without this */
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     padding: 1rem 1rem 0.5rem;
     display: flex;
     flex-direction: column;
@@ -501,8 +504,9 @@ function bubble(cls, text) {
   if (renderTarget === transcript) scrollDown();
   return div;
 }
+let stickToBottom = true;
 function scrollDown() {
-  transcript.scrollTop = transcript.scrollHeight;
+  if (stickToBottom) transcript.scrollTop = transcript.scrollHeight;
 }
 
 function wsUrl() {
@@ -760,6 +764,8 @@ async function loadHistory() {
   }
 }
 transcript.addEventListener("scroll", () => {
+  stickToBottom =
+    transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 150;
   if (transcript.scrollTop < 200) loadHistory();
 });
 
